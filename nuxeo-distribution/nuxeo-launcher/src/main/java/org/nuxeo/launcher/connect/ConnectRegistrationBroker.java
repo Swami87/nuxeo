@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * Contributors:
- *     Nuxeo
+ *     akervern, jcarsique
  */
 
 package org.nuxeo.launcher.connect;
@@ -34,7 +34,6 @@ import org.nuxeo.connect.identity.LogicalInstanceIdentifier;
 import org.nuxeo.connect.registration.ConnectRegistrationService;
 import org.nuxeo.connect.registration.RegistrationException;
 import org.nuxeo.connect.registration.RegistrationHelper;
-import org.nuxeo.connect.update.PackageUtils;
 import org.nuxeo.launcher.config.ConfigurationException;
 
 /**
@@ -44,8 +43,6 @@ import org.nuxeo.launcher.config.ConfigurationException;
 public class ConnectRegistrationBroker {
 
     private static final Log log = LogFactory.getLog(ConnectRegistrationBroker.class);
-
-    protected static List<ConnectProject> studioProjects;
 
     protected static ConnectRegistrationService registration() {
         return NuxeoConnectClient.getConnectRegistrationService();
@@ -70,32 +67,41 @@ public class ConnectRegistrationBroker {
         }
     }
 
-    public void registerRemote(String username, String password, String project, NuxeoClientInstanceType type,
+    public void registerRemote(String username, char[] password, String projectId, NuxeoClientInstanceType type,
             String description) throws IOException, ConfigurationException {
-        if (!PackageUtils.isValidPackageId(project)) {
-            final String finalProject = project;
-            Stream<ConnectProject> projectStream = getAvailableProjects(username, password).stream();
-            Optional<ConnectProject> pkg = projectStream.filter(
-                    availProject -> finalProject.equalsIgnoreCase(availProject.getSymbolicName())).findFirst();
-
-            if (!pkg.isPresent()) {
-                throw new ConfigurationException("Unable to find corresponding project: " + project);
-            }
-            project = pkg.get().getUuid();
-        }
-
-        String strCLID = RegistrationHelper.remoteRegisterInstance(username, password, project, type, description);
+        String strCLID = RegistrationHelper.remoteRegisterInstance(username, new String(password), projectId, type,
+                description);
         registerLocal(strCLID, description);
     }
 
-    public List<ConnectProject> getAvailableProjects(String username, String password) throws ConfigurationException {
-        if (studioProjects == null) {
-            studioProjects = registration().getAvailableProjectsForRegistration(username, password);
-            if (studioProjects.isEmpty()) {
-                throw new ConfigurationException("Wrong login and password.");
-            }
+    /**
+     * Find a project by its symbolic name, ignoring case
+     *
+     * @param projectName Project symbolic name
+     * @param availableProjects Projects in which to to look for {@code project}
+     * @return The project or null if not found
+     */
+    public ConnectProject getProjectByName(final String projectName, List<ConnectProject> availableProjects) {
+        Stream<ConnectProject> projectStream = availableProjects.stream();
+        Optional<ConnectProject> pkg = projectStream.filter(
+                availProject -> projectName.equalsIgnoreCase(availProject.getSymbolicName())).findFirst();
+        if (!pkg.isPresent()) {
+            return null;
         }
+        return pkg.get();
+    }
 
+    public List<ConnectProject> getAvailableProjects(String username, char[] password) throws ConfigurationException {
+        List<ConnectProject> studioProjects = registration().getAvailableProjectsForRegistration(username,
+                new String(password));
+        // TODO NXP-19258 returned list is too much great in my case:
+        // nuxeoctl register => 1260 projects
+        // cat tmp/connect.nuxeo.com_443_#nuxeo#site#_studio.json |python -mjson.tool|grep '"name":'|sort|uniq|wc -l
+        // => 79
+        // projects 1260 != 79 !
+        if (studioProjects.isEmpty()) {
+            throw new ConfigurationException("Wrong login or password.");
+        }
         return studioProjects;
     }
 }
