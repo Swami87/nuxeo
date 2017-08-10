@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     <a href="mailto:at@nuxeo.com">Anahide Tchertchian</a>
- *
- * $Id: LayoutRowImpl.java 28478 2008-01-04 12:53:58Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.forms.layout.api.impl;
 
 import java.io.Serializable;
@@ -53,27 +50,6 @@ public class LayoutRowImpl implements LayoutRow {
     // needed by GWT serialization
     protected LayoutRowImpl() {
         super();
-    }
-
-    /**
-     * @deprecated since 5.5: use {@link #LayoutRowImpl(String, boolean, boolean, List, Map, String)}
-     */
-    @Deprecated
-    public LayoutRowImpl(List<Widget> widgets, Map<String, Serializable> properties) {
-        this.widgets = widgets.toArray(new Widget[0]);
-        this.properties = properties;
-        name = null;
-        selectedByDefault = true;
-        alwaysSelected = false;
-    }
-
-    /**
-     * @deprecated since 5.5: use {@link #LayoutRowImpl(String, boolean, boolean, List, Map, String)}
-     */
-    @Deprecated
-    public LayoutRowImpl(String name, boolean selectedByDefault, boolean alwaysSelected, List<Widget> widgets,
-            Map<String, Serializable> properties) {
-        this(name, selectedByDefault, alwaysSelected, widgets, properties, null);
     }
 
     /**

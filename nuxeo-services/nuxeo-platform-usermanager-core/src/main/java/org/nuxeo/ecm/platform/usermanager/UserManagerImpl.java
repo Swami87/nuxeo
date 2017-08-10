@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ import org.nuxeo.ecm.core.api.PropertyException;
 import org.nuxeo.ecm.core.api.impl.DocumentModelListImpl;
 import org.nuxeo.ecm.core.api.impl.NuxeoGroupImpl;
 import org.nuxeo.ecm.core.api.local.ClientLoginModule;
+import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.api.security.ACE;
 import org.nuxeo.ecm.core.api.security.ACL;
@@ -67,8 +68,10 @@ import org.nuxeo.ecm.directory.DirectoryException;
 import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
 import org.nuxeo.ecm.platform.usermanager.exceptions.GroupAlreadyExistsException;
+import org.nuxeo.ecm.platform.usermanager.exceptions.InvalidPasswordException;
 import org.nuxeo.ecm.platform.usermanager.exceptions.UserAlreadyExistsException;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 import org.nuxeo.runtime.services.event.Event;
 import org.nuxeo.runtime.services.event.EventService;
 
@@ -76,6 +79,8 @@ import org.nuxeo.runtime.services.event.EventService;
  * Standard implementation of the Nuxeo UserManager.
  */
 public class UserManagerImpl implements UserManager, MultiTenantUserManager, AdministratorGroupsProvider {
+
+    private static final String VALIDATE_PASSWORD_PARAM = "nuxeo.usermanager.check.password";
 
     private static final long serialVersionUID = 1L;
 
@@ -109,7 +114,26 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
     public static final String INVALIDATE_ALL_PRINCIPALS_EVENT_ID = "invalidateAllPrincipals";
 
-    private static final String USER_GROUP_CATEGORY = "userGroup";
+    /**
+     * Possible value for the {@link DocumentEventContext#CATEGORY_PROPERTY_KEY} key of a core event context.
+     *
+     * @since 9.2
+     */
+    public static final String USER_GROUP_CATEGORY = "userGroup";
+
+    /**
+     * Key for the id of a user or a group in a core event context.
+     *
+     * @since 9.2
+     */
+    public static final String ID_PROPERTY_KEY = "id";
+
+    /**
+     * Key for the ancestor group names of a group in a core event context.
+     *
+     * @since 9.2
+     */
+    public static final String ANCESTOR_GROUPS_PROPERTY_KEY = "ancestorGroups";
 
     protected final DirectoryService dirService;
 
@@ -180,7 +204,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     public UserManagerImpl() {
         dirService = Framework.getLocalService(DirectoryService.class);
         cacheService = Framework.getLocalService(CacheService.class);
-        virtualUsers = new HashMap<String, VirtualUserDescriptor>();
+        virtualUsers = new HashMap<>();
         userConfig = new UserConfig();
     }
 
@@ -192,7 +216,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         if (descriptor.disableDefaultAdministratorsGroup != null) {
             disableDefaultAdministratorsGroup = descriptor.disableDefaultAdministratorsGroup;
         }
-        administratorGroups = new ArrayList<String>();
+        administratorGroups = new ArrayList<>();
         if (!disableDefaultAdministratorsGroup) {
             administratorGroups.add(SecurityConstants.ADMINISTRATORS);
         }
@@ -231,7 +255,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
         if (cacheService != null && descriptor.userCacheName != null) {
             principalCache = cacheService.getCache(descriptor.userCacheName);
-            principalCache.invalidateAll();
+            invalidateAllPrincipals();
         }
 
     }
@@ -406,6 +430,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
         String ha1 = encodeDigestAuthPassword(username, digestAuthRealm, password);
         try (Session dir = dirService.open(digestAuthDirectory)) {
+            dir.setReadAllColumns(true); // needed to read digest password
             String schema = dirService.getDirectorySchema(digestAuthDirectory);
             DocumentModel entry = dir.getEntry(username, true);
             if (entry == null) {
@@ -457,19 +482,6 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         }
     }
 
-    @Override
-    public void updatePassword(String username, String oldPassword, String newPassword) {
-        if (checkUsernamePassword(username, oldPassword)) {
-            DocumentModel userModel = getUserModel(username);
-            try (Session userDir = dirService.open(userDirectoryName, null)) {
-                userModel.setProperty(userSchemaName, userDir.getPasswordField(), newPassword);
-            }
-            updateUser(userModel);
-            return;
-        }
-        throw new NuxeoException("Invalid old password");
-    }
-
     protected NuxeoPrincipal makeAnonymousPrincipal() {
         DocumentModel userEntry = makeVirtualUserEntry(getAnonymousUserId(), anonymousUser);
         // XXX: pass anonymous user groups, but they will be ignored
@@ -500,8 +512,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             try {
                 userEntry.setProperty(userSchemaName, prop.getKey(), prop.getValue());
             } catch (PropertyNotFoundException ce) {
-                log.error(
-                        "Property: " + prop.getKey() + " does not exists. Check your " + "UserService configuration.",
+                log.error("Property: " + prop.getKey() + " does not exists. Check your " + "UserService configuration.",
                         ce);
             }
         }
@@ -521,7 +532,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         boolean admin = false;
         String username = userEntry.getId();
 
-        List<String> virtualGroups = new LinkedList<String>();
+        List<String> virtualGroups = new LinkedList<>();
         // Add preconfigured groups: useful for LDAP, not for anonymous users
         if (defaultGroup != null && !anonymous && !isTransient) {
             virtualGroups.add(defaultGroup);
@@ -547,7 +558,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         // TODO: reenable roles initialization once we have a use case for
         // a role directory. In the mean time we only set the JBOSS role
         // that is required to login
-        List<String> roles = Arrays.asList("regular");
+        List<String> roles = Collections.singletonList("regular");
         principal.setRoles(roles);
 
         return principal;
@@ -559,17 +570,22 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
     @Override
     public NuxeoPrincipal getPrincipal(String username) {
-        if (!useCache()) {
-            return getPrincipal(username, null);
+        if (useCache()) {
+            return getPrincipalUsingCache(username);
         }
-        if (!principalCache.hasEntry(username)) {
-            principalCache.put(username, getPrincipal(username, null));
+        return getPrincipal(username, null);
+    }
+
+    protected NuxeoPrincipal getPrincipalUsingCache(String username) {
+        NuxeoPrincipal ret = (NuxeoPrincipal) principalCache.get(username);
+        if (ret == null) {
+            ret = getPrincipal(username, null);
+            if (ret == null) {
+                return ret;
+            }
+            principalCache.put(username, ret);
         }
-        NuxeoPrincipalImpl principal = (NuxeoPrincipalImpl) principalCache.get(username);
-        if (principal == null) {
-            return null;
-        }
-        return principal.cloneTransferable(); // should not return cached principal
+        return ((NuxeoPrincipalImpl) ret).cloneTransferable(); // should not return cached principal
     }
 
     @Override
@@ -715,7 +731,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     @Override
     public List<NuxeoPrincipal> searchPrincipals(String pattern) {
         DocumentModelList entries = searchUsers(pattern);
-        List<NuxeoPrincipal> principals = new ArrayList<NuxeoPrincipal>(entries.size());
+        List<NuxeoPrincipal> principals = new ArrayList<>(entries.size());
         for (DocumentModel entry : entries) {
             principals.add(makePrincipal(entry));
         }
@@ -742,7 +758,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
     protected Map<String, String> getDirectorySortMap(String descriptorSortField, String fallBackField) {
         String sortField = descriptorSortField != null ? descriptorSortField : fallBackField;
-        Map<String, String> orderBy = new HashMap<String, String>();
+        Map<String, String> orderBy = new HashMap<>();
         orderBy.put(sortField, DocumentModelComparator.ORDER_ASC);
         return orderBy;
     }
@@ -750,14 +766,24 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     /**
      * @since 8.2
      */
-    private void notifyCore(String userOrGroupId, String eventId) {
+    protected void notifyCore(String userOrGroupId, String eventId) {
+        notifyCore(userOrGroupId, eventId, null);
+    }
+
+    /**
+     * @since 9.2
+     */
+    protected void notifyCore(String userOrGroupId, String eventId, List<String> ancestorGroupIds) {
         Map<String, Serializable> eventProperties = new HashMap<>();
         eventProperties.put(DocumentEventContext.CATEGORY_PROPERTY_KEY, USER_GROUP_CATEGORY);
-        eventProperties.put("id", userOrGroupId);
+        eventProperties.put(ID_PROPERTY_KEY, userOrGroupId);
+        if (ancestorGroupIds != null) {
+            eventProperties.put(ANCESTOR_GROUPS_PROPERTY_KEY, (Serializable) ancestorGroupIds);
+        }
         NuxeoPrincipal principal = ClientLoginModule.getCurrentPrincipal();
         UnboundEventContext envContext = new UnboundEventContext(principal, eventProperties);
         envContext.setProperties(eventProperties);
-        EventProducer eventProducer = Framework.getLocalService(EventProducer.class);
+        EventProducer eventProducer = Framework.getService(EventProducer.class);
         eventProducer.fireEvent(envContext.newEvent(eventId));
     }
 
@@ -766,10 +792,8 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         eventService.sendEvent(new Event(USERMANAGER_TOPIC, eventId, this, userOrGroupName));
     }
 
-    /**
-     * Notifies user has changed so that the JaasCacheFlusher listener can make sure principals cache is reset.
-     */
-    protected void notifyUserChanged(String userName, String eventId) {
+    @Override
+    public void notifyUserChanged(String userName, String eventId) {
         invalidatePrincipal(userName);
         notifyRuntime(userName, USERCHANGED_EVENT_ID);
         if (eventId != null) {
@@ -784,15 +808,13 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         }
     }
 
-    /**
-     * Notifies group has changed so that the JaasCacheFlusher listener can make sure principals cache is reset.
-     */
-    protected void notifyGroupChanged(String groupName, String eventId) {
+    @Override
+    public void notifyGroupChanged(String groupName, String eventId, List<String> ancestorGroupNames) {
         invalidateAllPrincipals();
         notifyRuntime(groupName, GROUPCHANGED_EVENT_ID);
         if (eventId != null) {
             notifyRuntime(groupName, eventId);
-            notifyCore(groupName, eventId);
+            notifyCore(groupName, eventId, ancestorGroupNames);
         }
     }
 
@@ -903,7 +925,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         if (filter == null) {
             return;
         }
-        List<String> keys = new ArrayList<String>(filter.keySet());
+        List<String> keys = new ArrayList<>(filter.keySet());
         for (String key : keys) {
             if (key.startsWith(VIRTUAL_FIELD_FILTER_PREFIX)) {
                 filter.remove(key);
@@ -943,96 +965,12 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     @Override
-    public void createGroup(NuxeoGroup group) {
-        DocumentModel newGroupModel = getBareGroupModel();
-        newGroupModel.setProperty(groupSchemaName, groupIdField, group.getName());
-        newGroupModel.setProperty(groupSchemaName, groupLabelField, group.getLabel());
-        newGroupModel.setProperty(groupSchemaName, groupMembersField, group.getMemberUsers());
-        newGroupModel.setProperty(groupSchemaName, groupSubGroupsField, group.getMemberGroups());
-        createGroup(newGroupModel);
-    }
-
-    @Override
-    public void createPrincipal(NuxeoPrincipal principal) {
-        createUser(principal.getModel());
-    }
-
-    @Override
-    public void deleteGroup(NuxeoGroup group) {
-        deleteGroup(group.getName());
-    }
-
-    @Override
-    public void deletePrincipal(NuxeoPrincipal principal) {
-        deleteUser(principal.getName());
-    }
-
-    @Override
-    public List<NuxeoGroup> getAvailableGroups() {
-        DocumentModelList groupModels = searchGroups(Collections.<String, Serializable> emptyMap(), null);
-        List<NuxeoGroup> groups = new ArrayList<NuxeoGroup>(groupModels.size());
-        for (DocumentModel groupModel : groupModels) {
-            groups.add(makeGroup(groupModel));
-        }
-        return groups;
-    }
-
-    @Override
-    public List<NuxeoPrincipal> getAvailablePrincipals() {
-        DocumentModelList userModels = searchUsers(Collections.<String, Serializable> emptyMap(), null);
-        List<NuxeoPrincipal> users = new ArrayList<NuxeoPrincipal>(userModels.size());
-        for (DocumentModel userModel : userModels) {
-            users.add(makePrincipal(userModel));
-        }
-        return users;
-    }
-
-    @Override
-    public DocumentModel getModelForUser(String name) {
-        return getUserModel(name);
-    }
-
-    @Override
-    public List<NuxeoPrincipal> searchByMap(Map<String, Serializable> filter, Set<String> pattern) {
-        try (Session userDir = dirService.open(userDirectoryName)) {
-            removeVirtualFilters(filter);
-
-            DocumentModelList entries = userDir.query(filter, pattern);
-            List<NuxeoPrincipal> principals = new ArrayList<NuxeoPrincipal>(entries.size());
-            for (DocumentModel entry : entries) {
-                principals.add(makePrincipal(entry));
-            }
-            if (isAnonymousMatching(filter, pattern)) {
-                principals.add(makeAnonymousPrincipal());
-            }
-            return principals;
-        }
-    }
-
-    @Override
-    public void updateGroup(NuxeoGroup group) {
-        // XXX: need to refetch it for tests to pass, i don't get why (session
-        // id is used maybe?)
-        DocumentModel newGroupModel = getGroupModel(group.getName());
-        newGroupModel.setProperty(groupSchemaName, groupIdField, group.getName());
-        newGroupModel.setProperty(groupSchemaName, groupLabelField, group.getLabel());
-        newGroupModel.setProperty(groupSchemaName, groupMembersField, group.getMemberUsers());
-        newGroupModel.setProperty(groupSchemaName, groupSubGroupsField, group.getMemberGroups());
-        updateGroup(newGroupModel);
-    }
-
-    @Override
-    public void updatePrincipal(NuxeoPrincipal principal) {
-        updateUser(principal.getModel());
-    }
-
-    @Override
     public List<String> getAdministratorsGroups() {
         return administratorGroups;
     }
 
     protected List<String> getLeafPermissions(String perm) {
-        ArrayList<String> permissions = new ArrayList<String>();
+        ArrayList<String> permissions = new ArrayList<>();
         PermissionProvider permissionProvider = Framework.getService(PermissionProvider.class);
         String[] subpermissions = permissionProvider.getSubPermissions(perm);
         if (subpermissions == null || subpermissions.length <= 0) {
@@ -1093,10 +1031,10 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             entries = searchUsers(Collections.<String, Serializable> emptyMap(), null);
         } else {
             pattern = pattern.trim();
-            Map<String, DocumentModel> uniqueEntries = new HashMap<String, DocumentModel>();
+            Map<String, DocumentModel> uniqueEntries = new HashMap<>();
 
             for (Entry<String, MatchType> fieldEntry : userSearchFields.entrySet()) {
-                Map<String, Serializable> filter = new HashMap<String, Serializable>();
+                Map<String, Serializable> filter = new HashMap<>();
                 filter.put(fieldEntry.getKey(), pattern);
                 DocumentModelList fetchedEntries;
                 if (fieldEntry.getValue() == MatchType.SUBSTRING) {
@@ -1118,7 +1056,8 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     @Override
-    public DocumentModelList searchUsers(Map<String, Serializable> filter, Set<String> fulltext, DocumentModel context) {
+    public DocumentModelList searchUsers(Map<String, Serializable> filter, Set<String> fulltext,
+            DocumentModel context) {
         throw new UnsupportedOperationException();
     }
 
@@ -1128,9 +1067,10 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     @Override
-    public DocumentModelList searchGroups(Map<String, Serializable> filter, Set<String> fulltext, DocumentModel context) {
-        filter = filter != null ? cloneMap(filter) : new HashMap<String, Serializable>();
-        HashSet<String> fulltextClone = fulltext != null ? cloneSet(fulltext) : new HashSet<String>();
+    public DocumentModelList searchGroups(Map<String, Serializable> filter, Set<String> fulltext,
+            DocumentModel context) {
+        filter = filter != null ? cloneMap(filter) : new HashMap<>();
+        HashSet<String> fulltextClone = fulltext != null ? cloneSet(fulltext) : new HashSet<>();
         multiTenantManagement.queryTransformer(this, filter, fulltextClone, context);
 
         try (Session groupDir = dirService.open(groupDirectoryName, context)) {
@@ -1191,7 +1131,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     protected Map<String, Serializable> cloneMap(Map<String, Serializable> map) {
-        Map<String, Serializable> result = new HashMap<String, Serializable>();
+        Map<String, Serializable> result = new HashMap<>();
         for (String key : map.keySet()) {
             result.put(key, map.get(key));
         }
@@ -1199,7 +1139,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     protected HashSet<String> cloneSet(Set<String> set) {
-        HashSet<String> result = new HashSet<String>();
+        HashSet<String> result = new HashSet<>();
         for (String key : set) {
             result.add(key);
         }
@@ -1235,10 +1175,10 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             entries = searchGroups(Collections.<String, Serializable> emptyMap(), null);
         } else {
             pattern = pattern.trim();
-            Map<String, DocumentModel> uniqueEntries = new HashMap<String, DocumentModel>();
+            Map<String, DocumentModel> uniqueEntries = new HashMap<>();
 
             for (Entry<String, MatchType> fieldEntry : groupSearchFields.entrySet()) {
-                Map<String, Serializable> filter = new HashMap<String, Serializable>();
+                Map<String, Serializable> filter = new HashMap<>();
                 filter.put(fieldEntry.getKey(), pattern);
                 DocumentModelList fetchedEntries;
                 if (fieldEntry.getValue() == MatchType.SUBSTRING) {
@@ -1282,6 +1222,8 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
                 throw new UserAlreadyExistsException();
             }
 
+            checkPasswordValidity(userModel);
+
             String schema = dirService.getDirectorySchema(userDirectoryName);
             String clearUsername = (String) userModel.getProperty(schema, userDir.getIdField());
             String clearPassword = (String) userModel.getProperty(schema, userDir.getPasswordField());
@@ -1296,6 +1238,23 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
         }
     }
 
+    protected void checkPasswordValidity(DocumentModel userModel) throws InvalidPasswordException {
+        if (!mustCheckPasswordValidity()) {
+            return;
+        }
+        String schema = dirService.getDirectorySchema(userDirectoryName);
+        String passwordField = dirService.getDirectory(userDirectoryName).getPasswordField();
+
+        Property passwordProperty = userModel.getPropertyObject(schema, passwordField);
+
+        if (passwordProperty.isDirty()) {
+            String clearPassword = (String) passwordProperty.getValue();
+            if (StringUtils.isNotBlank(clearPassword) && !validatePassword(clearPassword)) {
+                throw new InvalidPasswordException();
+            }
+        }
+    }
+
     @Override
     public void updateUser(DocumentModel userModel, DocumentModel context) {
         try (Session userDir = dirService.open(userDirectoryName, context)) {
@@ -1306,6 +1265,9 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             }
 
             String schema = dirService.getDirectorySchema(userDirectoryName);
+
+            checkPasswordValidity(userModel);
+
             String clearUsername = (String) userModel.getProperty(schema, userDir.getIdField());
             String clearPassword = (String) userModel.getProperty(schema, userDir.getPasswordField());
 
@@ -1315,6 +1277,10 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
             notifyUserChanged(userId, USERMODIFIED_EVENT_ID);
         }
+    }
+
+    private boolean mustCheckPasswordValidity() {
+        return Framework.getService(ConfigurationService.class).isBooleanPropertyTrue(VALIDATE_PASSWORD_PARAM);
     }
 
     @Override
@@ -1362,8 +1328,10 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             if (!groupDir.hasEntry(groupId)) {
                 throw new DirectoryException("Group does not exist: " + groupId);
             }
+            // Get ancestor group names before deletion to pass them as a property of the core event
+            List<String> ancestorGroupNames = getAncestorGroups(groupId);
             groupDir.deleteEntry(groupId);
-            notifyGroupChanged(groupId, GROUPDELETED_EVENT_ID);
+            notifyGroupChanged(groupId, GROUPDELETED_EVENT_ID, ancestorGroupNames);
         }
     }
 
@@ -1375,7 +1343,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     @Override
     public List<String> getTopLevelGroups(DocumentModel context) {
         try (Session groupDir = dirService.open(groupDirectoryName, context)) {
-            List<String> topLevelGroups = new LinkedList<String>();
+            List<String> topLevelGroups = new LinkedList<>();
             // XXX retrieve all entries with references, can be costly.
             DocumentModelList groups = groupDir.query(Collections.<String, Serializable> emptyMap(), null, null, true);
             for (DocumentModel group : groups) {
@@ -1392,28 +1360,28 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
 
     @Override
     public List<String> getUsersInGroupAndSubGroups(String groupId, DocumentModel context) {
-        Set<String> groups = new HashSet<String>();
+        Set<String> groups = new HashSet<>();
         groups.add(groupId);
         appendSubgroups(groupId, groups, context);
 
-        Set<String> users = new HashSet<String>();
+        Set<String> users = new HashSet<>();
         for (String groupid : groups) {
             users.addAll(getGroup(groupid, context).getMemberUsers());
         }
 
-        return new ArrayList<String>(users);
+        return new ArrayList<>(users);
     }
 
     @Override
     public String[] getUsersForPermission(String perm, ACP acp, DocumentModel context) {
         PermissionProvider permissionProvider = Framework.getService(PermissionProvider.class);
         // using a hashset to avoid duplicates
-        HashSet<String> usernames = new HashSet<String>();
+        HashSet<String> usernames = new HashSet<>();
 
         ACL merged = acp.getMergedACLs("merged");
         // The list of permission that is has "perm" as its (compound)
         // permission
-        ArrayList<ACE> filteredACEbyPerm = new ArrayList<ACE>();
+        ArrayList<ACE> filteredACEbyPerm = new ArrayList<>();
 
         List<String> currentPermissions = getLeafPermissions(perm);
 
@@ -1457,7 +1425,7 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
             }
             // otherwise, add the user
             if (users == null) {
-                users = new ArrayList<String>();
+                users = new ArrayList<>();
                 users.add(aceUsername);
             }
             if (ace.isGranted()) {
@@ -1470,8 +1438,22 @@ public class UserManagerImpl implements UserManager, MultiTenantUserManager, Adm
     }
 
     @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return true;
+    public List<String> getAncestorGroups(String groupId) {
+        List<String> ancestorGroups = new ArrayList<>();
+        populateAncestorGroups(groupId, ancestorGroups);
+        return ancestorGroups;
+    }
+
+    protected void populateAncestorGroups(String groupId, List<String> ancestorGroups) {
+        NuxeoGroup group = getGroup(groupId);
+        if (group != null) {
+            List<String> parentGroups = group.getParentGroups();
+            // Avoid infinite loop in case a group has one of its parents as a subgroup
+            parentGroups.stream().filter(parentGroup -> !ancestorGroups.contains(parentGroup)).forEach(parentGroup -> {
+                ancestorGroups.add(parentGroup);
+                populateAncestorGroups(parentGroup, ancestorGroups);
+            });
+        }
     }
 
     @Override

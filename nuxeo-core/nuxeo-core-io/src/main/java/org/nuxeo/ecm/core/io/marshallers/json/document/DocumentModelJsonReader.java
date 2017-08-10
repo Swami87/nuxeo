@@ -36,6 +36,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.codehaus.jackson.JsonNode;
 import org.nuxeo.ecm.core.api.Blob;
+import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.impl.DataModelImpl;
@@ -67,6 +68,7 @@ import org.nuxeo.runtime.api.Framework;
  *   "repository": "REPOSITORY_NAME" , <- explicitely specify the repository name
  *   "name": "DOCUMENT_NAME", <- use it to create an new document
  *   "type": "DOCUMENT_TYPE", <- use it to create an new document
+ *   "changeToken": "CHANGE_TOKEN", <- pass the previous change token for optimistic locking
  *   "properties": ...  <-- see {@link DocumentPropertiesJsonReader}
  * }
  * </pre>
@@ -131,6 +133,8 @@ public class DocumentModelJsonReader extends EntityJsonReader<DocumentModel> {
             }
             avoidBlobUpdate(simpleDoc, doc);
             applyDirtyPropertyValues(simpleDoc, doc);
+            String changeToken = getStringField(jn, "changeToken");
+            doc.putContextData(CoreSession.CHANGE_TOKEN, changeToken);
         } else if (StringUtils.isNotBlank(type)) {
             SimpleDocumentModel createdDoc = new SimpleDocumentModel();
             if (StringUtils.isNotBlank(name)) {
@@ -149,7 +153,7 @@ public class DocumentModelJsonReader extends EntityJsonReader<DocumentModel> {
     /**
      * Avoid the blob updates. It's managed by custom ways.
      */
-    private void avoidBlobUpdate(DocumentModel docToClean, DocumentModel docRef) {
+    private static void avoidBlobUpdate(DocumentModel docToClean, DocumentModel docRef) {
         for (String schema : docToClean.getSchemas()) {
             for (String field : docToClean.getDataModel(schema).getDirtyFields()) {
                 avoidBlobUpdate(docToClean.getProperty(field), docRef);
@@ -157,11 +161,11 @@ public class DocumentModelJsonReader extends EntityJsonReader<DocumentModel> {
         }
     }
 
-    private void avoidBlobUpdate(Property propToClean, DocumentModel docRef) {
+    private static void avoidBlobUpdate(Property propToClean, DocumentModel docRef) {
         if (propToClean instanceof BlobProperty) {
             // if the blob used to exist
             if (propToClean.getValue() == null) {
-                Serializable value = docRef.getPropertyValue(propToClean.getPath());
+                Serializable value = docRef.getPropertyValue(propToClean.getXPath());
                 propToClean.setValue(value);
             }
         } else if (propToClean instanceof ComplexProperty) {
@@ -180,7 +184,10 @@ public class DocumentModelJsonReader extends EntityJsonReader<DocumentModel> {
     }
 
     public static void applyPropertyValues(DocumentModel src, DocumentModel dst) {
+        avoidBlobUpdate(src, dst);
         applyPropertyValues(src, dst, true);
+        // copy change token
+        dst.getContextData().putAll(src.getContextData());
     }
 
     public static void applyPropertyValues(DocumentModel src, DocumentModel dst, boolean dirtyOnly) {

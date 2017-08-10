@@ -9,6 +9,12 @@
       <dispatcher>REQUEST</dispatcher>
       <dispatcher>FORWARD</dispatcher>
     </filter-mapping>
+    
+    <filter-mapping>
+       <filter-name>NuxeoRequestController</filter-name>
+       <url-pattern>/site/*</url-pattern>
+       <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
 
   </extension>
 
@@ -48,6 +54,20 @@
       <servlet-name>Nuxeo WebEngine Servlet</servlet-name>
       <url-pattern>/site/*</url-pattern>
     </servlet-mapping>
+
+    <filter>
+      <display-name>HeaderFixFilter</display-name>
+      <filter-name>HeaderFixFilter</filter-name>
+      <filter-class>
+        org.nuxeo.ecm.webengine.app.HeaderFixFilter
+      </filter-class>
+    </filter>
+    <filter-mapping>
+      <filter-name>HeaderFixFilter</filter-name>
+      <url-pattern>/site/*</url-pattern>
+      <dispatcher>REQUEST</dispatcher>
+      <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
 
     <filter>
       <display-name>RequestContextFilter</display-name>

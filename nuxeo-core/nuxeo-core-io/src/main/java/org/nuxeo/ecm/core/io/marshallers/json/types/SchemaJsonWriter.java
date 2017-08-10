@@ -19,15 +19,20 @@
 
 package org.nuxeo.ecm.core.io.marshallers.json.types;
 
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
 import static org.nuxeo.ecm.core.io.registry.reflect.Instantiations.SINGLETON;
 import static org.nuxeo.ecm.core.io.registry.reflect.Priorities.REFERENCE;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
 import org.codehaus.jackson.JsonGenerator;
 import org.nuxeo.ecm.core.io.marshallers.json.ExtensibleEntityJsonWriter;
+import org.nuxeo.ecm.core.io.marshallers.json.OutputStreamWithJsonWriter;
 import org.nuxeo.ecm.core.io.marshallers.json.enrichers.AbstractJsonEnricher;
+import org.nuxeo.ecm.core.io.registry.Writer;
 import org.nuxeo.ecm.core.io.registry.reflect.Setup;
 import org.nuxeo.ecm.core.schema.types.ComplexType;
 import org.nuxeo.ecm.core.schema.types.Field;
@@ -35,6 +40,7 @@ import org.nuxeo.ecm.core.schema.types.ListType;
 import org.nuxeo.ecm.core.schema.types.PrimitiveType;
 import org.nuxeo.ecm.core.schema.types.Schema;
 import org.nuxeo.ecm.core.schema.types.Type;
+import org.nuxeo.ecm.core.schema.types.constraints.Constraint;
 
 import com.thoughtworks.xstream.io.json.JsonWriter;
 
@@ -89,6 +95,11 @@ public class SchemaJsonWriter extends ExtensibleEntityJsonWriter<Schema> {
 
     public static final String ENTITY_TYPE = "schema";
 
+    /**
+     * @since 8.10
+     */
+    public static final String FETCH_FIELDS = "fields";
+
     public SchemaJsonWriter() {
         super(ENTITY_TYPE, Schema.class);
     }
@@ -99,6 +110,8 @@ public class SchemaJsonWriter extends ExtensibleEntityJsonWriter<Schema> {
         String prefix = schema.getNamespace().prefix;
         if (StringUtils.isNotBlank(prefix)) {
             jg.writeStringField("prefix", prefix);
+            // backward compat for old schema writers
+            jg.writeStringField("@prefix", prefix);
         }
         jg.writeObjectFieldStart("fields");
         for (Field field : schema.getFields()) {
@@ -126,18 +139,10 @@ public class SchemaJsonWriter extends ExtensibleEntityJsonWriter<Schema> {
                         jg.writeEndObject();
                     }
                 } else {
-                    Type type = lt.getFieldType();
-                    while (!(type instanceof PrimitiveType)) {
-                        type = type.getSuperType();
-                    }
-                    jg.writeStringField(field.getName().getLocalName(), type.getName() + "[]");
+                    doWriteField(jg, field);
                 }
             } else {
-                Type type = field.getType();
-                while (!(type instanceof PrimitiveType)) {
-                    type = type.getSuperType();
-                }
-                jg.writeStringField(field.getName().getLocalName(), type.getName());
+                doWriteField(jg, field);
             }
         } else {
             if (field.getType().getName().equals("content")) {
@@ -154,6 +159,52 @@ public class SchemaJsonWriter extends ExtensibleEntityJsonWriter<Schema> {
                 jg.writeEndObject();
             }
         }
+    }
+
+    /**
+     * @since 8.10
+     */
+    protected void doWriteField(JsonGenerator jg, Field field) throws IOException {
+        final boolean extended = ctx.getFetched(ENTITY_TYPE).contains(FETCH_FIELDS);
+        String typeValue;
+        Set<Constraint> itemConstraints = null;
+        if (field.getType().isListType()) {
+            ListType lt = (ListType) field.getType();
+            Type type = lt.getFieldType();
+            itemConstraints = type.getConstraints();
+            while (!(type instanceof PrimitiveType)) {
+                type = type.getSuperType();
+            }
+            typeValue = type.getName() + "[]";
+        } else {
+            Type type = field.getType();
+            while (!(type instanceof PrimitiveType)) {
+                type = type.getSuperType();
+            }
+            typeValue = type.getName();
+        }
+        if (extended) {
+            jg.writeObjectFieldStart(field.getName().getLocalName());
+            jg.writeStringField("type", typeValue);
+            Writer<Constraint> constraintWriter = registry.getWriter(ctx, Constraint.class, APPLICATION_JSON_TYPE);
+            OutputStream out = new OutputStreamWithJsonWriter(jg);
+            jg.writeArrayFieldStart("constraints");
+            for (Constraint c : field.getConstraints()) {
+                constraintWriter.write(c, Constraint.class, Constraint.class, APPLICATION_JSON_TYPE, out);
+            }
+            jg.writeEndArray();
+            if (itemConstraints != null) {
+                jg.writeArrayFieldStart("itemConstraints");
+                for (Constraint c : itemConstraints) {
+                    constraintWriter.write(c, Constraint.class, Constraint.class, APPLICATION_JSON_TYPE, out);
+                }
+                jg.writeEndArray();
+            }
+            jg.writeEndObject();
+        } else {
+            jg.writeStringField(field.getName().getLocalName(), typeValue);
+        }
+
     }
 
 }

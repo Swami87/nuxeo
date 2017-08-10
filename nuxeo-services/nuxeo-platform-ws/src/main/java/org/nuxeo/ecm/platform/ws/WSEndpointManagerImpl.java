@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,20 +68,19 @@ public class WSEndpointManagerImpl extends DefaultComponent implements WSEndpoin
     }
 
     @Override
-    public void deactivate(ComponentContext context) {
-        super.deactivate(context);
+    public void start(ComponentContext context) {
+        if (Framework.isTestModeSet()) {
+            return;
+        }
+        publishEndpoints();
+    }
 
+    @Override
+    public void stop(ComponentContext context) {
         for (Endpoint ep : endpoints.values()) {
             ep.stop();
         }
         endpoints.clear();
-    }
-
-    @Override
-    public void applicationStarted(ComponentContext context) {
-        if (!Framework.isTestModeSet()) {
-            publishEndpoints();
-        }
     }
 
     @Override

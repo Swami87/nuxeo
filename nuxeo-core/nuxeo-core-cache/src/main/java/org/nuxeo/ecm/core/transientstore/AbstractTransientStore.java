@@ -31,10 +31,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.Environment;
@@ -61,12 +63,19 @@ public abstract class AbstractTransientStore implements TransientStore {
     @Override
     public void init(TransientStoreConfig config) {
         this.config = config;
-
-        // initialize caching directory
-        File transienStoreHome = new File(Environment.getDefault().getData(), "transientstores");
-        File data = new File(transienStoreHome, config.getName());
+        File data = getDataDir(config);
         data.mkdirs();
         cacheDir = data.getAbsoluteFile();
+    }
+
+    private File getDataDir(TransientStoreConfig config) {
+        String dataDirPath = config.getDataDir();
+        if (StringUtils.isBlank(dataDirPath)) {
+            File transienStoreHome = new File(Environment.getDefault().getData(), "transientstores");
+            return new File(transienStoreHome, config.getName());
+        } else {
+            return new File(dataDirPath);
+        }
     }
 
     @Override
@@ -74,6 +83,9 @@ public abstract class AbstractTransientStore implements TransientStore {
 
     @Override
     public abstract boolean exists(String key);
+
+    @Override
+    public abstract Set<String> keySet();
 
     @Override
     public abstract void putParameter(String key, String parameter, Serializable value);
@@ -181,19 +193,19 @@ public abstract class AbstractTransientStore implements TransientStore {
     }
 
     public File getCachingDirectory(String key) {
+        String cachingDirName = getCachingDirName(key);
         try {
-            File cachingDir = new File(cacheDir.getCanonicalFile(), getCachingDirName(key));
-
+            File cachingDir = new File(cacheDir.getCanonicalFile(), cachingDirName);
             if (!cachingDir.getCanonicalPath().startsWith(cacheDir.getCanonicalPath())) {
-                throw new SecurityException("Trying to traverse illegal path");
+                throw new NuxeoException("Trying to traverse illegal path: " + cachingDir + " for key: " + key);
             }
-
             if (!cachingDir.exists()) {
                 cachingDir.mkdir();
             }
             return cachingDir;
         } catch (IOException e) {
-            throw new RuntimeException("Error when trying to access cache directory");
+            throw new NuxeoException("Error when trying to access cache directory: " + cacheDir + "/" + cachingDirName
+                    + " for key: " + key, e);
         }
     }
 
@@ -244,15 +256,11 @@ public abstract class AbstractTransientStore implements TransientStore {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get(cacheDir.getAbsolutePath()))) {
                 for (Path entry : stream) {
                     String key = getKeyCachingDirName(entry.getFileName().toString());
-                    try {
-                        if (exists(key)) {
-                            newSize += getFilePathSize(entry);
-                            continue;
-                        }
-                        FileUtils.deleteDirectory(entry.toFile());
-                    } catch (IOException e) {
-                        log.error("Error while performing GC", e);
+                    if (exists(key)) {
+                        newSize += getFilePathSize(entry);
+                        continue;
                     }
+                    FileUtils.deleteQuietly(entry.toFile());
                 }
             }
         } catch (IOException e) {
@@ -279,6 +287,10 @@ public abstract class AbstractTransientStore implements TransientStore {
         log.debug("Removing all entries from TransientStore " + config.getName());
         removeAllEntries();
         doGC();
+    }
+
+    public File getCacheDir() {
+        return cacheDir;
     }
 
 }

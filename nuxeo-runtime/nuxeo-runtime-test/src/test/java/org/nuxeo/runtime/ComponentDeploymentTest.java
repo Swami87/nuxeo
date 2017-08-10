@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,24 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import org.junit.Before;
+import java.util.Map;
+import java.util.Set;
+
 import org.junit.Test;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentInstance;
 import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.model.ComponentName;
+import org.nuxeo.runtime.model.Extension;
 import org.nuxeo.runtime.test.NXRuntimeTestCase;
 
 /**
@@ -39,33 +40,73 @@ import org.nuxeo.runtime.test.NXRuntimeTestCase;
  */
 public class ComponentDeploymentTest extends NXRuntimeTestCase {
 
-    @Override
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
-        deployContrib("org.nuxeo.runtime.test.tests", "MyComp1.xml");
-        deployContrib("org.nuxeo.runtime.test.tests", "MyComp2.xml");
+    @Test
+    public void testContributions() throws Exception {
+        pushInlineDeployments("org.nuxeo.runtime.test.tests:MyComp1.xml", "org.nuxeo.runtime.test.tests:MyComp2.xml");
+        try {
+            RuntimeService runtime = Framework.getRuntime();
+            ComponentManager mgr = runtime.getComponentManager();
+            assertTrue(mgr.size() > 0);
+
+            ComponentInstance co = runtime.getComponentInstance("service:my.comp1");
+            assertNotNull(co);
+            assertEquals(co.getName(), new ComponentName("service:my.comp1"));
+
+            co = runtime.getComponentInstance("service:my.comp2");
+            assertNotNull(co);
+            assertEquals(co.getName(), new ComponentName("service:my.comp2"));
+
+            mgr.unregister(new ComponentName("service:my.comp2"));
+            mgr.unstash(); // apply the stash
+            co = runtime.getComponentInstance("service:my.comp2");
+            assertNull(co);
+            co = runtime.getComponentInstance("service:my.comp1");
+            assertNotNull(co);
+        } finally {
+            undeployContrib("org.nuxeo.runtime.test.tests", "MyComp2.xml");
+            undeployContrib("org.nuxeo.runtime.test.tests", "MyComp1.xml");
+            removeInlineDeployments();
+        }
     }
 
     @Test
-    public void testContributions() {
-        RuntimeService runtime = Framework.getRuntime();
-        ComponentManager mgr = runtime.getComponentManager();
-        assertTrue(mgr.size() > 0);
-
-        ComponentInstance co = runtime.getComponentInstance("service:my.comp1");
-        assertNotNull(co);
-        assertEquals(co.getName(), new ComponentName("service:my.comp1"));
-
-        co = runtime.getComponentInstance("service:my.comp2");
-        assertNotNull(co);
-        assertEquals(co.getName(), new ComponentName("service:my.comp2"));
-
-        mgr.unregister(new ComponentName("service:my.comp2"));
-        co = runtime.getComponentInstance("service:my.comp2");
-        assertNull(co);
-        co = runtime.getComponentInstance("service:my.comp1");
-        assertNotNull(co);
+    public void testStartupStatus() throws Exception {
+        pushInlineDeployments("org.nuxeo.runtime.test.tests:CompA.xml", "org.nuxeo.runtime.test.tests:CompB.xml");
+        try {
+            RuntimeService runtime = Framework.getRuntime();
+            ComponentManager mgr = runtime.getComponentManager();
+            assertTrue(mgr.size() > 0);
+            // check pending registrations
+            Map<ComponentName, Set<ComponentName>> pending = mgr.getPendingRegistrations();
+            assertEquals(1, pending.size());
+            assertTrue(pending.containsKey(new ComponentName("CompA")));
+            assertEquals("[service:CompC]", pending.get(new ComponentName("CompA")).toString());
+            // check missing registrations
+            Map<ComponentName, Set<Extension>> missing = mgr.getMissingRegistrations();
+            assertEquals(1, missing.size());
+            assertTrue(missing.containsKey(new ComponentName("CompB")));
+            assertEquals(
+                    "[ExtensionImpl {target: service:my.comp3, point:xp, contributor:RegistrationInfo: service:CompB}, "
+                            + "ExtensionImpl {target: service:my.comp4, point:xp, contributor:RegistrationInfo: service:CompB}]",
+                    missing.get(new ComponentName("CompB")).toString());
+            StringBuilder builder = new StringBuilder();
+            assertFalse(runtime.getStatusMessage(builder));
+            // it is error prone to assert hard coded values for . A change not impacting this test like removing a
+            // deprecated component will break the test
+            // quick fix (use the real total registrations number)
+            int totalContribs = mgr.getRegistrations().size();
+            assertEquals(
+                    "======================================================================\n"
+                            + "= Component Loading Status: Pending: 1 / Missing: 1 / Unstarted: 0 / Total: "
+                            + totalContribs + "\n" + "  * service:CompA requires [service:CompC]\n"
+                            + "  * service:CompB references missing [target=my.comp3;point=xp, target=my.comp4;point=xp]\n"
+                            + "======================================================================",
+                    builder.toString());
+        } finally {
+            undeployContrib("org.nuxeo.runtime.test.tests", "CompB.xml");
+            undeployContrib("org.nuxeo.runtime.test.tests", "CompA.xml");
+            removeInlineDeployments();
+        }
     }
 
 }

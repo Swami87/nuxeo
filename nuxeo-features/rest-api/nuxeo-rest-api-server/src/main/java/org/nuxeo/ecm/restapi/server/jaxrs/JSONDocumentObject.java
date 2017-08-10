@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import javax.ws.rs.core.Response.Status;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.ecm.core.api.ConcurrentUpdateException;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
@@ -76,13 +77,18 @@ public class JSONDocumentObject extends DocumentObject {
      */
     @PUT
     @Consumes({ APPLICATION_JSON_NXENTITY, "application/json" })
-    public DocumentModel doPut(DocumentModel inputDoc, @Context HttpHeaders headers) {
+    public Response doPut(DocumentModel inputDoc, @Context HttpHeaders headers) {
         DocumentModelJsonReader.applyPropertyValues(inputDoc, doc);
         CoreSession session = ctx.getCoreSession();
         versioningDocFromHeaderIfExists(headers);
-        doc = session.saveDocument(doc);
-        session.save();
-        return isVersioning ? session.getLastDocumentVersion(doc.getRef()) : doc;
+        try {
+            doc = session.saveDocument(doc);
+            session.save();
+        } catch (ConcurrentUpdateException e) {
+            return Response.status(Status.CONFLICT).entity("Invalid change token").build();
+        }
+        DocumentModel returnedDoc = isVersioning ? session.getLastDocumentVersion(doc.getRef()) : doc;
+        return Response.ok(returnedDoc).build();
     }
 
     @POST
@@ -143,17 +149,21 @@ public class JSONDocumentObject extends DocumentObject {
     /**
      * In case of version option header presence, checkin the related document
      *
-     * @param headers X-Versioning-Option Header
+     * @param headers X-Versioning-Option or Source (for automatic versioning) Header
      */
     private void versioningDocFromHeaderIfExists(HttpHeaders headers) {
         isVersioning = false;
         List<String> versionHeader = headers.getRequestHeader(RestConstants.X_VERSIONING_OPTION);
-        if (versionHeader != null && versionHeader.size() != 0) {
+        List<String> sourceHeader = headers.getRequestHeader(RestConstants.SOURCE);
+        if (versionHeader != null && !versionHeader.isEmpty()) {
             VersioningOption versioningOption = VersioningOption.valueOf(versionHeader.get(0).toUpperCase());
             if (versioningOption != null && !versioningOption.equals(VersioningOption.NONE)) {
                 doc.putContextData(VersioningService.VERSIONING_OPTION, versioningOption);
                 isVersioning = true;
             }
+        } else if (sourceHeader != null && !sourceHeader.isEmpty()) {
+            doc.putContextData(CoreSession.SOURCE, sourceHeader.get(0));
+            isVersioning = true;
         }
     }
 }

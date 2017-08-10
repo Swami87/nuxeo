@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@ package org.nuxeo.elasticsearch.audit;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -39,19 +39,18 @@ import org.codehaus.jackson.JsonGenerator;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.action.count.CountResponse;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.common.io.stream.BytesStreamOutput;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.index.query.BoolFilterBuilder;
-import org.elasticsearch.index.query.FilterBuilder;
-import org.elasticsearch.index.query.FilterBuilders;
+import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.TermFilterBuilder;
+import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.metrics.max.Max;
@@ -124,6 +123,22 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
             entries.add(logEntry);
             addLogEntries(entries);
         }
+
+        @Override
+        public List<LogEntry> getLogEntriesFor(String uuid, String repositoryId) {
+            throw new UnsupportedOperationException("Not implemented yet!");
+        }
+
+        @Override
+        public List<LogEntry> getLogEntriesFor(String uuid) {
+            throw new UnsupportedOperationException("Not implemented yet!");
+        }
+
+        @Override
+        public List<LogEntry> getLogEntriesFor(String uuid, Map<String, FilterMapEntry> filterMap,
+                boolean doDefaultSort) {
+            throw new UnsupportedOperationException("Not implemented yet!");
+        }
     };
 
     protected Client getClient() {
@@ -140,10 +155,15 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         return !entries.isEmpty();
     }
 
-
     @Override
     public int getApplicationStartedOrder() {
-        return ((DefaultComponent)Framework.getRuntime().getComponent("org.nuxeo.elasticsearch.ElasticSearchComponent")).getApplicationStartedOrder()+1;
+        int elasticOrder = ((DefaultComponent) Framework.getRuntime()
+                                            .getComponent("org.nuxeo.elasticsearch.ElasticSearchComponent"))
+                                                                                                            .getApplicationStartedOrder();
+        int uidgenOrder = ((DefaultComponent) Framework.getRuntime()
+                .getComponent("org.nuxeo.ecm.core.uidgen.UIDGeneratorService"))
+                .getApplicationStartedOrder();
+        return Integer.max(elasticOrder, uidgenOrder) + 1;
     }
 
     @Override
@@ -174,39 +194,77 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
     }
 
     @Override
-    public void onShutdown() {
-        if (esClient != null) {
-            try {
-                esClient.close();
-            } finally {
-                esClient = null;
-            }
+    public void onApplicationStopped() {
+        if (esClient == null) {
+            return;
+        }
+        try {
+            esClient.close();
+        } finally {
+            esClient = null;
         }
     }
 
     @Override
+    public List<LogEntry> getLogEntriesFor(String uuid, String repositoryId) {
+        TermQueryBuilder docFilter = QueryBuilders.termQuery("docUUID", uuid);
+        TermQueryBuilder repoFilter = QueryBuilders.termQuery("repositoryId", repositoryId);
+        QueryBuilder filter;
+        filter = QueryBuilders.boolQuery().must(docFilter);
+        filter = QueryBuilders.boolQuery().must(repoFilter);
+        return getLogEntries(filter, false);
+    }
+
+    @Override
     public List<LogEntry> getLogEntriesFor(String uuid, Map<String, FilterMapEntry> filterMap, boolean doDefaultSort) {
-        SearchRequestBuilder builder = getSearchRequestBuilder(esClient);
-        TermFilterBuilder docFilter = FilterBuilders.termFilter("docUUID", uuid);
-        FilterBuilder filter;
+        TermQueryBuilder docFilter = QueryBuilders.termQuery("docUUID", uuid);
+        QueryBuilder filter;
         if (MapUtils.isEmpty(filterMap)) {
             filter = docFilter;
         } else {
-            filter = FilterBuilders.boolFilter();
-            ((BoolFilterBuilder) filter).must(docFilter);
+            filter = QueryBuilders.boolQuery().must(docFilter);
             for (String key : filterMap.keySet()) {
                 FilterMapEntry entry = filterMap.get(key);
-                ((BoolFilterBuilder) filter).must(FilterBuilders.termFilter(entry.getColumnName(), entry.getObject()));
+                ((BoolQueryBuilder) filter).must(QueryBuilders.termQuery(entry.getColumnName(), entry.getObject()));
             }
         }
-        builder.setQuery(QueryBuilders.constantScoreQuery(filter)).setSize(Integer.MAX_VALUE);
+        return getLogEntries(filter, doDefaultSort);
+    }
+
+    protected List<LogEntry> getLogEntries(QueryBuilder filter, boolean doDefaultSort) {
+        SearchRequestBuilder builder = getSearchRequestBuilder(esClient);
         if (doDefaultSort) {
             builder.addSort("eventDate", SortOrder.DESC);
         }
+        TimeValue keepAlive = TimeValue.timeValueMinutes(1);
+        builder.setQuery(QueryBuilders.constantScoreQuery(filter)).setScroll(keepAlive).setSize(100);
+
         logSearchRequest(builder);
         SearchResponse searchResponse = builder.get();
         logSearchResponse(searchResponse);
-        return buildLogEntries(searchResponse);
+
+        // Build log entries
+        List<LogEntry> logEntries = buildLogEntries(searchResponse);
+        // Scroll on next results
+        for (; //
+                searchResponse.getHits().getHits().length > 0
+                        && logEntries.size() < searchResponse.getHits().getTotalHits(); //
+                searchResponse = runNextScroll(searchResponse.getScrollId(), keepAlive)) {
+            // Build log entries
+            logEntries.addAll(buildLogEntries(searchResponse));
+        }
+        return logEntries;
+    }
+
+    SearchResponse runNextScroll(String scrollId, TimeValue keepAlive) {
+        if (log.isDebugEnabled()) {
+            log.debug(String.format(
+                    "Scroll request: -XGET 'localhost:9200/_search/scroll' -d '{\"scroll\": \"%s\", \"scroll_id\": \"%s\" }'",
+                    keepAlive, scrollId));
+        }
+        SearchResponse response = esClient.prepareSearchScroll(scrollId).setScroll(keepAlive).execute().actionGet();
+        logSearchResponse(response);
+        return response;
     }
 
     protected List<LogEntry> buildLogEntries(SearchResponse searchResponse) {
@@ -222,14 +280,15 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
     }
 
     protected SearchRequestBuilder getSearchRequestBuilder(Client esClient) {
-        return esClient.prepareSearch(getESIndexName()).setTypes(ElasticSearchConstants.ENTRY_TYPE).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH);
+        return esClient.prepareSearch(getESIndexName())
+                       .setTypes(ElasticSearchConstants.ENTRY_TYPE)
+                       .setSearchType(SearchType.DFS_QUERY_THEN_FETCH);
     }
 
     @Override
     public LogEntry getLogEntryByID(long id) {
-        GetResponse ret = esClient.prepareGet(getESIndexName(), ElasticSearchConstants.ENTRY_TYPE,
-                String.valueOf(id)).get();
+        GetResponse ret = esClient.prepareGet(getESIndexName(), ElasticSearchConstants.ENTRY_TYPE, String.valueOf(id))
+                                  .get();
         if (!ret.isExists()) {
             return null;
         }
@@ -297,27 +356,27 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
     public List<LogEntry> queryLogsByPage(String[] eventIds, Date limit, String[] categories, String path, int pageNb,
             int pageSize) {
         SearchRequestBuilder builder = getSearchRequestBuilder(esClient);
-        BoolFilterBuilder filterBuilder = FilterBuilders.boolFilter();
+        BoolQueryBuilder filterBuilder = QueryBuilders.boolQuery();
         if (eventIds != null && eventIds.length > 0) {
             if (eventIds.length == 1) {
-                filterBuilder.must(FilterBuilders.termFilter("eventId", eventIds[0]));
+                filterBuilder.must(QueryBuilders.termQuery("eventId", eventIds[0]));
             } else {
-                filterBuilder.must(FilterBuilders.termsFilter("eventId", eventIds));
+                filterBuilder.must(QueryBuilders.termsQuery("eventId", eventIds));
             }
         }
         if (categories != null && categories.length > 0) {
             if (categories.length == 1) {
-                filterBuilder.must(FilterBuilders.termFilter("category", categories[0]));
+                filterBuilder.must(QueryBuilders.termQuery("category", categories[0]));
             } else {
-                filterBuilder.must(FilterBuilders.termsFilter("category", categories));
+                filterBuilder.must(QueryBuilders.termsQuery("category", categories));
             }
         }
         if (path != null) {
-            filterBuilder.must(FilterBuilders.termFilter("docPath", path));
+            filterBuilder.must(QueryBuilders.termQuery("docPath", path));
         }
 
         if (limit != null) {
-            filterBuilder.must(FilterBuilders.rangeFilter("eventDate").lt(limit));
+            filterBuilder.must(QueryBuilders.rangeQuery("eventDate").lt(limit));
         }
 
         builder.setQuery(QueryBuilders.constantScoreQuery(filterBuilder));
@@ -327,8 +386,6 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         }
         if (pageSize > 0) {
             builder.setSize(pageSize);
-        } else {
-            builder.setSize(Integer.MAX_VALUE);
         }
         logSearchRequest(builder);
         SearchResponse searchResponse = builder.get();
@@ -370,11 +427,11 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
             for (LogEntry entry : entries) {
                 entry.setId(seq.getNext(SEQ_NAME));
                 if (log.isDebugEnabled()) {
-                    log.debug(String.format("Indexing log enry Id: %s, with logDate : %s, for docUUID: %s ",
-                            entry.getId(), entry.getLogDate(), entry.getDocUUID()));
+                    log.debug(String.format("Indexing log entry: %s", entry));
                 }
-                XContentBuilder builder = jsonBuilder();
-                JsonGenerator jsonGen = factory.createJsonGenerator(builder.stream());
+                OutputStream out = new BytesStreamOutput();
+                JsonGenerator jsonGen = factory.createJsonGenerator(out);
+                XContentBuilder builder = jsonBuilder(out);
                 AuditEntryJSONWriter.asJSON(jsonGen, entry);
                 bulkRequest.add(esClient.prepareIndex(getESIndexName(), ElasticSearchConstants.ENTRY_TYPE,
                         String.valueOf(entry.getId())).setSource(builder));
@@ -397,9 +454,13 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
 
     @Override
     public Long getEventsCount(String eventId) {
-        CountResponse res = esClient.prepareCount(getESIndexName()).setTypes(ElasticSearchConstants.ENTRY_TYPE).setQuery(
-                QueryBuilders.constantScoreQuery(FilterBuilders.termFilter("eventId", eventId))).get();
-        return res.getCount();
+        SearchResponse res = esClient.prepareSearch(getESIndexName())
+                                     .setTypes(ElasticSearchConstants.ENTRY_TYPE)
+                                     .setQuery(QueryBuilders.constantScoreQuery(
+                                             QueryBuilders.termQuery("eventId", eventId)))
+                                     .setSize(0)
+                                     .get();
+        return res.getHits().getTotalHits();
     }
 
     @Override
@@ -407,13 +468,13 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         return syncLogCreationEntries(provider, repoId, path, recurs);
     }
 
-    protected FilterBuilder buildFilter(PredicateDefinition[] predicates, DocumentModel searchDocumentModel) {
+    protected QueryBuilder buildFilter(PredicateDefinition[] predicates, DocumentModel searchDocumentModel) {
 
         if (searchDocumentModel == null) {
-            return FilterBuilders.matchAllFilter();
+            return QueryBuilders.matchAllQuery();
         }
 
-        BoolFilterBuilder filterBuilder = FilterBuilders.boolFilter();
+        BoolQueryBuilder filterBuilder = QueryBuilders.boolQuery();
 
         int nbFilters = 0;
 
@@ -444,11 +505,8 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
                 if (val[0] instanceof Iterable<?>) {
                     List<String> l = new ArrayList<>();
                     Iterable<?> vals = (Iterable<?>) val[0];
-                    Iterator<?> valueIterator = vals.iterator();
 
-                    while (valueIterator.hasNext()) {
-
-                        Object v = valueIterator.next();
+                    for (Object v : vals) {
                         if (v != null) {
                             l.add(v.toString());
                         }
@@ -457,27 +515,27 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
                 } else if (val[0] instanceof Object[]) {
                     values = (String[]) val[0];
                 }
-                filterBuilder.must(FilterBuilders.termsFilter(predicate.getParameter(), values));
+                filterBuilder.must(QueryBuilders.termsQuery(predicate.getParameter(), values));
             } else if (op.equalsIgnoreCase("BETWEEN")) {
-                filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).gt(val[0]));
+                filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).gt(val[0]));
                 if (val.length > 1) {
-                    filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).lt(val[1]));
+                    filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).lt(val[1]));
                 }
             } else if (">".equals(op)) {
-                filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).gt(val[0]));
+                filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).gt(val[0]));
             } else if (">=".equals(op)) {
-                filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).gte(val[0]));
+                filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).gte(val[0]));
             } else if ("<".equals(op)) {
-                filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).lt(val[0]));
+                filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).lt(val[0]));
             } else if ("<=".equals(op)) {
-                filterBuilder.must(FilterBuilders.rangeFilter(predicate.getParameter()).lte(val[0]));
+                filterBuilder.must(QueryBuilders.rangeQuery(predicate.getParameter()).lte(val[0]));
             } else {
-                filterBuilder.must(FilterBuilders.termFilter(predicate.getParameter(), val[0]));
+                filterBuilder.must(QueryBuilders.termQuery(predicate.getParameter(), val[0]));
             }
         }
 
         if (nbFilters == 0) {
-            return FilterBuilders.matchAllFilter();
+            return QueryBuilders.matchAllQuery();
         }
         return filterBuilder;
     }
@@ -486,8 +544,8 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
             DocumentModel searchDocumentModel) {
         SearchRequestBuilder builder = getSearchRequestBuilder(esClient);
         QueryBuilder queryBuilder = QueryBuilders.wrapperQuery(fixedPart);
-        FilterBuilder filterBuilder = buildFilter(predicates, searchDocumentModel);
-        builder.setQuery(QueryBuilders.filteredQuery(queryBuilder, filterBuilder));
+        QueryBuilder filterBuilder = buildFilter(predicates, searchDocumentModel);
+        builder.setQuery(QueryBuilders.boolQuery().must(queryBuilder).filter(filterBuilder));
         return builder;
     }
 
@@ -513,6 +571,7 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         return false;
     }
 
+    @SuppressWarnings("deprecation")
     public String migrate(final int batchSize) {
 
         final String MIGRATION_WORK_ID = "AuditMigration";
@@ -541,12 +600,16 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         }
     }
 
-
     /**
      * Ensures the audit sequence returns an UID greater or equal than the maximum log entry id.
      */
     protected void ensureUIDSequencer(Client esClient) {
-        boolean auditIndexExists = esClient.admin().indices().prepareExists(getESIndexName()).execute().actionGet().isExists();
+        boolean auditIndexExists = esClient.admin()
+                                           .indices()
+                                           .prepareExists(getESIndexName())
+                                           .execute()
+                                           .actionGet()
+                                           .isExists();
         if (!auditIndexExists) {
             return;
         }
@@ -561,6 +624,7 @@ public class ESAuditBackend extends AbstractAuditBackend implements AuditBackend
         // Get next sequence id
         UIDGeneratorService uidGeneratorService = Framework.getService(UIDGeneratorService.class);
         UIDSequencer seq = uidGeneratorService.getSequencer();
+        seq.init();
         int nextSequenceId = seq.getNext(SEQ_NAME);
 
         // Increment sequence to max log entry id if needed

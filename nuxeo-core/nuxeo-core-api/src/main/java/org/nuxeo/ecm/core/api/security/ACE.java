@@ -24,6 +24,9 @@ import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -59,6 +62,8 @@ public final class ACE implements Serializable, Cloneable {
 
     private Map<String, Serializable> contextData = new HashMap<>();
 
+    protected static final Pattern ID_PATTERN = Pattern.compile("^(.+):([^:]+):([^:]+):([^:]*):([^:]*):([^:]*)$");
+
     /**
      * Create an ACE from an id.
      *
@@ -69,9 +74,19 @@ public final class ACE implements Serializable, Cloneable {
             return null;
         }
 
-        String[] parts = aceId.split(":");
-        if (parts.length < 3) {
+        // An ACE is composed of tokens separated with ":" caracter
+        // First 3 tokens are mandatory; following 3 tokens are optional
+        // The ":" separator is still present even if the tokens are empty
+        //   Example: jsmith:ReadWrite:true:::
+        // The first token (username) is allowed to contain embedded ":".
+        Matcher m = ID_PATTERN.matcher(aceId);
+        if (!m.matches()) {
             throw new IllegalArgumentException(String.format("Invalid ACE id: %s", aceId));
+        }
+
+        String[] parts = new String[m.groupCount()];
+        for (int i = 1; i <= m.groupCount(); i++) {
+            parts[i - 1] = m.group(i);
         }
 
         String username = parts[0];
@@ -309,10 +324,11 @@ public final class ACE implements Serializable, Cloneable {
                     || !(ace.begin == null || begin == null) && ace.begin.getTimeInMillis() == begin.getTimeInMillis();
             boolean endEqual = ace.end == null && end == null
                     || !(ace.end == null || end == null) && ace.end.getTimeInMillis() == end.getTimeInMillis();
-            boolean creatorEqual = ace.creator != null ? ace.creator.equals(creator) : creator == null;
-            boolean usernameEqual = ace.username != null ? ace.username.equals(username) : username == null;
-            return ace.isGranted == isGranted && usernameEqual && ace.permission.equals(permission) && creatorEqual
-                    && beginEqual && endEqual;
+            boolean creatorEqual = Objects.equals(ace.creator, creator);
+            boolean usernameEqual = Objects.equals(ace.username, username);
+            boolean permissionEqual = Objects.equals(ace.permission, permission);
+            return ace.isGranted == isGranted && usernameEqual && permissionEqual && creatorEqual && beginEqual
+                    && endEqual;
         }
         return super.equals(obj);
     }
@@ -321,11 +337,12 @@ public final class ACE implements Serializable, Cloneable {
     public int hashCode() {
         int hash = 17;
         hash = hash * 37 + (isGranted ? 1 : 0);
-        hash = hash * 37 + username.hashCode();
+        hash = username != null ? hash * 37 + username.hashCode() : hash;
         hash = creator != null ? hash * 37 + creator.hashCode() : hash;
         hash = begin != null ? hash * 37 + begin.hashCode() : hash;
         hash = end != null ? hash * 37 + end.hashCode() : hash;
-        return hash * 37 + permission.hashCode();
+        hash = permission != null ? hash * 37 + permission.hashCode() : hash;
+        return hash;
     }
 
     @Override

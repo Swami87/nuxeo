@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  * 
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime;
 
 import static org.junit.Assert.assertEquals;
@@ -26,9 +23,9 @@ import static org.junit.Assert.assertEquals;
 import java.io.InputStream;
 import java.net.URL;
 
-import org.junit.Before;
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.junit.Test;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.services.resource.ResourceService;
 import org.nuxeo.runtime.test.NXRuntimeTestCase;
@@ -38,9 +35,8 @@ import org.nuxeo.runtime.test.NXRuntimeTestCase;
  */
 public class ResourceServiceTest extends NXRuntimeTestCase {
 
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
+    @Override
+    protected void setUp() throws Exception {
         deployContrib("org.nuxeo.runtime.test.tests", "ResourcesContrib.xml");
     }
 
@@ -48,11 +44,8 @@ public class ResourceServiceTest extends NXRuntimeTestCase {
     public void testContributions() throws Exception {
         ResourceService rs = Framework.getLocalService(ResourceService.class);
         URL url = rs.getResource("myres");
-        InputStream in = url.openStream();
-        try {
-            assertEquals("test resource", FileUtils.read(in).trim());
-        } finally {
-            in.close();
+        try (InputStream in = url.openStream()) {
+            assertEquals("test resource", IOUtils.toString(in, Charsets.UTF_8).trim());
         }
     }
 

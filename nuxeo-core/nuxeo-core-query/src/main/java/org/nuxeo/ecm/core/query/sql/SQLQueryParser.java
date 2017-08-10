@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.query.sql;
 
 import java.io.Reader;
@@ -55,16 +52,6 @@ public final class SQLQueryParser {
         SQLQuery query = parse(new StringReader(string));
         query.setQueryString(string);
         return query;
-    }
-
-    /**
-     * Returns the string literal in a form ready to embed in an NXQL statement.
-     *
-     * @deprecated since 5.7, 5.6.0-HF08 use {{@link NXQL#escapeString} instead
-     */
-    @Deprecated
-    public static String prepareStringLiteral(String s) {
-        return NXQL.escapeString(s);
     }
 
 }

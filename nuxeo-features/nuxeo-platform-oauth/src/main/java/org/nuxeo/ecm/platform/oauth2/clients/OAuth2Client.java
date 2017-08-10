@@ -18,98 +18,112 @@
  */
 package org.nuxeo.ecm.platform.oauth2.clients;
 
-import static org.nuxeo.ecm.platform.oauth2.clients.ClientRegistry.OAUTH2CLIENT_SCHEMA;
+import static org.nuxeo.ecm.platform.oauth2.clients.OAuth2ClientService.OAUTH2CLIENT_SCHEMA;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
-import org.nuxeo.common.xmap.annotation.XNode;
-import org.nuxeo.common.xmap.annotation.XObject;
 import org.nuxeo.ecm.core.api.DocumentModel;
 
 /**
  * @author <a href="mailto:ak@nuxeo.com">Arnaud Kervern</a>
  * @since 5.9.2
  */
-@XObject("client")
 public class OAuth2Client {
 
-    @XNode("@name")
+    protected static final Pattern LOCALHOST_PATTERN = Pattern.compile("http://localhost(:\\d+)?(/.*)?");
+
     protected String name;
 
-    @XNode("@id")
     protected String id;
 
-    @XNode("@secret")
     protected String secret;
 
-    @XNode("@enabled")
-    protected boolean enabled = true;
+    /**
+     * @since 9.2
+     */
+    protected List<String> redirectURIs;
 
-    public OAuth2Client() {
-    }
+    protected boolean enabled;
 
-    public OAuth2Client(String name, String id, String secret) {
+    /**
+     * @since 9.2
+     */
+    protected OAuth2Client(String name, String id, String secret, List<String> redirectURIs, boolean enabled) {
         this.name = name;
         this.id = id;
         this.secret = secret;
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public String getSecret() {
-        return secret;
-    }
-
-    public void setSecret(String secret) {
-        this.secret = secret;
+        this.redirectURIs = redirectURIs;
+        this.enabled = enabled;
     }
 
     public String getName() {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
+    public String getId() {
+        return id;
+    }
+
+    /**
+     * @since 9.2
+     */
+    public List<String> getRedirectURIs() {
+        return redirectURIs;
     }
 
     public boolean isEnabled() {
         return enabled;
     }
 
-    public void setEnabled(boolean enable) {
-        this.enabled = enable;
-    }
-
-    Map<String, Object> toMap() {
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("clientId", id);
-        doc.put("clientSecret", secret);
-        doc.put("name", name);
-        doc.put("enabled", enabled);
-        return doc;
-    }
-
-    static OAuth2Client fromDocumentModel(DocumentModel doc) {
+    public static OAuth2Client fromDocumentModel(DocumentModel doc) {
         String name = (String) doc.getPropertyValue(OAUTH2CLIENT_SCHEMA + ":name");
         String id = (String) doc.getPropertyValue(OAUTH2CLIENT_SCHEMA + ":clientId");
         String secret = (String) doc.getPropertyValue(OAUTH2CLIENT_SCHEMA + ":clientSecret");
+        List<String> redirectURIs;
+        String redirectURIsProperty = (String) doc.getPropertyValue(OAUTH2CLIENT_SCHEMA + ":redirectURIs");
+        if (StringUtils.isEmpty(redirectURIsProperty)) {
+            redirectURIs = Collections.emptyList();
+        } else {
+            redirectURIs = Arrays.asList(redirectURIsProperty.split(","));
+        }
         boolean enabled = (Boolean) doc.getPropertyValue(OAUTH2CLIENT_SCHEMA + ":enabled");
 
-        OAuth2Client client = new OAuth2Client(name, id, secret);
-        client.enabled = enabled;
-        return client;
+        return new OAuth2Client(name, id, secret, redirectURIs, enabled);
     }
 
-    boolean isValidWith(String clientId, String clientSecret) {
+    /**
+     * A redirect URI is considered as valid if and only if:
+     * <ul>
+     * <li>It is not empty</li>
+     * <li>It starts with https, e.g. https://my.redirect.uri</li>
+     * <li>It doesn't start with http, e.g. nuxeo://authorize</li>
+     * <li>It starts with http://localhost with localhost not part of the domain name, e.g. http://localhost:8080/nuxeo,
+     * a counter-example being http://localhost.somecompany.com</li>
+     * </ul>
+     *
+     * @since 9.2
+     */
+    public static boolean isRedirectURIValid(String redirectURI) {
+        String trimmed = redirectURI.trim();
+        return !trimmed.isEmpty() && (trimmed.startsWith("https") || !trimmed.startsWith("http")
+                || LOCALHOST_PATTERN.matcher(trimmed).matches());
+    }
+
+    public boolean isValidWith(String clientId, String clientSecret) {
         // Related to RFC 6749 2.3.1 clientSecret is omitted if empty
         return enabled && id.equals(clientId) && (StringUtils.isEmpty(secret) || secret.equals(clientSecret));
+    }
+
+    /**
+     * @since 9.2
+     */
+    @Override
+    public String toString() {
+        return String.format("%s(name=%s, id=%s, redirectURIs=%s, enabled=%b)", getClass().getSimpleName(), name, id,
+                redirectURIs, enabled);
     }
 }

@@ -33,24 +33,33 @@ import org.nuxeo.ecm.directory.Directory;
 import org.nuxeo.ecm.directory.DirectoryEntryNotFoundException;
 import org.nuxeo.ecm.directory.DirectoryException;
 import org.nuxeo.ecm.directory.Reference;
+import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
 import org.nuxeo.runtime.api.Framework;
 
-public class MultiReference extends AbstractReference {
+public class MultiReference extends AbstractReference implements Cloneable {
 
     private static final Log log = LogFactory.getLog(MultiReference.class);
 
     final MultiDirectory dir;
 
-    final String fieldName;
-
     MultiReference(MultiDirectory dir, String fieldName) {
+        super(fieldName, null);
         this.dir = dir;
-        this.fieldName = fieldName;
     }
 
     @Override
     public void addLinks(String sourceId, List<String> targetIds) throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addLinks(String sourceId, List<String> targetIds, Session session) throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addLinks(List<String> sourceIds, String targetId, Session session) throws DirectoryException {
         throw new UnsupportedOperationException();
     }
 
@@ -65,7 +74,7 @@ public class MultiReference extends AbstractReference {
 
     protected List<String> doCollect(Collector extractor) throws DirectoryException {
         DirectoryService dirService = Framework.getService(DirectoryService.class);
-        Set<String> ids = new HashSet<String>();
+        Set<String> ids = new HashSet<>();
         for (SourceDescriptor src : dir.getDescriptor().sources) {
             for (SubDirectoryDescriptor sub : src.subDirectories) {
                 Directory dir = dirService.getDirectory(sub.name);
@@ -83,36 +92,30 @@ public class MultiReference extends AbstractReference {
                 }
             }
         }
-        List<String> x = new ArrayList<String>(ids.size());
+        List<String> x = new ArrayList<>(ids.size());
         x.addAll(ids);
         return x;
     }
 
     @Override
     public List<String> getSourceIdsForTarget(final String targetId) throws DirectoryException {
-        return doCollect(new Collector() {
-            @Override
-            public List<String> collect(List<Reference> refs) throws DirectoryException {
-                List<String> sourceIds = new ArrayList<>(1);
-                for (Reference ref : refs) {
-                    sourceIds.addAll(ref.getSourceIdsForTarget(targetId));
-                }
-                return sourceIds;
+        return doCollect(refs -> {
+            List<String> sourceIds = new ArrayList<>(1);
+            for (Reference ref : refs) {
+                sourceIds.addAll(ref.getSourceIdsForTarget(targetId));
             }
+            return sourceIds;
         });
     }
 
     @Override
     public List<String> getTargetIdsForSource(final String sourceId) throws DirectoryException {
-        return doCollect(new Collector() {
-            @Override
-            public List<String> collect(List<Reference> refs) throws DirectoryException {
-                List<String> targetIds = new ArrayList<>(1);
-                for (Reference ref : refs) {
-                    targetIds.addAll(ref.getSourceIdsForTarget(sourceId));
-                }
-                return targetIds;
+        return doCollect(refs -> {
+            List<String> targetIds = new ArrayList<>(1);
+            for (Reference ref : refs) {
+                targetIds.addAll(ref.getSourceIdsForTarget(sourceId));
             }
+            return targetIds;
         });
     }
 
@@ -122,7 +125,17 @@ public class MultiReference extends AbstractReference {
     }
 
     @Override
+    public void removeLinksForSource(String sourceId, Session session) throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void removeLinksForTarget(String targetId) throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void removeLinksForTarget(String targetId, Session session) throws DirectoryException {
         throw new UnsupportedOperationException();
     }
 
@@ -132,7 +145,19 @@ public class MultiReference extends AbstractReference {
     }
 
     @Override
+    public void setSourceIdsForTarget(String targetId, List<String> sourceIds, Session session)
+            throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void setTargetIdsForSource(String sourceId, List<String> targetIds) throws DirectoryException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void setTargetIdsForSource(String sourceId, List<String> targetIds, Session session)
+            throws DirectoryException {
         throw new UnsupportedOperationException();
     }
 
@@ -141,9 +166,11 @@ public class MultiReference extends AbstractReference {
      */
     @Override
     public MultiReference clone() {
-        MultiReference clone = (MultiReference) super.clone();
         // basic fields are already copied by super.clone()
-        return clone;
+        try {
+            return (MultiReference) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);
+        }
     }
-
 }

@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
 <component name="org.nuxeo.ecm.core.automation.user-directories">
 
-  <extension target="org.nuxeo.ecm.directory.sql.SQLDirectoryFactory"
-    point="directories">
+  <extension target="org.nuxeo.ecm.directory.GenericDirectory" point="directories">
 
 
- <directory name="userDirectory">
+    <directory name="userDirectory" extends="template-directory">
 
       <schema>user</schema>
-      <dataSource>java:/nxsqldirectory</dataSource>
-      <table>users</table>
+      <types>
+        <type>system</type>
+      </types>
       <idField>username</idField>
       <passwordField>password</passwordField>
 
@@ -18,44 +18,38 @@
       <createTablePolicy>always</createTablePolicy>
 
       <references>
-        <tableReference field="groups" directory="groupDirectory"
-            table="user2group" sourceColumn="userId"
-            targetColumn="groupId" dataFile="user2group.csv"
-            master="true"/>
+        <reference field="groups" directory="groupDirectory" name="user2group" source="userId" target="groupId"
+          dataFile="user2group.csv"/>
       </references>
 
     </directory>
 
-    <directory name="groupDirectory">
+    <directory name="groupDirectory" extends="template-directory">
 
       <schema>group</schema>
-      <dataSource>java:/nxsqldirectory</dataSource>
-      <table>groups</table>
+      <types>
+        <type>system</type>
+      </types>
       <idField>groupname</idField>
       <autoincrementIdField>false</autoincrementIdField>
       <dataFile>testdirectorydata/groups.csv</dataFile>
       <createTablePolicy>always</createTablePolicy>
 
       <references>
-        <inverseReference field="members" directory="userDirectory"
-            dualReferenceField="groups"/>
-        <tableReference field="subGroups" directory="groupDirectory"
-            table="group2group" sourceColumn="childGroupId"
-            targetColumn="parentGroupId"/>
-        <inverseReference field="parentGroups"
-            directory="groupDirectory" dualReferenceField="subGroups"/>
+        <inverseReference field="members" directory="userDirectory" dualReferenceField="groups"/>
+        <reference field="subGroups" directory="groupDirectory" name="group2group" source="childGroupId"
+          target="parentGroupId"/>
+        <inverseReference field="parentGroups" directory="groupDirectory" dualReferenceField="subGroups"/>
       </references>
 
     </directory>
   </extension>
 
 
- <extension target="org.nuxeo.ecm.platform.actions.ActionService"
-    point="filters">
+  <extension target="org.nuxeo.ecm.platform.actions.ActionService" point="filters">
 
     <filter id="directoriesManagementAccess">
-      <rule grant="true">
-      </rule>
+      <rule grant="true"></rule>
     </filter>
 
   </extension>

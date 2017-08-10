@@ -42,6 +42,9 @@
 
     <directory name="userDirectory">
       <server>default</server>
+      <types>
+        <type>system</type>
+      </types>
       <schema>user</schema>
       <idField>username</idField>
       <passwordField>userPassword</passwordField>
@@ -86,6 +89,9 @@
     <directory name="groupDirectory">
       <server>default</server>
       <schema>group</schema>
+      <types>
+        <type>system</type>
+      </types>
 
       <idField>groupname</idField>
 
@@ -140,6 +146,9 @@
     <!-- unit directory, taking organizationalUnit instance in the groups branch -->
     <directory name="unitDirectory">
       <server>default</server>
+      <types>
+        <type>system</type>
+      </types>
       <schema>group</schema>
       <idField>groupname</idField>
 

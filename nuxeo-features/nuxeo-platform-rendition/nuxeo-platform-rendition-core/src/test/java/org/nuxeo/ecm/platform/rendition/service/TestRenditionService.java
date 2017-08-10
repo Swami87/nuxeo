@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,10 +12,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  * Contributors:
- * Nuxeo - initial API and implementation
+ *     Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.ecm.platform.rendition.service;
 
 import static org.junit.Assert.assertEquals;
@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,8 @@ import java.util.zip.ZipInputStream;
 
 import javax.inject.Inject;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.api.Blob;
@@ -70,15 +73,17 @@ import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.core.test.StorageConfiguration;
 import org.nuxeo.ecm.core.test.TransactionalFeature;
 import org.nuxeo.ecm.core.versioning.VersioningService;
+import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkManager;
 import org.nuxeo.ecm.platform.rendition.Rendition;
 import org.nuxeo.ecm.platform.rendition.impl.LazyRendition;
+import org.nuxeo.ecm.platform.rendition.lazy.AbstractRenditionBuilderWork;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
+import org.nuxeo.runtime.test.runner.HotDeployer;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
-import org.nuxeo.runtime.test.runner.RuntimeHarness;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
@@ -96,12 +101,21 @@ public class TestRenditionService {
 
     private static final String RENDITION_DEFINITION_PROVIDERS_COMPONENT_LOCATION = "test-rendition-definition-providers-contrib.xml";
 
+    private static final String RENDITION_WORKMANAGER_COMPONENT_LOCATION = "test-rendition-multithreads-workmanager-contrib.xml";
+
     public static final String PDF_RENDITION_DEFINITION = "pdf";
 
     public static final String ZIP_TREE_EXPORT_RENDITION_DEFINITION = "zipTreeExport";
 
+    public static CyclicBarrier[] CYCLIC_BARRIERS = new CyclicBarrier[] { new CyclicBarrier(2), new CyclicBarrier(2),
+            new CyclicBarrier(2) };
+
+    public static final String CYCLIC_BARRIER_DESCRIPTION = "cyclicBarrierDesc";
+
+    public static final Log log = LogFactory.getLog(TestRenditionService.class);
+
     @Inject
-    protected RuntimeHarness runtimeHarness;
+    protected HotDeployer deployer;
 
     @Inject
     protected CoreFeature coreFeature;
@@ -127,10 +141,11 @@ public class TestRenditionService {
     public void testDeclaredRenditionDefinitions() {
         List<RenditionDefinition> renditionDefinitions = renditionService.getDeclaredRenditionDefinitions();
         assertRenditionDefinitions(renditionDefinitions, PDF_RENDITION_DEFINITION,
-                "renditionDefinitionWithUnknownOperationChain");
+                "renditionDefinitionWithUnknownOperationChain", "zipExport", "zipTreeExport", "zipTreeExportLazily");
 
         RenditionDefinition rd = renditionDefinitions.stream()
-                                                     .filter(renditionDefinition -> PDF_RENDITION_DEFINITION.equals(renditionDefinition.getName()))
+                                                     .filter(renditionDefinition -> PDF_RENDITION_DEFINITION.equals(
+                                                             renditionDefinition.getName()))
                                                      .findFirst()
                                                      .get();
         assertNotNull(rd);
@@ -140,7 +155,8 @@ public class TestRenditionService {
         assertTrue(rd.isEnabled());
 
         rd = renditionDefinitions.stream()
-                                 .filter(renditionDefinition -> "renditionDefinitionWithCustomOperationChain".equals(renditionDefinition.getName()))
+                                 .filter(renditionDefinition -> "renditionDefinitionWithCustomOperationChain".equals(
+                                         renditionDefinition.getName()))
                                  .findFirst()
                                  .get();
         assertNotNull(rd);
@@ -187,7 +203,7 @@ public class TestRenditionService {
         Blob renditionBlob = bh.getBlob();
         assertNotNull(renditionBlob);
         assertEquals("application/pdf", renditionBlob.getMimeType());
-        assertEquals("dummy.txt.pdf", renditionBlob.getFilename());
+        assertEquals("dummy.pdf", renditionBlob.getFilename());
 
         // now refetch the rendition
         Rendition rendition = renditionService.getRendition(file, PDF_RENDITION_DEFINITION);
@@ -195,7 +211,6 @@ public class TestRenditionService {
         assertTrue(rendition.isStored());
         assertEquals(renditionDocument.getRef(), rendition.getHostDocument().getRef());
         assertEquals("/icons/pdf.png", renditionDocument.getPropertyValue("common:icon"));
-        assertEquals(renditionBlob.getLength(), renditionDocument.getPropertyValue("common:size"));
 
         // now update the document
         file.setPropertyValue("dc:description", "I have been updated");
@@ -312,27 +327,39 @@ public class TestRenditionService {
     @Test
     public void doErrorLazyRendition() throws Exception {
         DocumentModel file = createBlobFile();
+        Calendar issued = new GregorianCalendar(2010, Calendar.OCTOBER, 10, 10, 10, 10);
+        file.setPropertyValue("dc:issued", (Serializable) issued.clone());
+        session.saveDocument(file);
         session.save();
         nextTransaction();
 
         String renditionName = "lazyDelayedErrorAutomationRendition";
-        {
-            Rendition rendition = renditionService.getRendition(file, renditionName);
-            assertNotNull(rendition);
-            Blob blob = rendition.getBlob();
-            assertEquals(0, blob.getLength());
-            String mimeType = blob.getMimeType();
-            assertTrue(mimeType, mimeType.contains(LazyRendition.EMPTY_MARKER));
-            nextTransaction();
-        }
+        for (int i = 0; i < 2; i++) {
+            boolean store = i == 1;
+            if (store) {
+                issued.add(Calendar.SECOND, 10);
+                file.setPropertyValue("dc:issued", (Serializable) issued.clone());
+                session.saveDocument(file);
+                session.save();
+                nextTransaction();
+            }
 
-        {
-            Rendition rendition = renditionService.getRendition(file, renditionName);
-            Blob blob = rendition.getBlob();
-            String mimeType = blob.getMimeType();
-            assertEquals(0, blob.getLength());
-            assertFalse(mimeType, mimeType.contains(LazyRendition.EMPTY_MARKER));
-            assertTrue(mimeType, mimeType.contains(LazyRendition.ERROR_MARKER));
+            for (int j = 0; j < 3; j++) {
+                boolean empty = j != 1;
+                Rendition rendition = renditionService.getRendition(file, renditionName, store);
+                assertNotNull(rendition);
+                Blob blob = rendition.getBlob();
+                assertEquals(0, blob.getLength());
+                String mimeType = blob.getMimeType();
+                String marker = (empty ? LazyRendition.EMPTY_MARKER : LazyRendition.ERROR_MARKER);
+                String falseMarker = (!empty ? LazyRendition.EMPTY_MARKER : LazyRendition.ERROR_MARKER);
+                String markerMsg = String.format("mimeType: %s should contain %s (i=%s,j=%s)", mimeType, marker, i, j);
+                String falseMarkerMsg = String.format("mimeType: %s should not contain %s (i=$s,j=%s)", mimeType,
+                        falseMarker, i, j);
+                assertTrue(markerMsg, mimeType.contains(marker));
+                assertFalse(falseMarkerMsg, mimeType.contains(falseMarker));
+                nextTransaction();
+            }
         }
     }
 
@@ -376,7 +403,6 @@ public class TestRenditionService {
         assertTrue(rendition.isStored());
         assertEquals(renditionDocument.getRef(), rendition.getHostDocument().getRef());
         assertEquals("/icons/zip.png", renditionDocument.getPropertyValue("common:icon"));
-        assertEquals(renditionBlob.getLength(), renditionDocument.getPropertyValue("common:size"));
 
         // now get a different rendition as a different user
         NuxeoPrincipal totoPrincipal = Framework.getService(UserManager.class).getPrincipal("toto");
@@ -390,9 +416,10 @@ public class TestRenditionService {
             assertNotEquals(rendition.getHostDocument().getRef(), totoRendition.getHostDocument().getRef());
             long adminZipEntryCount = countZipEntries(new ZipInputStream(rendition.getBlob().getStream()));
             long totoZipEntryCount = countZipEntries(new ZipInputStream(totoRendition.getBlob().getStream()));
-            assertTrue(String.format(
-                    "Admin rendition entry count %s should be greater than user rendition entry count %s",
-                    adminZipEntryCount, totoZipEntryCount), adminZipEntryCount > totoZipEntryCount);
+            assertTrue(
+                    String.format("Admin rendition entry count %s should be greater than user rendition entry count %s",
+                            adminZipEntryCount, totoZipEntryCount),
+                    adminZipEntryCount > totoZipEntryCount);
         }
 
         coreFeature.getStorageConfiguration().maybeSleepToNextSecond();
@@ -477,7 +504,8 @@ public class TestRenditionService {
 
         for (int i = 1; i <= 2; i++) {
             String childFolderName = "childFolder" + i;
-            DocumentModel childFolder = session.createDocumentModel(folder.getPathAsString(), childFolderName, "Folder");
+            DocumentModel childFolder = session.createDocumentModel(folder.getPathAsString(), childFolderName,
+                    "Folder");
             childFolder = session.createDocument(childFolder);
             if (i == 1) {
                 acp = new ACPImpl();
@@ -537,8 +565,9 @@ public class TestRenditionService {
                 adminZipEntryCount, totoZipEntryCount), adminZipEntryCount > totoZipEntryCount);
         Calendar adminModificationDate = rendition.getModificationDate();
         Calendar totoModificationDate = totoRendition.getModificationDate();
-        assertTrue(String.format("Admin rendition modif date %s should be after user rendition modif date %s",
-                adminModificationDate.toInstant(), totoModificationDate.toInstant()),
+        assertTrue(
+                String.format("Admin rendition modif date %s should be after user rendition modif date %s",
+                        adminModificationDate.toInstant(), totoModificationDate.toInstant()),
                 adminModificationDate.after(totoModificationDate));
     }
 
@@ -640,11 +669,9 @@ public class TestRenditionService {
         List<Map<String, Serializable>> files = new ArrayList<>();
         Map<String, Serializable> file = new HashMap<>();
         file.put("file", (Serializable) firstAttachedBlob);
-        file.put("filename", firstAttachedBlob.getFilename());
         files.add(file);
         file = new HashMap<>();
         file.put("file", (Serializable) secondAttachedBlob);
-        file.put("filename", secondAttachedBlob.getFilename());
         files.add(file);
 
         fileDocument.setPropertyValue(FILES_FILES_PROPERTY, (Serializable) files);
@@ -656,7 +683,8 @@ public class TestRenditionService {
         Blob renditionBlob = bh.getBlob();
         assertNotNull(renditionBlob);
         assertEquals("application/pdf", renditionBlob.getMimeType());
-        List<Map<String, Serializable>> renditionFiles = (List<Map<String, Serializable>>) renditionDocument.getPropertyValue(FILES_FILES_PROPERTY);
+        List<Map<String, Serializable>> renditionFiles = (List<Map<String, Serializable>>) renditionDocument.getPropertyValue(
+                FILES_FILES_PROPERTY);
         assertTrue(renditionFiles.isEmpty());
     }
 
@@ -702,6 +730,8 @@ public class TestRenditionService {
 
     @Test
     public void shouldStoreLatestNonVersionedRendition() throws Exception {
+        deployer.deploy(RENDITION_CORE + ":" + RENDITION_WORKMANAGER_COMPONENT_LOCATION);
+
         final StorageConfiguration storageConfiguration = coreFeature.getStorageConfiguration();
         final String repositoryName = session.getRepositoryName();
         final String username = session.getPrincipal().getName();
@@ -766,7 +796,7 @@ public class TestRenditionService {
         for (Rendition rend : renditions) {
             assertNotNull(rend);
             assertTrue(rend.isStored());
-            storageConfig.assertNotBeforeTimestamp(cal, rend.getModificationDate());
+            assertFalse(cal.before(rend.getModificationDate()));
             assertNotNull(rend.getBlob());
             assertTrue(rendition.getBlob().getString().contains(desc));
         }
@@ -845,8 +875,93 @@ public class TestRenditionService {
     }
 
     @Test
+    public void shouldNotScheduleRedundantLazyRenditionBuilderWorks() throws Exception {
+        final String renditionName = "lazyAutomation";
+        final String sourceDocumentModificationDatePropertyName = "dc:issued";
+        Calendar issued = new GregorianCalendar(2010, Calendar.OCTOBER, 10, 10, 10, 10);
+        String desc = CYCLIC_BARRIER_DESCRIPTION;
+        DocumentModel folder = session.createDocumentModel("/", "dummy", "Folder");
+        folder.setPropertyValue("dc:title", folder.getName());
+        folder.setPropertyValue("dc:description", desc);
+        folder.setPropertyValue(sourceDocumentModificationDatePropertyName, (Serializable) issued.clone());
+        folder = session.createDocument(folder);
+        session.save();
+        nextTransaction();
+        eventService.waitForAsyncCompletion();
+
+        for (int i = 0; i < 3; i++) {
+            folder = session.getDocument(folder.getRef());
+
+            Rendition rendition = renditionService.getRendition(folder, renditionName, false);
+            assertNotNull(rendition);
+            assertTrue(rendition.getBlob().getMimeType().contains(LazyRendition.EMPTY_MARKER));
+            if (i == 0) {
+                if (log.isDebugEnabled()) {
+                    log.debug(DummyDocToTxt.formatLogEntry(folder.getRef(), null, desc, issued) + " before barrier 0");
+                }
+                CYCLIC_BARRIERS[0].await();
+            }
+
+            assertEquals(issued, folder.getPropertyValue(sourceDocumentModificationDatePropertyName));
+            issued.add(Calendar.SECOND, 10);
+            folder.setPropertyValue(sourceDocumentModificationDatePropertyName, (Serializable) issued.clone());
+            desc = "description" + Integer.toString(i);
+            folder.setPropertyValue("dc:description", desc);
+            session.saveDocument(folder);
+            session.save();
+
+            if (TransactionHelper.isTransactionActiveOrMarkedRollback()) {
+                TransactionHelper.commitOrRollbackTransaction();
+                TransactionHelper.startTransaction();
+            }
+            if (i == 0) {
+                if (log.isDebugEnabled()) {
+                    log.debug(DummyDocToTxt.formatLogEntry(folder.getRef(), null, desc, issued) + " before barrier 1");
+                }
+                CYCLIC_BARRIERS[1].await();
+            }
+        }
+
+        String queueId = works.getCategoryQueueId(AbstractRenditionBuilderWork.CATEGORY);
+        assertEquals(1, works.listWorkIds(queueId, Work.State.RUNNING).size());
+        assertEquals(1, works.listWorkIds(queueId, Work.State.SCHEDULED).size());
+
+        if (log.isDebugEnabled()) {
+            log.debug(DummyDocToTxt.formatLogEntry(folder.getRef(), null, desc, issued) + " before barrier 2");
+        }
+        CYCLIC_BARRIERS[2].await();
+
+        eventService.waitForAsyncCompletion(5000);
+
+        folder = session.getDocument(folder.getRef());
+        assertEquals(issued, folder.getPropertyValue(sourceDocumentModificationDatePropertyName));
+        for (int i = 0; i < 5; i++) {
+            Rendition rendition = renditionService.getRendition(folder, renditionName, false);
+            assertNotNull(rendition);
+            assertNotNull(rendition.getBlob());
+            String mimeType = rendition.getBlob().getMimeType();
+            if (mimeType != null) {
+                if (mimeType.contains(LazyRendition.EMPTY_MARKER)) {
+                    Thread.sleep(1000);
+                    eventService.waitForAsyncCompletion(5000);
+                    continue;
+                } else if (mimeType.contains(LazyRendition.ERROR_MARKER)) {
+                    fail("Error generating rendition for folder");
+                }
+            }
+            String content = rendition.getBlob().getString();
+            assertNotNull(content);
+            assertTrue(content.contains("dummy"));
+            assertNotNull(desc);
+            assertTrue(content.contains(desc));
+            return;
+        }
+        fail("Could not retrieve rendition for folder");
+    }
+
+    @Test
     public void shouldFilterRenditionDefinitions() throws Exception {
-        runtimeHarness.deployContrib(RENDITION_CORE, RENDITION_FILTERS_COMPONENT_LOCATION);
+        deployer.deploy(RENDITION_CORE + ":" + RENDITION_FILTERS_COMPONENT_LOCATION);
 
         List<RenditionDefinition> availableRenditionDefinitions;
         Rendition rendition;
@@ -856,7 +971,7 @@ public class TestRenditionService {
         DocumentModel doc = session.createDocumentModel("/", "note", "Note");
         doc = session.createDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForNote");
+        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForNote", "zipExport");
 
         rendition = renditionService.getRendition(doc, "renditionOnlyForNote", false);
         assertNotNull(rendition);
@@ -873,49 +988,48 @@ public class TestRenditionService {
         doc = session.createDocumentModel("/", "file", "File");
         doc = session.createDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForFile");
+        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForFile", "zipExport");
 
         doc.setPropertyValue("dc:rights", "Unauthorized");
         session.saveDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
         // renditionOnlyForFile filtered out, unauthorized
-        assertRenditionDefinitions(availableRenditionDefinitions);
+        assertRenditionDefinitions(availableRenditionDefinitions, "zipExport");
 
         // ----- Folder
 
         doc = session.createDocumentModel("/", "folder", "Folder");
         doc = session.createDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForFolder");
-
-        runtimeHarness.undeployContrib(RENDITION_CORE, RENDITION_FILTERS_COMPONENT_LOCATION);
+        assertRenditionDefinitions(availableRenditionDefinitions, "renditionOnlyForFolder", "zipTreeExport",
+                "zipTreeExportLazily");
     }
 
     @Test
     public void shouldFilterRenditionDefinitionProviders() throws Exception {
-        runtimeHarness.deployContrib(RENDITION_CORE, RENDITION_DEFINITION_PROVIDERS_COMPONENT_LOCATION);
+        deployer.deploy(RENDITION_CORE + ":" + RENDITION_DEFINITION_PROVIDERS_COMPONENT_LOCATION);
 
         DocumentModel doc = session.createDocumentModel("/", "note", "Note");
         doc = session.createDocument(doc);
-        List<RenditionDefinition> availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2");
+        List<RenditionDefinition> availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(
+                doc);
+        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2", "zipExport");
 
         doc = session.createDocumentModel("/", "file", "File");
         doc = session.createDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2");
+        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2", "zipExport");
 
         doc.setPropertyValue("dc:rights", "Unauthorized");
         session.saveDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions);
+        assertRenditionDefinitions(availableRenditionDefinitions, "zipExport");
 
         doc = session.createDocumentModel("/", "folder", "Folder");
         doc = session.createDocument(doc);
         availableRenditionDefinitions = renditionService.getAvailableRenditionDefinitions(doc);
-        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2");
-
-        runtimeHarness.undeployContrib(RENDITION_CORE, RENDITION_DEFINITION_PROVIDERS_COMPONENT_LOCATION);
+        assertRenditionDefinitions(availableRenditionDefinitions, "dummyRendition1", "dummyRendition2", "zipTreeExport",
+                "zipTreeExportLazily");
     }
 
     protected static void assertRenditionDefinitions(List<RenditionDefinition> actual, String... otherExpected) {
@@ -925,11 +1039,7 @@ public class TestRenditionService {
                 "lazyAutomation", //
                 "lazyDelayedErrorAutomationRendition", //
                 "renditionDefinitionWithCustomOperationChain", //
-                "xmlExport", //
-                "zipExport", //
-                "zipTreeExport", //
-                "zipTreeExportLazily" //
-        ));
+                "xmlExport"));
         if (otherExpected != null) {
             expected.addAll(Arrays.asList(otherExpected));
             Collections.sort(expected);

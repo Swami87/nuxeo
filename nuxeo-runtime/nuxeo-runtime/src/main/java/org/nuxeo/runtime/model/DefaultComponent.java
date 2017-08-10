@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,13 +79,13 @@ public class DefaultComponent implements Component, Adaptable {
     }
 
     @Override
-    public int getApplicationStartedOrder() {
-        return 1000;
+    public void start(ComponentContext context) {
+        // delegate for now to applicationStarted
+        applicationStarted(context);
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
-        // do nothing by default
+    public void stop(ComponentContext context) throws InterruptedException {
     }
 
     /**

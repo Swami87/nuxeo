@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
-import static org.nuxeo.ecm.core.work.api.Work.State.UNKNOWN;
 import static org.nuxeo.ecm.core.work.api.Work.State.RUNNING;
 import static org.nuxeo.ecm.core.work.api.Work.State.SCHEDULED;
+import static org.nuxeo.ecm.core.work.api.Work.State.UNKNOWN;
 
 import java.io.File;
 import java.io.Serializable;
@@ -40,20 +40,25 @@ import javax.inject.Inject;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.nuxeo.common.logging.SequenceTracer;
 import org.nuxeo.ecm.core.work.api.WorkManager;
 import org.nuxeo.ecm.core.work.api.WorkManager.Scheduling;
 import org.nuxeo.ecm.core.work.api.WorkQueueDescriptor;
 import org.nuxeo.ecm.core.work.api.WorkQueueMetrics;
 import org.nuxeo.runtime.api.Framework;
-import org.nuxeo.runtime.test.NXRuntimeTestCase;
+import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.FileEventsTrackingFeature;
+import org.nuxeo.runtime.test.runner.RuntimeFeature;
+import org.nuxeo.runtime.test.runner.RuntimeHarness;
 import org.nuxeo.runtime.trackers.files.FileEvent;
 
-@Features(FileEventsTrackingFeature.class)
-public class WorkManagerTest extends NXRuntimeTestCase {
+@RunWith(FeaturesRunner.class)
+@Features({ RuntimeFeature.class, FileEventsTrackingFeature.class })
+@Deploy({ "org.nuxeo.ecm.core.event", "org.nuxeo.ecm.core.event.test:test-workmanager-config.xml" })
+public class WorkManagerTest {
 
     protected static class CreateFile extends AbstractWork implements Serializable {
         private final File file;
@@ -90,6 +95,29 @@ public class WorkManagerTest extends NXRuntimeTestCase {
         }
     }
 
+    protected class MetricsTracker {
+        protected String queueId;
+
+        protected WorkQueueMetrics initialMetrics;
+
+        protected MetricsTracker() {
+            this(QUEUE);
+        }
+
+        protected MetricsTracker(String queueId) {
+            this.queueId = queueId;
+            this.initialMetrics = service.getMetrics(QUEUE);
+        }
+
+        public void assertDiff(long scheduled, long running, long completed, long canceled) {
+            long actualScheduled = initialMetrics.getScheduled().longValue() + scheduled;
+            long actualRunning = initialMetrics.getRunning().longValue() + running;
+            long actualCompleted = initialMetrics.getCompleted().longValue() + completed;
+            long actualCanceled = initialMetrics.getCanceled().longValue() + canceled;
+            assertMetrics(actualScheduled, actualRunning, actualCompleted, actualCanceled);
+        }
+    }
+
     protected static final String CATEGORY = "SleepWork";
 
     protected static final String QUEUE = "SleepWork";
@@ -98,32 +126,27 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
     protected boolean dontClearCompletedWork;
 
+    @Inject
+    public FeaturesRunner runner;
+
+    @Inject
+    protected RuntimeHarness harness;
+
+    protected FileEventsTrackingFeature feature;
+
+    @Before
+    public void setUp() throws Exception {
+        feature = runner.getFeature(FileEventsTrackingFeature.class);
+        service = (WorkManagerImpl) Framework.getService(WorkManager.class);
+    }
+
     void assertSetEquals(List<String> expected, List<String> actual) {
-        assertEquals(new HashSet<String>(expected), new HashSet<String>(actual));
+        assertEquals(new HashSet<>(expected), new HashSet<>(actual));
     }
 
     void assertMetrics(long scheduled, long running, long completed, long cancelled) {
         assertEquals(new WorkQueueMetrics(QUEUE, scheduled, running, completed, cancelled), service.getMetrics(QUEUE));
     }
-
-    @Override
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
-        deployBundle("org.nuxeo.ecm.core.event");
-        service = (WorkManagerImpl) Framework.getLocalService(WorkManager.class);
-    }
-
-    protected void doDeploy() throws Exception {
-        deployContrib("org.nuxeo.ecm.core.event.test", "test-workmanager-config.xml");
-    }
-
-    protected void deployAndStart() throws Exception {
-        doDeploy();
-        fireFrameworkStarted();
-        assertMetrics(0,0,0,0);
-    }
-
 
     // overridden for persistence
     public boolean persistent() {
@@ -132,16 +155,13 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
     @Test
     public void testBasics() throws Exception {
-        deployAndStart();
-
+        new MetricsTracker().assertDiff(0, 0, 0, 0);
         assertNotNull(service);
-        assertMetrics(0, 0, 0, 0);
     }
 
     @Test
     public void testWorkManagerConfig() throws Exception {
-        deployAndStart();
-
+        new MetricsTracker().assertDiff(0, 0, 0, 0);
         SleepWork work = new SleepWork(1);
         assertEquals(CATEGORY, work.getCategory());
         assertEquals(QUEUE, service.getCategoryQueueId(CATEGORY));
@@ -155,8 +175,8 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
     @Test
     public void testWorkManagerWork() throws Exception {
-        deployAndStart();
-
+        MetricsTracker tracker = new MetricsTracker();
+        tracker.assertDiff(0, 0, 0, 0);
         int duration = 3000; // ms
         SleepWork work = new SleepWork(duration, false);
         service.schedule(work);
@@ -165,21 +185,19 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
         Thread.sleep(duration / 3);
         assertEquals(RUNNING, service.getWorkState(work.getId()));
-        assertMetrics(0, 1, 0, 0);
+        tracker.assertDiff(0, 1, 0, 0);
 
         Thread.sleep(duration);
-        assertMetrics(0, 0, 1, 0);
+        tracker.assertDiff(0, 0, 1, 0);
 
         // assertTrue(work.getStartTime() != 0);
         // assertTrue(work.getCompletionTime() != 0);
         // assertTrue(work.getCompletionTime() - work.getStartTime() > 0);
     }
 
-
     @Test
     public void testWorkManagerScheduling() throws Exception {
-        deployAndStart();
-
+        MetricsTracker tracker = new MetricsTracker();
         int duration = 5000; // 2s
         SleepWork work1 = new SleepWork(duration, false, "1");
         SleepWork work2 = new SleepWork(duration, false, "2");
@@ -189,11 +207,11 @@ public class WorkManagerTest extends NXRuntimeTestCase {
         service.schedule(work3);
 
         Thread.sleep(duration / 2);
-        assertMetrics(1, 2, 0, 0);
+        tracker.assertDiff(1, 2, 0, 0);
         assertEquals(RUNNING, service.getWorkState("1"));
         assertEquals(RUNNING, service.getWorkState("2"));
         assertEquals(SCHEDULED, service.getWorkState("3"));
-        assertEquals(Arrays.asList("3"), service.listWorkIds(QUEUE, SCHEDULED));
+        assertEquals(Collections.singletonList("3"), service.listWorkIds(QUEUE, SCHEDULED));
         assertSetEquals(Arrays.asList("1", "2"), service.listWorkIds(QUEUE, RUNNING));
         assertSetEquals(Arrays.asList("1", "2", "3"), service.listWorkIds(QUEUE, null));
 
@@ -204,34 +222,29 @@ public class WorkManagerTest extends NXRuntimeTestCase {
             assertEquals(UNKNOWN, work4.getWorkInstanceState());
 
             SleepWork work5 = new SleepWork(duration, false, "1"); // id=1
-            service.schedule(work5, Scheduling.IF_NOT_RUNNING);
+            service.schedule(work5, Scheduling.IF_NOT_RUNNING_OR_SCHEDULED);
             assertEquals(UNKNOWN, work5.getWorkInstanceState());
-
-            SleepWork work6 = new SleepWork(duration, false, "1"); // id=1
-            service.schedule(work6, Scheduling.IF_NOT_RUNNING_OR_SCHEDULED);
-            assertEquals(UNKNOWN, work6.getWorkInstanceState());
         }
 
         SleepWork work7 = new SleepWork(duration, false, "3"); // id=3
         service.schedule(work7, Scheduling.CANCEL_SCHEDULED);
         assertEquals(SCHEDULED, work7.getWorkInstanceState());
-        assertMetrics(1,2,0,1);
+        tracker.assertDiff(1, 2, 0, 1);
 
         SleepAndFailWork work8 = new SleepAndFailWork(0, false, "4");
         service.schedule(work8);
-        assertMetrics(2,2,0,1);
+        tracker.assertDiff(2, 2, 0, 1);
 
         assertTrue(service.awaitCompletion(duration * 3, TimeUnit.MILLISECONDS));
-        assertMetrics(0,0,4,1);
+        tracker.assertDiff(0, 0, 4, 1);
 
         assertEquals(Collections.emptyList(), service.listWorkIds(QUEUE, SCHEDULED));
         assertEquals(Collections.emptyList(), service.listWorkIds(QUEUE, RUNNING));
         assertEquals(Collections.emptyList(), service.listWorkIds(QUEUE, null));
     }
 
-    @Test
     public void testDuplicatedWorks() throws Exception {
-        deployAndStart();
+        MetricsTracker tracker = new MetricsTracker();
         int duration = 2000; // 2s
 
         service.enableProcessing("SleepWork", false);
@@ -241,19 +254,17 @@ public class WorkManagerTest extends NXRuntimeTestCase {
         service.schedule(work1);
         service.schedule(work2);
 
-        assertMetrics(1,0,0,0);
+        tracker.assertDiff(1, 0, 0, 0);
 
         service.enableProcessing("SleepWork", true);
 
-        assertTrue(service.awaitCompletion("SleepWork", duration*2, TimeUnit.MILLISECONDS));
-        assertMetrics(0,0,1,0);
+        assertTrue(service.awaitCompletion("SleepWork", duration * 10, TimeUnit.MILLISECONDS));
+        tracker.assertDiff(0, 0, 1, 0);
     }
 
     @Test
     @Ignore
     public void testWorkManagerShutdown() throws Exception {
-        deployAndStart();
-
         int duration = 2000; // 2s
         SleepWork work1 = new SleepWork(duration, false, "1");
         SleepWork work2 = new SleepWork(duration, false, "2");
@@ -290,20 +301,16 @@ public class WorkManagerTest extends NXRuntimeTestCase {
     }
 
     @Test
+    @Deploy("org.nuxeo.ecm.core.event.test:test-workmanager-disablequeue.xml")
     public void testWorkManagerConfigDisableOneBeforeStart() throws Exception {
-        doDeploy();
         // before first applicationStarted:
         // disable SleepWork queue
-        deployContrib("org.nuxeo.ecm.core.event.test", "test-workmanager-disablequeue.xml");
-        fireFrameworkStarted();
-
         assertTrue(service.isProcessingEnabled("default"));
         assertFalse(service.isProcessingEnabled("SleepWork"));
     }
 
     @Test
     public void testWorkManagerConfigDisableOneAfterStart() throws Exception {
-        deployAndStart();
         // after first applicationStarted:
         // disable SleepWork queue
         service.enableProcessing("SleepWork", false);
@@ -312,18 +319,14 @@ public class WorkManagerTest extends NXRuntimeTestCase {
     }
 
     @Test
+    @Deploy("org.nuxeo.ecm.core.event.test:test-workmanager-disablequeue1.xml")
     public void testWorkManagerConfigDisableAllBeforeStart() throws Exception {
-        doDeploy();
-        deployContrib("org.nuxeo.ecm.core.event.test", "test-workmanager-disablequeue1.xml");
-        fireFrameworkStarted();
-
         assertFalse(service.isProcessingEnabled("default"));
         assertTrue(service.isProcessingEnabled("SleepWork"));
     }
 
     @Test
     public void testWorkManagerConfigDisableAllAfterStart() throws Exception {
-        deployAndStart();
         service.enableProcessing(false);
         assertFalse(service.isProcessingEnabled());
         service.enableProcessing("SleepWork", true);
@@ -332,12 +335,9 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
     @Ignore("NXP-15680")
     @Test
+    @Deploy("org.nuxeo.ecm.core.event.test:test-workmanager-disablequeue.xml")
     public void testWorkManagerDisableProcessing() throws Exception {
-        deployAndStart();
         assumeTrue(persistent());
-
-        // disable SleepWork queue
-        deployContrib("org.nuxeo.ecm.core.event.test", "test-workmanager-disablequeue.xml");
 
         int duration = 2000; // 2s
         SleepWork work1 = new SleepWork(duration, false);
@@ -369,12 +369,10 @@ public class WorkManagerTest extends NXRuntimeTestCase {
 
     @Ignore("NXP-15680")
     @Test
+    @Deploy("org.nuxeo.ecm.core.event.test:test-workmanager-disablequeue2.xml")
     public void testWorkManagerDisableProcessing2() throws Exception {
-        deployAndStart();
         assumeTrue(persistent());
 
-        // disable all queues
-        deployContrib("org.nuxeo.ecm.core.event.test", "test-workmanager-disablequeue2.xml");
         int duration = 2000; // 2s
         SleepWork work1 = new SleepWork(duration, false);
         service.schedule(work1);
@@ -404,23 +402,51 @@ public class WorkManagerTest extends NXRuntimeTestCase {
         assertMetrics(0, 0, 1, 0);
     }
 
-    @Inject
-    public FeaturesRunner runner;
-
-    protected FileEventsTrackingFeature feature;
-
-    @Before
-    public void injectFeature() {
-        feature = runner.getFeature(FileEventsTrackingFeature.class);
-    }
-
     @Test
     public void transientFilesWorkAreCleaned() throws Exception {
-        deployAndStart();
-
         final File file = feature.resolveAndCreate(new File("pfouh"));
         service.schedule(new CreateFile(file));
         service.awaitCompletion(5, TimeUnit.SECONDS);
+        // TODO randomly fails if not waiting for the create file task - why service.awaitCompletion isn't enough?
+        Thread.sleep(10);
+    }
+
+    @Test
+    public void testNoConcurrentJobsWithSameId() throws Exception {
+
+        // create an init work to warm up the service, this is needed only for the embedded redis mode
+        // sometime embedded mode takes around 1s to init, this prevent to put reliable assertion on time execution
+        SleepWork initWork = new SleepWork(1, false, "0");
+        service.schedule(initWork);
+        assertTrue(service.awaitCompletion(5, TimeUnit.SECONDS));
+        assertMetrics(0, 0, 1, 0);
+
+        // Schedule a first work
+        int durationMS = 3000;
+        String workId = "1234";
+        SleepWork work = new SleepWork(durationMS, false, workId);
+        service.schedule(work);
+
+        // wait a bit to make sure it is running
+        Thread.sleep(durationMS / 3);
+        assertMetrics(0, 1, 1, 0);
+
+        // schedule another work with the same workId
+        // don't try to put a different duration, same work id means same work serializatoin
+        SleepWork workbis = new SleepWork(durationMS, false, workId);
+        service.schedule(workbis);
+
+        // wait a bit, the first work is still running, the scheduled work should wait
+        // because we don't want concurrent execution of work with the same workId
+        Thread.sleep(durationMS / 3);
+        assertMetrics(1, 1, 1, 0);
+
+        // wait enough so the first work is done and the second should be running
+        Thread.sleep(durationMS);
+        assertMetrics(0, 1, 2, 0);
+
+        assertTrue(service.awaitCompletion(2 * durationMS, TimeUnit.MILLISECONDS));
+        assertMetrics(0, 0, 3, 0);
     }
 
 }

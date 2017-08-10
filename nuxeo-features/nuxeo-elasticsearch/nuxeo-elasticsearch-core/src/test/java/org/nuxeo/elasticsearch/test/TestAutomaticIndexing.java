@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,17 @@
  *     Thierry Delprat
  *     Benoit Delbosc
  */
-
 package org.nuxeo.elasticsearch.test;
+
+import static org.junit.Assume.assumeTrue;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+import javax.inject.Inject;
 
 import org.apache.log4j.ConsoleAppender;
 import org.apache.log4j.Level;
@@ -35,6 +44,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.core.util.DocumentHelper;
+import org.nuxeo.ecm.core.api.AbstractSession;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -52,12 +62,14 @@ import org.nuxeo.ecm.core.api.security.ACE;
 import org.nuxeo.ecm.core.api.security.ACL;
 import org.nuxeo.ecm.core.api.security.ACP;
 import org.nuxeo.ecm.core.api.security.SecurityConstants;
+import org.nuxeo.ecm.core.api.security.impl.ACLImpl;
 import org.nuxeo.ecm.core.api.security.impl.ACPImpl;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.core.trash.TrashService;
 import org.nuxeo.ecm.core.work.api.WorkManager;
 import org.nuxeo.ecm.platform.tag.TagService;
 import org.nuxeo.elasticsearch.api.ElasticSearchAdmin;
+import org.nuxeo.elasticsearch.api.ElasticSearchIndexing;
 import org.nuxeo.elasticsearch.api.ElasticSearchService;
 import org.nuxeo.elasticsearch.listener.ElasticSearchInlineListener;
 import org.nuxeo.elasticsearch.query.NxQueryBuilder;
@@ -68,22 +80,12 @@ import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.concurrent.TimeUnit;
-
-import javax.inject.Inject;
-
-import static org.junit.Assume.assumeTrue;
-
 /**
  * Test "on the fly" indexing via the listener system
  */
 @RunWith(FeaturesRunner.class)
-@Features({RepositoryElasticSearchFeature.class})
-@Deploy({"org.nuxeo.ecm.platform.tag"})
+@Features({ RepositoryElasticSearchFeature.class })
+@Deploy({ "org.nuxeo.ecm.platform.tag", "org.nuxeo.ecm.platform.ws", "org.nuxeo.ecm.automation.core" })
 @LocalDeploy("org.nuxeo.elasticsearch.core:elasticsearch-test-contrib.xml")
 public class TestAutomaticIndexing {
 
@@ -105,6 +107,9 @@ public class TestAutomaticIndexing {
 
     @Inject
     ElasticSearchAdmin esa;
+
+    @Inject
+    protected ElasticSearchIndexing esi;
 
     @Inject
     protected TagService tagService;
@@ -178,6 +183,62 @@ public class TestAutomaticIndexing {
     }
 
     @Test
+    public void shouldNotIndexRootDocument() throws Exception {
+        startTransaction();
+        // update acp on root document as it is reinit during tear down
+        DocumentModel root = session.getRootDocument();
+        ACP acp = new ACPImpl();
+        ACL acl = new ACLImpl();
+        acl.add(new ACE("Administrator", "Everything", true));
+        acp.addACL(acl);
+        root.setACP(acp, true);
+
+        // check no indexing was performed
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        assertNumberOfCommandProcessed(0);
+
+        // check no root document from search response
+        startTransaction();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
+        Assert.assertEquals(0, searchResponse.getHits().getTotalHits());
+    }
+
+    @Test
+    public void shouldNotIndexRootDocumentDuringReindexAll() throws Exception {
+        startTransaction();
+        // Re-index all repositories
+        for (String repositoryName : esa.getRepositoryNames()) {
+            esa.dropAndInitRepositoryIndex(repositoryName);
+            esi.runReindexingWorker(repositoryName, "SELECT ecm:uuid FROM Document");
+        }
+
+        // check no indexing was performed
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        assertNumberOfCommandProcessed(0);
+
+        // check no root document from search response
+        startTransaction();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
+        Assert.assertEquals(0, searchResponse.getHits().getTotalHits());
+    }
+
+    @Test
     public void shouldIndexDocument() throws Exception {
         startTransaction();
         // create 10 docs
@@ -197,9 +258,40 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(10);
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(10, searchResponse.getHits().getTotalHits());
+    }
+
+    @Test
+    public void shouldIndexImportedDocument() throws Exception {
+        startTransaction();
+        // import one doc
+        DocumentModelImpl doc = new DocumentModelImpl("/", "testDoc", "File");
+        doc.setId(UUID.randomUUID().toString());
+        doc.setPropertyValue("dc:title", "TestMe");
+        session.importDocuments(Collections.singletonList(doc));
+
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        assertNumberOfCommandProcessed(1);
+
+        startTransaction();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
+        Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
     }
 
     @Test
@@ -220,8 +312,14 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(0);
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(0, searchResponse.getHits().getTotalHits());
         Assert.assertFalse(esa.isIndexingInProgress());
     }
@@ -238,8 +336,14 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
 
         // now delete the document
@@ -249,8 +353,14 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(0, searchResponse.getHits().getTotalHits());
     }
 
@@ -270,9 +380,15 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(10);
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setQuery(QueryBuilders.matchQuery("dc:nature", "A")).setFrom(0).setSize(
-                60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setQuery(QueryBuilders.matchQuery("dc:nature", "A"))
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(10, searchResponse.getHits().getTotalHits());
 
         int i = 0;
@@ -291,14 +407,26 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(8);
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setQuery(QueryBuilders.matchQuery("dc:nature", "A")).setFrom(0).setSize(
-                60).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setQuery(QueryBuilders.matchQuery("dc:nature", "A"))
+                            .setFrom(0)
+                            .setSize(60)
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(2, searchResponse.getHits().getTotalHits());
 
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setQuery(QueryBuilders.matchQuery("dc:nature", "B")).setFrom(0).setSize(
-                60).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setQuery(QueryBuilders.matchQuery("dc:nature", "B"))
+                            .setFrom(0)
+                            .setSize(60)
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(8, searchResponse.getHits().getTotalHits());
     }
 
@@ -341,7 +469,8 @@ public class TestAutomaticIndexing {
         waitForCompletion();
 
         startTransaction();
-        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:fulltext='search'"));
+        DocumentModelList ret = ess.query(
+                new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:fulltext='search'"));
         Assert.assertEquals(1, ret.totalSize());
     }
 
@@ -362,7 +491,8 @@ public class TestAutomaticIndexing {
         waitForCompletion();
 
         startTransaction();
-        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dc:source LIKE 'search*'"));
+        DocumentModelList ret = ess.query(
+                new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dc:source LIKE 'search*'"));
         Assert.assertEquals(1, ret.totalSize());
     }
 
@@ -378,26 +508,37 @@ public class TestAutomaticIndexing {
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
-        assertNumberOfCommandProcessed(4);
+        assertNumberOfCommandProcessed(5);
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         // folder, version, file and proxy
         Assert.assertEquals(4, searchResponse.getHits().getTotalHits());
 
         // unpublish
         session.removeDocument(proxy.getRef());
-        DocumentModelList docs = ess.query(new NxQueryBuilder(session)
-                .nxql("SELECT * FROM Document"));
+        DocumentModelList docs = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
         Assert.assertEquals(4, docs.totalSize());
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(3, searchResponse.getHits().getTotalHits());
 
     }
@@ -415,8 +556,8 @@ public class TestAutomaticIndexing {
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
         startTransaction();
-        DocumentModelList docs = ess.query(new NxQueryBuilder(session)
-                .nxql("SELECT * FROM Document WHERE ecm:fulltext = 'foo' AND ecm:isVersion = 0"));
+        DocumentModelList docs = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:fulltext = 'foo' AND ecm:isVersion = 0"));
         Assert.assertEquals(2, docs.totalSize());
 
         doc.setPropertyValue("dc:description", "bar");
@@ -426,8 +567,8 @@ public class TestAutomaticIndexing {
         waitForCompletion();
         startTransaction();
 
-        docs = ess.query(new NxQueryBuilder(session)
-                .nxql("SELECT * FROM Document WHERE ecm:fulltext = 'bar' AND ecm:isVersion = 0"));
+        docs = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:fulltext = 'bar' AND ecm:isVersion = 0"));
         Assert.assertEquals(2, docs.totalSize());
     }
 
@@ -439,27 +580,35 @@ public class TestAutomaticIndexing {
         DocumentModel doc = session.createDocumentModel("/", "file", "File");
         doc = session.createDocument(doc);
 
-        trashService.trashDocuments(Arrays.asList(doc));
+        trashService.trashDocuments(Collections.singletonList(doc));
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
         assertNumberOfCommandProcessed(2);
 
         startTransaction();
-        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:currentLifeCycleState != 'deleted'"));
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:currentLifeCycleState != 'deleted'"));
         Assert.assertEquals(1, ret.totalSize());
-        trashService.undeleteDocuments(Arrays.asList(doc));
+        trashService.undeleteDocuments(Collections.singletonList(doc));
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:currentLifeCycleState != 'deleted'"));
+        ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:currentLifeCycleState != 'deleted'"));
         Assert.assertEquals(2, ret.totalSize());
 
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(2, searchResponse.getHits().getTotalHits());
 
         trashService.purgeDocuments(session, Collections.singletonList(doc.getRef()));
@@ -469,8 +618,14 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
     }
 
@@ -495,8 +650,14 @@ public class TestAutomaticIndexing {
         waitForCompletion();
         startTransaction();
 
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(3, searchResponse.getHits().getTotalHits());
     }
 
@@ -515,9 +676,15 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(3); // doc, tagging relation and tag
 
         startTransaction();
-        SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).setQuery(
-                QueryBuilders.termQuery("ecm:tag", "mytag")).execute().actionGet();
+        SearchResponse searchResponse = esa.getClient()
+                                           .prepareSearch(IDX_NAME)
+                                           .setTypes(TYPE_NAME)
+                                           .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                                           .setFrom(0)
+                                           .setSize(60)
+                                           .setQuery(QueryBuilders.termQuery("ecm:tag", "mytag"))
+                                           .execute()
+                                           .actionGet();
         Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
 
         tagService.tag(session, doc.getId(), "mytagbis", "Administrator");
@@ -527,9 +694,15 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(3); // doc, tagging and new tag
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).setQuery(
-                QueryBuilders.termQuery("ecm:tag", "mytagbis")).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .setQuery(QueryBuilders.termQuery("ecm:tag", "mytagbis"))
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
 
         tagService.untag(session, doc.getId(), "mytag", "Administrator");
@@ -539,13 +712,25 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(2); // doc, tagging
 
         startTransaction();
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).setQuery(
-                QueryBuilders.termQuery("ecm:tag", "mytagbis")).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .setQuery(QueryBuilders.termQuery("ecm:tag", "mytagbis"))
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(1, searchResponse.getHits().getTotalHits());
-        searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
-                SearchType.DFS_QUERY_THEN_FETCH).setFrom(0).setSize(60).setQuery(
-                QueryBuilders.termQuery("ecm:tag", "mytag")).execute().actionGet();
+        searchResponse = esa.getClient()
+                            .prepareSearch(IDX_NAME)
+                            .setTypes(TYPE_NAME)
+                            .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                            .setFrom(0)
+                            .setSize(60)
+                            .setQuery(QueryBuilders.termQuery("ecm:tag", "mytag"))
+                            .execute()
+                            .actionGet();
         Assert.assertEquals(0, searchResponse.getHits().getTotalHits());
     }
 
@@ -590,7 +775,8 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(1);
 
         startTransaction();
-        DocumentModelList docs = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document Where dc:title='NewTitle'"));
+        DocumentModelList docs = ess.query(
+                new NxQueryBuilder(session).nxql("SELECT * FROM Document Where dc:title='NewTitle'"));
         Assert.assertEquals(1, docs.totalSize());
     }
 
@@ -613,7 +799,8 @@ public class TestAutomaticIndexing {
         assertNumberOfCommandProcessed(2);
 
         startTransaction();
-        DocumentModelList docs = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document Where dc:title='NewTitle'"));
+        DocumentModelList docs = ess.query(
+                new NxQueryBuilder(session).nxql("SELECT * FROM Document Where dc:title='NewTitle'"));
         Assert.assertEquals(1, docs.totalSize());
     }
 
@@ -696,8 +883,8 @@ public class TestAutomaticIndexing {
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
-        // 3 docs (2 files + 1 folder checkout) + 2 versions of folder
-        assertNumberOfCommandProcessed(5);
+        // 3 docs (2 files + 1 folder checkout) + 2 versions of folder + 2 versions (because of isLastVersions)
+        assertNumberOfCommandProcessed(7);
         startTransaction();
         DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
         Assert.assertEquals(5, ret.totalSize());
@@ -711,6 +898,114 @@ public class TestAutomaticIndexing {
 
         ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
         Assert.assertEquals(4, ret.totalSize());
+    }
+
+    @Test
+    public void shouldIndexLatestVersions() throws Exception {
+        createADocumentWith3Versions();
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(4, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestVersion = 1"));
+        Assert.assertEquals(1, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 1"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("v3", ret.get(0).getTitle());
+    }
+
+    @Test
+    public void shouldNotIndexLatestVersions() throws Exception {
+        System.setProperty(AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY, "true");
+        try {
+            createADocumentWith3Versions();
+        } finally {
+            System.clearProperty(AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY);
+        }
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(4, ret.totalSize());
+
+        // but isLatestVersion and isLatestMajorVersion are not updated
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestVersion = 1"));
+        Assert.assertEquals(3, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 1"));
+        Assert.assertEquals(3, ret.totalSize());
+
+    }
+
+    protected void createADocumentWith3Versions() throws Exception {
+        startTransaction();
+        DocumentModel file1 = new DocumentModelImpl("/", "testfile1", "File");
+        file1 = session.createDocument(file1);
+        file1.setPropertyValue("dc:title", "v1");
+        file1 = session.saveDocument(file1);
+        DocumentRef v1 = file1.checkIn(VersioningOption.MAJOR, "init v1");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        file1.setPropertyValue("dc:title", "v2");
+        file1 = session.saveDocument(file1);
+        DocumentRef v2 = file1.checkIn(VersioningOption.MAJOR, "update v2");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        file1.setPropertyValue("dc:title", "v3");
+        file1 = session.saveDocument(file1);
+        DocumentRef v3 = file1.checkIn(VersioningOption.MAJOR, "update v3");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+    }
+
+    @Test
+    public void shouldIndexUpdatedProxy() throws Exception {
+        startTransaction();
+        DocumentModel folder1 = new DocumentModelImpl("/", "testfolder1", "Folder");
+        folder1 = session.createDocument(folder1);
+        folder1 = session.saveDocument(folder1);
+
+        DocumentModel file1 = new DocumentModelImpl("/", "testfile1", "File");
+        file1 = session.createDocument(file1);
+        file1.setPropertyValue("dc:title", "Title before proxy update");
+        file1 = session.saveDocument(file1);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        // Create proxy
+        DocumentModel proxy = session.createProxy(file1.getRef(), folder1.getRef());
+        proxy = session.saveDocument(proxy);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        // Now update it
+        proxy.setPropertyValue("dc:title", "Title after proxy update");
+        proxy = session.saveDocument(proxy);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(3, ret.totalSize());
+
+        // Check that proxy was updated in ES
+        ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:isProxy = 1 and dc:title='Title after proxy update'"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("Title after proxy update", ret.get(0).getTitle());
+
+        // Check that live document was updated in ES
+        ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:isProxy = 0 and dc:title='Title after proxy update'"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("Title after proxy update", ret.get(0).getTitle());
+
     }
 
     @Test
@@ -742,6 +1037,20 @@ public class TestAutomaticIndexing {
         waitForCompletion();
         assertNumberOfCommandProcessed(3);
         startTransaction();
+
+    }
+
+
+    @Test
+    public void sortOnUnmappedField() throws Exception {
+
+        // sort on a field that does not exist on the mapping and not present in the index
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document ORDER BY dc:source"));
+        Assert.assertEquals(0, ret.totalSize());
+
+        // sort on internal field
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document ORDER BY ecm:pos"));
+        Assert.assertEquals(0, ret.totalSize());
 
     }
 }

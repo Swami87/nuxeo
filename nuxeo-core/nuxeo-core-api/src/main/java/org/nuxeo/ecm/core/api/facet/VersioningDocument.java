@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.core.api.facet;
 
 /**
@@ -27,18 +24,6 @@ package org.nuxeo.ecm.core.api.facet;
  * @author <a href="mailto:dm@nuxeo.com">Dragos Mihalache</a>
  */
 public interface VersioningDocument {
-
-    /**
-     * @deprecated use {@link VersioningService#VERSIONING_OPTION} instead
-     */
-    @Deprecated
-    String CREATE_SNAPSHOT_ON_SAVE_KEY = "CREATE_SNAPSHOT_ON_SAVE";
-
-    /**
-     * @deprecated use {@link VersioningService#VERSIONING_OPTION} instead
-     */
-    @Deprecated
-    String KEY_FOR_INC_OPTION = "VersioningOption";
 
     /**
      * Key used in options map to send current versions to versioning listener so it will know what version the document
@@ -52,18 +37,6 @@ public interface VersioningDocument {
      * Key used in options map to send the UUID of the version being restored to the listeners.
      */
     String RESTORED_VERSION_UUID_KEY = "RESTORED_VERSION_UUID";
-
-    /**
-     * @deprecated use {@link VersioningService#getVersionLabel} instead
-     */
-    @Deprecated
-    Long getMinorVersion();
-
-    /**
-     * @deprecated use {@link VersioningService#getVersionLabel} instead
-     */
-    @Deprecated
-    Long getMajorVersion();
 
     /**
      * Returns a string representation of the version number.

@@ -18,10 +18,12 @@
  */
 package org.nuxeo.ecm.core.storage.dbs;
 
+import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_CHANGE_TOKEN;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ID;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_NAME;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_PARENT_ID;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_PRIMARY_TYPE;
+import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_SYS_CHANGE_TOKEN;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_VERSION_SERIES_ID;
 
 import java.io.Serializable;
@@ -29,6 +31,7 @@ import java.io.Serializable;
 import org.nuxeo.ecm.core.model.Document;
 import org.nuxeo.ecm.core.storage.State.StateDiff;
 import org.nuxeo.ecm.core.storage.StateHelper;
+import org.nuxeo.ecm.core.storage.BaseDocument;
 import org.nuxeo.ecm.core.storage.State;
 
 /**
@@ -40,6 +43,7 @@ import org.nuxeo.ecm.core.storage.State;
  */
 public class DBSDocumentState {
 
+    private static final String UNDEFINED_PARENT_ID = "_undefined_";
     /**
      * The current state.
      */
@@ -49,6 +53,10 @@ public class DBSDocumentState {
      * When non-null, the original state (otherwise the state hasn't been modified).
      */
     protected State originalState;
+
+    private String id;
+
+    private String parentId = UNDEFINED_PARENT_ID;
 
     /**
      * Constructs an empty state.
@@ -122,11 +130,22 @@ public class DBSDocumentState {
     }
 
     public Serializable get(String key) {
+        if (KEY_ID.equals(key)) {
+            return getId();
+        } else if (KEY_PARENT_ID.equals(key)) {
+            return getParentId();
+        }
         return state.get(key);
     }
 
     public void put(String key, Serializable value) {
         markDirty();
+
+        if (KEY_ID.equals(key)) {
+            id = (String) value;
+        } else if (KEY_PARENT_ID.equals(key)) {
+            parentId = (String) value;
+        }
         state.put(key, value);
     }
 
@@ -135,11 +154,18 @@ public class DBSDocumentState {
     }
 
     public String getId() {
-        return (String) get(KEY_ID);
+        if (id == null) {
+            id = (String) state.get(KEY_ID);
+        }
+        return id;
     }
 
     public String getParentId() {
-        return (String) get(KEY_PARENT_ID);
+        // use a marker because parentId can be null
+        if (parentId == UNDEFINED_PARENT_ID) {
+            parentId = (String) state.get(KEY_PARENT_ID);
+        }
+        return parentId;
     }
 
     public String getName() {
@@ -152,6 +178,20 @@ public class DBSDocumentState {
 
     public String getVersionSeriesId() {
         return (String) get(KEY_VERSION_SERIES_ID);
+    }
+
+    public Long getSysChangeToken() {
+        return (Long) get(KEY_SYS_CHANGE_TOKEN);
+    }
+
+    public Long getChangeToken() {
+        return (Long) get(KEY_CHANGE_TOKEN);
+    }
+
+    public boolean validateUserVisibleChangeToken(String userVisibleChangeToken) {
+        Long sysChangeToken = getSysChangeToken();
+        Long changeToken = getChangeToken();
+        return BaseDocument.validateUserVisibleChangeToken(sysChangeToken, changeToken, userVisibleChangeToken);
     }
 
     @Override

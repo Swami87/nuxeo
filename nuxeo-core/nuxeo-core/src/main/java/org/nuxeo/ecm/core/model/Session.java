@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.api.VersionModel;
 import org.nuxeo.ecm.core.api.security.ACP;
 import org.nuxeo.ecm.core.query.QueryFilter;
@@ -60,6 +61,29 @@ public interface Session {
             boolean distinctDocuments, Object[] params);
 
     /**
+     * Does a query and fetch the individual results as maps.
+     *
+     * @since 7.10-HF25, 8.10-HF06, 9.2
+     */
+    PartialList<Map<String, Serializable>> queryProjection(String query, String queryType, QueryFilter queryFilter,
+            boolean distinctDocuments, long countUpTo, Object[] params);
+
+    /**
+     * Executes the given query and returns the first batch of results of batchSize, next batch must be requested within
+     * the keepAliveSeconds delay.
+     * 
+     * @since 8.4
+     */
+    ScrollResult scroll(String query, int batchSize, int keepAliveSeconds);
+
+    /**
+     * Get the next batch of result.
+     * 
+     * @since 8.4
+     */
+    ScrollResult scroll(String scrollId);
+
+    /**
      * Gets the lock manager for this session.
      *
      * @return the lock manager
@@ -80,11 +104,6 @@ public interface Session {
     boolean isLive();
 
     /**
-     * Returns {@code true} if all sessions in the current thread share the same state.
-     */
-    boolean isStateSharedByAllThreadSessions();
-
-    /**
      * Closes this session. Does not save.
      */
     void close();
@@ -92,8 +111,6 @@ public interface Session {
     /**
      * Gets the document at the given path, if any.
      *
-     * @param path
-     * @return
      * @throws DocumentNotFoundException if the document doesn't exist
      */
     Document resolvePath(String path) throws DocumentNotFoundException;
@@ -125,10 +142,6 @@ public interface Session {
      * Copies the source document to the given folder.
      * <p>
      * If the destination document is not a folder, an exception is thrown.
-     *
-     * @param src
-     * @param dst
-     * @param name
      */
     Document copy(Document src, Document dst, String name);
 

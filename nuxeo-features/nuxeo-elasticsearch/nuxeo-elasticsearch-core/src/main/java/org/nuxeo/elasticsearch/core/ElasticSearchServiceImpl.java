@@ -64,8 +64,8 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
 
     private static final java.lang.String LOG_MIN_DURATION_FETCH_KEY = "org.nuxeo.elasticsearch.core.log_min_duration_fetch_ms";
 
-    private static final long LOG_MIN_DURATION_FETCH_NS = Long.parseLong(Framework.getProperty(
-            LOG_MIN_DURATION_FETCH_KEY, "200")) * 1000000;
+    private static final long LOG_MIN_DURATION_FETCH_NS = Long.parseLong(
+            Framework.getProperty(LOG_MIN_DURATION_FETCH_KEY, "200")) * 1000000;
 
     // Metrics
     protected final MetricRegistry registry = SharedMetricRegistries.getOrCreate(MetricsService.class.getName());
@@ -111,7 +111,7 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
     @Override
     public EsResult queryAndAggregate(NxQueryBuilder queryBuilder) {
         SearchResponse response = search(queryBuilder);
-        List<Aggregate> aggs = getAggregates(queryBuilder, response);
+        List<Aggregate<Bucket>> aggs = getAggregates(queryBuilder, response);
         if (queryBuilder.returnsDocuments()) {
             DocumentModelListImpl docs = getDocumentModels(queryBuilder, response);
             return new EsResult(docs, aggs, response);
@@ -127,11 +127,6 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
         return scroll(queryBuilder, SearchType.DFS_QUERY_THEN_FETCH, keepAlive);
     }
 
-    @Override
-    public EsScrollResult scanAndScroll(NxQueryBuilder queryBuilder, long keepAlive) {
-        return scroll(queryBuilder, SearchType.SCAN, keepAlive);
-    }
-
     protected EsScrollResult scroll(NxQueryBuilder queryBuilder, SearchType searchType, long keepAlive) {
         SearchResponse response = searchScroll(queryBuilder, searchType, keepAlive);
         return getScrollResults(queryBuilder, response, response.getScrollId(), keepAlive);
@@ -142,6 +137,20 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
         SearchResponse response = nextScroll(scrollResult.getScrollId(), scrollResult.getKeepAlive());
         return getScrollResults(scrollResult.getQueryBuilder(), response, response.getScrollId(),
                 scrollResult.getKeepAlive());
+    }
+
+    @Override
+    public void clearScroll(EsScrollResult scrollResult) {
+        clearScroll(scrollResult.getScrollId());
+    }
+
+    protected void clearScroll(String scrollId) {
+        if (log.isDebugEnabled()) {
+            log.debug(String.format(
+                    "Clear scroll : curl -XDELETE 'http://localhost:9200/_search/scroll' -d '{\"scroll_id\" : [\"%s\"]}'",
+                    scrollId));
+        }
+        esa.getClient().prepareClearScroll().addScrollId(scrollId).execute().actionGet();
     }
 
     protected EsScrollResult getScrollResults(NxQueryBuilder queryBuilder, SearchResponse response, String scrollId,
@@ -164,11 +173,9 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
             ret.setTotalSize(totalSize);
             return ret;
         }
-        Context stopWatch = fetchTimer.time();
-        Fetcher fetcher = queryBuilder.getFetcher(response, esa.getRepositoryMap());
-        try {
+        try (Context stopWatch = fetchTimer.time()) {
+            Fetcher fetcher = queryBuilder.getFetcher(response, esa.getRepositoryMap());
             ret = fetcher.fetchDocuments();
-        } finally {
             logMinDurationFetch(stopWatch.stop(), totalSize);
         }
         ret.setTotalSize(totalSize);
@@ -187,7 +194,7 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
         }
     }
 
-    protected List<Aggregate> getAggregates(NxQueryBuilder queryBuilder, SearchResponse response) {
+    protected List<Aggregate<Bucket>> getAggregates(NxQueryBuilder queryBuilder, SearchResponse response) {
         for (AggregateEsBase<? extends Bucket> agg : queryBuilder.getAggregates()) {
             InternalFilter filter = response.getAggregations().get(NxQueryBuilder.getAggregateFilterId(agg));
             if (filter == null) {
@@ -200,7 +207,7 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
             agg.parseEsBuckets(mba.getBuckets());
         }
         @SuppressWarnings("unchecked")
-        List<Aggregate> ret = (List<Aggregate>) (List<?>) queryBuilder.getAggregates();
+        List<Aggregate<Bucket>> ret = (List<Aggregate<Bucket>>) (List<?>) queryBuilder.getAggregates();
         return ret;
     }
 
@@ -209,42 +216,33 @@ public class ElasticSearchServiceImpl implements ElasticSearchService {
     }
 
     protected SearchResponse search(NxQueryBuilder query) {
-        Context stopWatch = searchTimer.time();
-        try {
+        try (Context ignored = searchTimer.time()){
             SearchType searchType = SearchType.DFS_QUERY_THEN_FETCH;
             SearchRequestBuilder request = buildEsSearchRequest(query, searchType);
             logSearchRequest(request, query, searchType);
             SearchResponse response = request.execute().actionGet();
             logSearchResponse(response);
             return response;
-        } finally {
-            stopWatch.stop();
         }
     }
 
     protected SearchResponse searchScroll(NxQueryBuilder query, SearchType searchType, long keepAlive) {
-        Context stopWatch = searchTimer.time();
-        try {
+        try (Context ignored = searchTimer.time()){
             SearchRequestBuilder request = buildEsSearchScrollRequest(query, searchType, keepAlive);
             logSearchRequest(request, query, searchType, keepAlive);
             SearchResponse response = request.execute().actionGet();
             logSearchResponse(response);
             return response;
-        } finally {
-            stopWatch.stop();
         }
     }
 
     protected SearchResponse nextScroll(String scrollId, long keepAlive) {
-        Context stopWatch = scrollTimer.time();
-        try {
+        try (Context ignored = scrollTimer.time()) {
             SearchScrollRequestBuilder request = buildEsScrollRequest(scrollId, keepAlive);
             logScrollRequest(scrollId, keepAlive);
             SearchResponse response = request.execute().actionGet();
             logSearchResponse(response);
             return response;
-        } finally {
-            stopWatch.stop();
         }
     }
 

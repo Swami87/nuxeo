@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  *
  * Contributors:
  *     Maxime Hilaire
- *
  */
 package org.nuxeo.ecm.core.cache;
 
@@ -38,7 +37,7 @@ public final class CacheRegistry extends ContributionFragmentRegistry<CacheDescr
     private static final Log log = LogFactory.getLog(CacheRegistry.class);
 
     // map of cache
-    protected final Map<String, CacheDescriptor> caches = new HashMap<String, CacheDescriptor>();
+    protected final Map<String, CacheDescriptor> caches = new HashMap<>();
 
     protected boolean started;
 
@@ -59,8 +58,8 @@ public final class CacheRegistry extends ContributionFragmentRegistry<CacheDescr
         }
 
         if (caches.containsKey(name)) {
-            throw new IllegalStateException(String.format(
-                    "Another cache has already been registered for the given name %s", name));
+            log.warn(String.format("Another cache has already been registered for the given name %s", name));
+            return;
         }
 
         caches.put(name, descriptor);
@@ -80,7 +79,8 @@ public final class CacheRegistry extends ContributionFragmentRegistry<CacheDescr
         String name = origContrib.name;
         CacheDescriptor cache = caches.remove(name);
         if (cache == null) {
-            throw new IllegalStateException("No such cache registered" + name);
+            log.warn("No such cache registered" + name);
+            return;
         }
         try {
             cache.stop();
@@ -108,19 +108,28 @@ public final class CacheRegistry extends ContributionFragmentRegistry<CacheDescr
 
     }
 
-    public CacheAttributesChecker getCache(String name) {
+    public Cache getCache(String name) {
         if (caches.containsKey(name)) {
-            return caches.get(name).cacheChecker;
+            return caches.get(name).cache;
         }
         return null;
     }
 
-    public List<CacheAttributesChecker> getCaches() {
-        List<CacheAttributesChecker> res = new ArrayList<CacheAttributesChecker>(caches.size());
+    public List<Cache> getCaches() {
+        List<Cache> res = new ArrayList<>(caches.size());
         for (CacheDescriptor desc : caches.values()) {
-            res.add(desc.cacheChecker);
+            res.add(desc.cache);
         }
         return res;
+    }
+
+    /**
+     * Invalidate all caches
+     * 
+     * @since 9.1
+     */
+    public void invalidateAll() {
+        caches.values().forEach(CacheDescriptor::invalidateAll);
     }
 
     public void start() {

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2009 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2009-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public class NavTreeService extends DefaultComponent {
         if (NAVTREE_EP.equals(extensionPoint)) {
             NavTreeDescriptor contrib = (NavTreeDescriptor) contribution;
             registry.addContribution(contrib);
-            getActionService().getActionRegistry().addAction(contrib.getAction());
+            getActionService().addAction(contrib.getAction());
         }
     }
 
@@ -70,7 +70,7 @@ public class NavTreeService extends DefaultComponent {
         if (NAVTREE_EP.equals(extensionPoint)) {
             NavTreeDescriptor contrib = (NavTreeDescriptor) contribution;
             registry.removeContribution(contrib);
-            getActionService().getActionRegistry().removeAction(contrib.getTreeId());
+            getActionService().removeAction(contrib.getTreeId());
         }
     }
 

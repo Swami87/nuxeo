@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +45,7 @@ import javax.transaction.TransactionManager;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.logging.SequenceTracer;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.event.EventServiceComponent;
 import org.nuxeo.ecm.core.work.WorkQueuing.Listener;
 import org.nuxeo.ecm.core.work.api.Work;
@@ -53,12 +55,12 @@ import org.nuxeo.ecm.core.work.api.WorkQueueDescriptor;
 import org.nuxeo.ecm.core.work.api.WorkQueueMetrics;
 import org.nuxeo.ecm.core.work.api.WorkQueuingDescriptor;
 import org.nuxeo.ecm.core.work.api.WorkSchedulePath;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.metrics.MetricsService;
+import org.nuxeo.runtime.metrics.NuxeoMetricSet;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
+import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
@@ -133,11 +135,6 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     protected WorkCompletionSynchronizer completionSynchronizer;
 
     @Override
-    public void activate(ComponentContext context) {
-        Framework.addListener(new ShutdownListener());
-    }
-
-    @Override
     public void registerContribution(Object contribution, String extensionPoint, ComponentInstance contributor) {
         if (QUEUES_EP.equals(extensionPoint)) {
             registerWorkQueueDescriptor((WorkQueueDescriptor) contribution);
@@ -168,7 +165,7 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
                         + " with no processing/queuing");
                 return;
             }
-            String what = processing == null ? "" : (" processing=" + processing);
+            String what = " processing=" + processing;
             what += queuing == null ? "" : (" queuing=" + queuing);
             log.info("Setting on all work queues:" + what);
             // activate/deactivate processing/queuing on all queues
@@ -196,38 +193,64 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
         log.info("Unregistered work queue " + id);
     }
 
+    void initializeQueue(WorkQueueDescriptor config) {
+        if (WorkQueueDescriptor.ALL_QUEUES.equals(config.id)) {
+            throw new IllegalArgumentException("cannot initialize all queues");
+        }
+        if (queuing.getQueue(config.id) != null) {
+            throw new IllegalStateException("work queue " + config.id + " is already initialized");
+        }
+        if (executors.containsKey(config.id)) {
+            throw new IllegalStateException("work queue " + config.id + " already have an executor");
+        }
+        NuxeoBlockingQueue queue = queuing.init(config);
+        ThreadFactory threadFactory = new NamedThreadFactory(THREAD_PREFIX + config.id + "-");
+        int maxPoolSize = config.getMaxThreads();
+        WorkThreadPoolExecutor executor = new WorkThreadPoolExecutor(maxPoolSize, maxPoolSize, 0, TimeUnit.SECONDS,
+                queue, threadFactory);
+        // prestart all core threads so that direct additions to the queue
+        // (from another Nuxeo instance) can be seen
+        executor.prestartAllCoreThreads();
+        executors.put(config.id, executor);
+        log.info("Initialized work queue " + config.id + " " + config.toEffectiveString());
+    }
+
     void activateQueue(WorkQueueDescriptor config) {
         if (WorkQueueDescriptor.ALL_QUEUES.equals(config.id)) {
-            return;
-        }
-        NuxeoBlockingQueue queue = queuing.getQueue(config.id);
-        if (queue == null) {
-            queue = queuing.init(config);
-        }
-        WorkThreadPoolExecutor executor = executors.get(config.id);
-        if (executor == null) {
-            ThreadFactory threadFactory = new NamedThreadFactory(THREAD_PREFIX + config.id + "-");
-            int maxPoolSize = config.getMaxThreads();
-            executor = new WorkThreadPoolExecutor(maxPoolSize, maxPoolSize,
-                    0, TimeUnit.SECONDS,
-                    queue, threadFactory);
-            // prestart all core threads so that direct additions to the queue
-            // (from another Nuxeo instance) can be seen
-            executor.prestartAllCoreThreads();
-            executors.put(config.id, executor);
+            throw new IllegalArgumentException("cannot activate all queues");
         }
         queuing.setActive(config.id, config.isProcessingEnabled());
         log.info("Activated work queue " + config.id + " " + config.toEffectiveString());
+        // Enable metrics
+        if (config.isProcessingEnabled()) {
+            activateQueueMetrics(config.id);
+        }
     }
 
     void deactivateQueue(WorkQueueDescriptor config) {
         if (WorkQueueDescriptor.ALL_QUEUES.equals(config.id)) {
-            return;
+            throw new IllegalArgumentException("cannot deactivate all queues");
+        }
+        // Disable metrics
+        if (config.isProcessingEnabled()) {
+            deactivateQueueMetrics(config.id);
         }
         queuing.setActive(config.id, false);
-        WorkThreadPoolExecutor executor = executors.remove(config.id);
-        executor.shutdownAndSuspend();
         log.info("Deactivated work queue " + config.id);
+    }
+
+    void activateQueueMetrics(String queueId) {
+        NuxeoMetricSet queueMetrics = new NuxeoMetricSet("nuxeo", "works", "total", queueId);
+        queueMetrics.putGauge(() -> getMetrics(queueId).scheduled, "scheduled", "count");
+        queueMetrics.putGauge(() -> getMetrics(queueId).running, "running");
+        queueMetrics.putGauge(() -> getMetrics(queueId).completed, "completed");
+        queueMetrics.putGauge(() -> getMetrics(queueId).canceled, "canceled");
+        registry.registerAll(queueMetrics);
+    }
+
+    void deactivateQueueMetrics(String queueId) {
+        String queueMetricsName = MetricRegistry.name("nuxeo", "works", "total", queueId);
+        registry.removeMatching((name, metric) -> name.startsWith(queueMetricsName));
     }
 
     void registerWorkQueuingDescriptor(WorkQueuingDescriptor descr) {
@@ -249,18 +272,16 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     @Override
     public boolean isQueuingEnabled(String queueId) {
         WorkQueueDescriptor wqd = getWorkQueueDescriptor(queueId);
-        return wqd == null ? false : wqd.isQueuingEnabled();
+        return wqd != null && wqd.isQueuingEnabled();
     }
 
     @Override
     public void enableProcessing(boolean value) {
-        for (String queueId : workQueueConfig.getQueueIds()) {
-            queuing.getQueue(queueId).setActive(value);
-        }
+        workQueueConfig.getQueueIds().forEach(id -> enableProcessing(id, value));
     }
 
     @Override
-    public void enableProcessing(String queueId, boolean value) throws InterruptedException {
+    public void enableProcessing(String queueId, boolean value) {
         WorkQueueDescriptor config = workQueueConfig.get(queueId);
         if (config == null) {
             throw new IllegalArgumentException("no such queue " + queueId);
@@ -284,6 +305,9 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
 
     @Override
     public boolean isProcessingEnabled(String queueId) {
+        if (queueId == null) {
+            return isProcessingEnabled();
+        }
         return queuing.getQueue(queueId).active;
     }
 
@@ -321,8 +345,14 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         init();
+    }
+
+    @Override
+    public void stop(ComponentContext context) throws InterruptedException {
+        // do nothing: we shutdown the thread pool at first before stopping any component
+        // see LifeCycleHandler.beforeStop
     }
 
     protected volatile boolean started = false;
@@ -343,17 +373,44 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             started = true;
             workQueueConfig.index();
             for (String id : workQueueConfig.getQueueIds()) {
-                activateQueue(workQueueConfig.get(id));
+                initializeQueue(workQueueConfig.get(id));
             }
+
+            Framework.getRuntime().getComponentManager().addListener(new ComponentManager.LifeCycleHandler() {
+                @Override
+                public void beforeStop(ComponentManager mgr, boolean isStandby) {
+                    for (String id : workQueueConfig.getQueueIds()) {
+                        deactivateQueue(workQueueConfig.get(id));
+                    }
+                    try {
+                        if (!shutdown(10, TimeUnit.SECONDS)) {
+                            log.error("Some processors are still active");
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new NuxeoException("Interrupted while stopping work manager thread pools", e);
+                    }
+                }
+
+                @Override
+                public void afterStart(ComponentManager mgr, boolean isResume) {
+                    for (String id : workQueueConfig.getQueueIds()) {
+                        activateQueue(workQueueConfig.get(id));
+                    }
+                }
+
+                @Override
+                public void afterStop(ComponentManager mgr, boolean isStandby) {
+                    Framework.getRuntime().getComponentManager().removeListener(this);
+                }
+            });
         }
     }
 
     protected WorkThreadPoolExecutor getExecutor(String queueId) {
         if (!started) {
-            if (Framework.isTestModeSet() && !Framework.getRuntime()
-                    .isShuttingDown()) {
-                LogFactory.getLog(WorkManagerImpl.class)
-                        .warn("Lazy starting of work manager in test mode");
+            if (Framework.isTestModeSet() && !Framework.getRuntime().isShuttingDown()) {
+                LogFactory.getLog(WorkManagerImpl.class).warn("Lazy starting of work manager in test mode");
                 init();
             } else {
                 throw new IllegalStateException("Work manager not started, could not access to executors");
@@ -373,9 +430,7 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     @Override
     public boolean shutdownQueue(String queueId, long timeout, TimeUnit unit) throws InterruptedException {
         WorkThreadPoolExecutor executor = getExecutor(queueId);
-        boolean terminated = shutdownExecutors(Collections.singleton(executor), timeout, unit);
-        removeExecutor(queueId); // start afresh
-        return terminated;
+        return shutdownExecutors(Collections.singleton(executor), timeout, unit);
     }
 
     protected boolean shutdownExecutors(Collection<WorkThreadPoolExecutor> list, long timeout, TimeUnit unit)
@@ -412,31 +467,10 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     public boolean shutdown(long timeout, TimeUnit unit) throws InterruptedException {
         shutdownInProgress = true;
         try {
-            return shutdownExecutors(executors.values(), timeout, unit);
+            return shutdownExecutors(new ArrayList<>(executors.values()), timeout, unit);
         } finally {
             shutdownInProgress = false;
             started = false;
-            completionSynchronizer = null;
-            executors.clear();
-            queuing = null;
-        }
-    }
-
-    protected class ShutdownListener implements RuntimeServiceListener {
-        @Override
-        public void handleEvent(RuntimeServiceEvent event) {
-            if (RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP != event.id) {
-                return;
-            }
-            Framework.removeListener(this);
-            try {
-                if (!shutdown(10, TimeUnit.SECONDS)) {
-                    log.error("Some processors are still active");
-                }
-            } catch (InterruptedException cause) {
-                Thread.currentThread().interrupt();
-                log.error("Interrupted during works manager shutdown, continuing runtime shutdown", cause);
-            }
         }
     }
 
@@ -484,8 +518,7 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
 
         public NamedThreadFactory(String prefix) {
             SecurityManager sm = System.getSecurityManager();
-            group = sm == null ? Thread.currentThread()
-                    .getThreadGroup() : sm.getThreadGroup();
+            group = sm == null ? Thread.currentThread().getThreadGroup() : sm.getThreadGroup();
             this.prefix = prefix;
         }
 
@@ -495,14 +528,8 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             Thread thread = new Thread(group, r, name);
             // do not set daemon
             thread.setPriority(Thread.NORM_PRIORITY);
-            thread.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-
-                @Override
-                public void uncaughtException(Thread t, Throwable e) {
-                    LogFactory.getLog(WorkManagerImpl.class)
-                            .error("Uncaught error on thread " + t.getName(), e);
-                }
-            });
+            thread.setUncaughtExceptionHandler((t,
+                    e) -> LogFactory.getLog(WorkManagerImpl.class).error("Uncaught error on thread " + t.getName(), e));
             return thread;
         }
     }
@@ -539,12 +566,11 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
 
         protected final Timer workTimer;
 
-
-        protected WorkThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                TimeUnit unit, NuxeoBlockingQueue queue, ThreadFactory threadFactory) {
+        protected WorkThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit,
+                NuxeoBlockingQueue queue, ThreadFactory threadFactory) {
             super(corePoolSize, maximumPoolSize, keepAliveTime, unit, queue, threadFactory);
             queueId = queue.queueId;
-            running = new ConcurrentLinkedQueue<Work>();
+            running = new ConcurrentLinkedQueue<>();
             // init metrics
             scheduledCount = registry.counter(MetricRegistry.name("nuxeo", "works", queueId, "scheduled", "count"));
             runningCount = registry.counter(MetricRegistry.name("nuxeo", "works", queueId, "running"));
@@ -579,9 +605,6 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
         /**
          * go through the queue instead of using super.execute which may skip the queue and hand off to a thread
          * directly
-         *
-         * @param work
-         * @throws RuntimeException
          */
         protected void submit(Work work) throws RuntimeException {
             queuing.workSchedule(queueId, work);
@@ -590,10 +613,10 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
         @Override
         protected void beforeExecute(Thread t, Runnable r) {
             Work work = WorkHolder.getWork(r);
-            if (started == false || shutdownInProgress == true) {
+            if (isShutdown()) {
                 work.setWorkInstanceState(State.SCHEDULED);
-                queuing.workSchedule(queueId, work);
-                return;
+                queuing.workReschedule(queueId, work);
+                throw new RejectedExecutionException(queueId + " was shutdown, rescheduled " + work);
             }
             work.setWorkInstanceState(State.RUNNING);
             queuing.workRunning(queueId, work);
@@ -606,6 +629,13 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             Work work = WorkHolder.getWork(r);
             try {
                 if (work.isSuspending()) {
+                    log.trace(work + " is suspending, giving up");
+                    return;
+                }
+                if (isShutdown()) {
+                    log.trace("rescheduling " + work.getId(), t);
+                    work.setWorkInstanceState(State.SCHEDULED);
+                    queuing.workReschedule(queueId, work);
                     return;
                 }
                 work.setWorkInstanceState(State.UNKNOWN);
@@ -619,32 +649,27 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             }
         }
 
-        // called during shutdown
-        // with tasks from the queue if new tasks are submitted
-        // or with tasks drained from the queue
-        protected void removedFromQueue(Runnable r) {
-            Work work = WorkHolder.getWork(r);
-            work.setWorkInstanceState(State.UNKNOWN);
-            completionSynchronizer.signalCompletedWork();
-        }
-
         /**
          * Initiates a shutdown of this executor and asks for work instances to suspend themselves.
+         *
+         * @throws InterruptedException
          */
-        public void shutdownAndSuspend() {
-            // don't consume the queue anymore
-            ((NuxeoBlockingQueue) getQueue()).setActive(false);
-            // shutdown the executor
-            shutdown();
-            // suspend and reschedule all running work
-            synchronized (running) {
+        public void shutdownAndSuspend() throws InterruptedException {
+            try {
+                // don't consume the queue anymore
+                deactivateQueueMetrics(queueId);
+                queuing.setActive(queueId, false);
+                // suspend all running work
                 for (Work work : running) {
                     work.setWorkInstanceSuspending();
+                    log.trace("suspending and rescheduling " + work.getId());
                     work.setWorkInstanceState(State.SCHEDULED);
                     queuing.workReschedule(queueId, work);
                 }
+                shutdownNow();
+            } finally {
+                executors.remove(queueId);
             }
-            shutdownNow();
         }
 
         public void removeScheduled(String workId) {
@@ -687,7 +712,6 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             getExecutor(queueId).removeScheduled(workId);
             break;
         case IF_NOT_SCHEDULED:
-        case IF_NOT_RUNNING:
         case IF_NOT_RUNNING_OR_SCHEDULED:
             // TODO disabled for now because hasWorkInState uses isScheduled
             // which is buggy
@@ -763,16 +787,6 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     }
 
     @Override
-    @Deprecated
-    public Work find(Work work, State state, boolean useEquals, int[] pos) {
-        if (pos != null) {
-            pos[0] = 0; // compat
-        }
-        String workId = work.getId();
-        return queuing.find(workId, state);
-    }
-
-    @Override
     public Work find(String workId, State state) {
         return queuing.find(workId, state);
     }
@@ -821,12 +835,6 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
     }
 
     @Override
-    @Deprecated
-    public int getNonCompletedWorkSize(String queueId) {
-        return getQueueSize(queueId, null);
-    }
-
-    @Override
     public boolean awaitCompletion(long duration, TimeUnit unit) throws InterruptedException {
         return awaitCompletion(null, duration, unit);
     }
@@ -839,7 +847,7 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
         SequenceTracer.start("awaitCompletion on " + ((queueId == null) ? "all queues" : queueId));
         long durationInMs = TimeUnit.MILLISECONDS.convert(duration, unit);
         long deadline = getTimestampAfter(durationInMs);
-        int pause = (int) Math.min(duration, 500L);
+        int pause = (int) Math.min(durationInMs, 500L);
         log.debug("awaitForCompletion " + durationInMs + " ms");
         do {
             if (noScheduledOrRunningWork(queueId)) {
@@ -871,11 +879,13 @@ public class WorkManagerImpl extends DefaultComponent implements WorkManager {
             }
             return true;
         }
-        boolean ret = getQueueSize(queueId, null) == 0;
-        if (ret == false) {
+        if (!isProcessingEnabled(queueId)) {
+            return getExecutor(queueId).runningCount.getCount() == 0L;
+        }
+        if (getQueueSize(queueId, null) > 0) {
             if (log.isTraceEnabled()) {
-                log.trace(queueId + " not empty, sched: " + getQueueSize(queueId, State.SCHEDULED) +
-                        ", running: " + getQueueSize(queueId, State.RUNNING));
+                log.trace(queueId + " not empty, sched: " + getQueueSize(queueId, State.SCHEDULED) + ", running: "
+                        + getQueueSize(queueId, State.RUNNING));
             }
             return false;
         }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,11 @@
  *     Dragos Mihalache
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.platform.versioning.api;
 
 import java.io.Serializable;
 
 import org.nuxeo.ecm.core.api.VersioningOption;
-import org.nuxeo.ecm.core.api.facet.VersioningDocument;
 
 /**
  * Defines actions to be taken in a document versioning increment process.
@@ -35,14 +33,6 @@ public enum VersioningActions implements Serializable {
     ACTION_NO_INCREMENT("no_inc", VersioningOption.NONE), //
     ACTION_INCREMENT_MINOR("inc_minor", VersioningOption.MINOR), //
     ACTION_INCREMENT_MAJOR("inc_major", VersioningOption.MAJOR);
-
-    public static final String KEY_FOR_INC_OPTION = VersioningDocument.KEY_FOR_INC_OPTION;
-
-    /**
-     * @deprecated use {@link org.nuxeo.ecm.core.versioning.VersioningService#SKIP_VERSIONING} instead
-     */
-    @Deprecated
-    public static final String SKIP_VERSIONING = "SKIP_VERSIONING";
 
     private final String name;
 

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,35 +15,41 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.query.sql.model;
 
-import org.nuxeo.common.collections.SerializableArrayMap;
+import java.util.LinkedHashMap;
+
+import com.google.common.collect.Iterables;
 
 /**
+ * Here, key is holding the alias and value the document type.
+ *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
-public class FromList extends SerializableArrayMap<String, String> {
+public class FromList extends LinkedHashMap<String, String> {
 
     private static final long serialVersionUID = -1931385427413643944L;
 
+    /**
+     * Don't use this method anymore. Now we can easily iterate over {@link FromList} with {@link #keySet()},
+     * {@link #values()} or {@link #entrySet()}.
+     * <p />
+     * We kept this method because removing it could lead to regressions as ({@link #get(Object)} is a candidate.
+     *
+     * @deprecated since 9.1
+     */
+    @Deprecated
+    public String get(int i) {
+        return Iterables.get(values(), i);
+    }
+
     @Override
     public String toString() {
-        if (count == 0) {
+        if (isEmpty()) {
             return "";
         }
-        StringBuilder result = new StringBuilder();
-
-        result.append(get(0));
-
-        for (int i = 1; i < count; i++) {
-            result.append(", ");
-            result.append(get(i));
-        }
-        return result.toString();
+        return String.join(", ", values());
     }
 
 }

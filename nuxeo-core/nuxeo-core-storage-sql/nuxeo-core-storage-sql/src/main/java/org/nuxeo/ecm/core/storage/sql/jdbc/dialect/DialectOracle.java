@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Florent Guillaume
  *     Benoit Delbosc
  */
-
 package org.nuxeo.ecm.core.storage.sql.jdbc.dialect;
 
 import java.io.IOException;
@@ -36,7 +35,6 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,7 +46,6 @@ import java.util.Set;
 
 import javax.transaction.xa.XAException;
 
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -98,6 +95,8 @@ public class DialectOracle extends Dialect {
 
     protected String idSequenceName;
 
+    protected int majorVersion;
+
     protected XAErrorLogger xaErrorLogger;
 
     protected static class XAErrorLogger {
@@ -113,13 +112,13 @@ public class DialectOracle extends Dialect {
         protected final Method m_oracleSQLError;
 
         public XAErrorLogger() throws ReflectiveOperationException {
-            oracleXAExceptionClass = Thread.currentThread().getContextClassLoader().loadClass(
-                    "oracle.jdbc.xa.OracleXAException");
-            m_xaError = oracleXAExceptionClass.getMethod("getXAError", new Class[] {});
-            m_xaErrorMessage = oracleXAExceptionClass.getMethod("getXAErrorMessage",
-                    new Class[] { m_xaError.getReturnType() });
-            m_oracleError = oracleXAExceptionClass.getMethod("getOracleError", new Class[] {});
-            m_oracleSQLError = oracleXAExceptionClass.getMethod("getOracleSQLError", new Class[] {});
+            oracleXAExceptionClass = Thread.currentThread()
+                                           .getContextClassLoader()
+                                           .loadClass("oracle.jdbc.xa.OracleXAException");
+            m_xaError = oracleXAExceptionClass.getMethod("getXAError");
+            m_xaErrorMessage = oracleXAExceptionClass.getMethod("getXAErrorMessage", m_xaError.getReturnType());
+            m_oracleError = oracleXAExceptionClass.getMethod("getOracleError");
+            m_oracleSQLError = oracleXAExceptionClass.getMethod("getOracleSQLError");
         }
 
         public void log(XAException e) throws ReflectiveOperationException {
@@ -128,9 +127,9 @@ public class DialectOracle extends Dialect {
             int oracleError = ((Integer) m_oracleError.invoke(e)).intValue();
             int oracleSQLError = ((Integer) m_oracleSQLError.invoke(e)).intValue();
             StringBuilder builder = new StringBuilder();
-            builder.append("Oracle XA Error : " + xaError + " (" + xaErrorMessage + "),");
-            builder.append("Oracle Error : " + oracleError + ",");
-            builder.append("Oracle SQL Error : " + oracleSQLError);
+            builder.append("Oracle XA Error : ").append(xaError).append(" (").append(xaErrorMessage).append("),");
+            builder.append("Oracle Error : ").append(oracleError).append(",");
+            builder.append("Oracle SQL Error : ").append(oracleSQLError);
             log.warn(builder.toString(), e);
         }
 
@@ -138,13 +137,16 @@ public class DialectOracle extends Dialect {
 
     public DialectOracle(DatabaseMetaData metadata, RepositoryDescriptor repositoryDescriptor) {
         super(metadata, repositoryDescriptor);
+        try {
+            majorVersion = metadata.getDatabaseMajorVersion();
+        } catch (SQLException e) {
+            throw new NuxeoException(e);
+        }
         fulltextParameters = repositoryDescriptor == null ? null
                 : repositoryDescriptor.getFulltextAnalyzer() == null ? "" : repositoryDescriptor.getFulltextAnalyzer();
-        pathOptimizationsEnabled = repositoryDescriptor == null ? false
-                : repositoryDescriptor.getPathOptimizationsEnabled();
+        pathOptimizationsEnabled = repositoryDescriptor != null && repositoryDescriptor.getPathOptimizationsEnabled();
         if (pathOptimizationsEnabled) {
-            pathOptimizationsVersion = repositoryDescriptor == null ? 0
-                    : repositoryDescriptor.getPathOptimizationsVersion();
+            pathOptimizationsVersion = repositoryDescriptor.getPathOptimizationsVersion();
         }
         usersSeparator = repositoryDescriptor == null ? null
                 : repositoryDescriptor.usersSeparatorKey == null ? DEFAULT_USERS_SEPARATOR
@@ -243,7 +245,7 @@ public class DialectOracle extends Dialect {
             return jdbcInfo("TIMESTAMP", Types.TIMESTAMP);
         case BLOBID:
             return jdbcInfo("VARCHAR2(250)", Types.VARCHAR);
-            // -----
+        // -----
         case NODEID:
         case NODEIDFK:
         case NODEIDFKNP:
@@ -286,26 +288,44 @@ public class DialectOracle extends Dialect {
         if (expected == Types.DOUBLE && actual == Types.FLOAT) {
             return true;
         }
+        if (expected == Types.VARCHAR && actual == Types.NVARCHAR) {
+            return true;
+        }
         if (expected == Types.VARCHAR && actual == Types.OTHER && actualName.equals("NVARCHAR2")) {
+            return true;
+        }
+        if (expected == Types.CLOB && actual == Types.NCLOB) {
             return true;
         }
         if (expected == Types.CLOB && actual == Types.OTHER && actualName.equals("NCLOB")) {
             return true;
         }
-        if (expected == Types.BIT && actual == Types.DECIMAL && actualName.equals("NUMBER") && actualSize == 1) {
+        if (expected == Types.BIT && actual == Types.DECIMAL && actualSize == 1) {
             return true;
         }
-        if (expected == Types.TINYINT && actual == Types.DECIMAL && actualName.equals("NUMBER") && actualSize == 3) {
+        if (expected == Types.TINYINT && actual == Types.DECIMAL && actualSize == 3) {
             return true;
         }
-        if (expected == Types.INTEGER && actual == Types.DECIMAL && actualName.equals("NUMBER") && actualSize == 10) {
+        if (expected == Types.INTEGER && actual == Types.DECIMAL && actualSize == 10) {
             return true;
         }
-        if (expected == Types.BIGINT && actual == Types.DECIMAL && actualName.equals("NUMBER") && actualSize == 19) {
+        if (expected == Types.BIGINT && actual == Types.DECIMAL && actualSize == 19) {
+            return true;
+        }
+        if (expected == Types.BIGINT && actual == Types.DECIMAL && actualSize == 38) {
             return true;
         }
         // CLOB vs VARCHAR compatibility
+        if (expected == Types.VARCHAR && actual == Types.NCLOB) {
+            return true;
+        }
         if (expected == Types.VARCHAR && actual == Types.OTHER && actualName.equals("NCLOB")) {
+            return true;
+        }
+        if (expected == Types.CLOB && actual == Types.VARCHAR) {
+            return true;
+        }
+        if (expected == Types.CLOB && actual == Types.NVARCHAR) {
             return true;
         }
         if (expected == Types.CLOB && actual == Types.OTHER && actualName.equals("NVARCHAR2")) {
@@ -440,11 +460,12 @@ public class DialectOracle extends Dialect {
     }
 
     @Override
-    public String getCreateFulltextIndexSql(String indexName, String quotedIndexName, Table table,
-            List<Column> columns, Model model) {
-        return String.format("CREATE INDEX %s ON %s(%s) INDEXTYPE IS CTXSYS.CONTEXT "
-                + "PARAMETERS('%s SYNC (ON COMMIT) TRANSACTIONAL')", quotedIndexName, table.getQuotedName(),
-                columns.get(0).getQuotedName(), fulltextParameters);
+    public String getCreateFulltextIndexSql(String indexName, String quotedIndexName, Table table, List<Column> columns,
+            Model model) {
+        return String.format(
+                "CREATE INDEX %s ON %s(%s) INDEXTYPE IS CTXSYS.CONTEXT "
+                        + "PARAMETERS('%s SYNC (ON COMMIT) TRANSACTIONAL')",
+                quotedIndexName, table.getQuotedName(), columns.get(0).getQuotedName(), fulltextParameters);
     }
 
     protected static final String CHARS_RESERVED_STR = "%${";
@@ -658,11 +679,7 @@ public class DialectOracle extends Dialect {
             long[] longs;
             try {
                 longs = (long[]) arrayGetLongArrayMethod.invoke(array);
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            } catch (IllegalArgumentException e) {
-                throw new RuntimeException(e);
-            } catch (InvocationTargetException e) {
+            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
                 throw new RuntimeException(e);
             }
             ids = new Serializable[longs.length];
@@ -726,7 +743,7 @@ public class DialectOracle extends Dialect {
 
     @Override
     public Map<String, Serializable> getSQLStatementsProperties(Model model, Database database) {
-        Map<String, Serializable> properties = new HashMap<String, Serializable>();
+        Map<String, Serializable> properties = new HashMap<>();
         switch (idType) {
         case VARCHAR:
             properties.put("idType", "VARCHAR2(36)");
@@ -748,8 +765,8 @@ public class DialectOracle extends Dialect {
         }
         properties.put("aclOptimizationsEnabled", Boolean.valueOf(aclOptimizationsEnabled));
         properties.put("pathOptimizationsEnabled", Boolean.valueOf(pathOptimizationsEnabled));
-        properties.put("pathOptimizationsVersion1", (pathOptimizationsVersion == 1) ? true : false);
-        properties.put("pathOptimizationsVersion2", (pathOptimizationsVersion == 2) ? true : false);
+        properties.put("pathOptimizationsVersion1", pathOptimizationsVersion == 1);
+        properties.put("pathOptimizationsVersion2", pathOptimizationsVersion == 2);
         properties.put("fulltextEnabled", Boolean.valueOf(!fulltextDisabled));
         properties.put("fulltextSearchEnabled", Boolean.valueOf(!fulltextSearchDisabled));
         properties.put("clusteringEnabled", Boolean.valueOf(clusteringEnabled));
@@ -759,7 +776,7 @@ public class DialectOracle extends Dialect {
             Table ft = database.getTable(Model.FULLTEXT_TABLE_NAME);
             properties.put("fulltextTable", ft.getQuotedName());
             FulltextConfiguration fti = model.getFulltextConfiguration();
-            List<String> lines = new ArrayList<String>(fti.indexNames.size());
+            List<String> lines = new ArrayList<>(fti.indexNames.size());
             for (String indexName : fti.indexNames) {
                 String suffix = model.getFulltextIndexSuffix(indexName);
                 Column ftft = ft.getColumn(Model.FULLTEXT_FULLTEXT_KEY + suffix);
@@ -769,14 +786,14 @@ public class DialectOracle extends Dialect {
                         ftst.getQuotedName(), ftbt.getQuotedName());
                 lines.add(line);
             }
-            properties.put("fulltextTriggerStatements", StringUtils.join(lines, "\n"));
+            properties.put("fulltextTriggerStatements", String.join("\n", lines));
         }
         String[] permissions = NXCore.getSecurityService().getPermissionsToCheck(SecurityConstants.BROWSE);
-        List<String> permsList = new LinkedList<String>();
+        List<String> permsList = new LinkedList<>();
         for (String perm : permissions) {
             permsList.add(String.format("  INTO ACLR_PERMISSION VALUES ('%s')", perm));
         }
-        properties.put("readPermissions", StringUtils.join(permsList, "\n"));
+        properties.put("readPermissions", String.join("\n", permsList));
         properties.put("usersSeparator", getUsersSeparator());
         properties.put("everyone", SecurityConstants.EVERYONE);
         return properties;
@@ -929,7 +946,7 @@ public class DialectOracle extends Dialect {
     public List<String> getStartupSqls(Model model, Database database) {
         if (aclOptimizationsEnabled) {
             log.info("Vacuuming tables used by optimized acls");
-            return Arrays.asList("{CALL nx_vacuum_read_acls}");
+            return Collections.singletonList("{CALL nx_vacuum_read_acls}");
         }
         return Collections.emptyList();
     }
@@ -992,6 +1009,22 @@ public class DialectOracle extends Dialect {
             sql += ";";
         }
         return sql + "\n/";
+    }
+
+    @Override
+    public boolean supportsBatchUpdateCount() {
+        // Oracle 11
+        // https://docs.oracle.com/cd/E18283_01/java.112/e16548/oraperf.htm#i1057545
+        // For a prepared statement batch, it is not possible to know the number of rows affected in the database by
+        // each individual statement in the batch. Therefore, all array elements have a value of -2. According to the
+        // JDBC 2.0 specification, a value of -2 indicates that the operation was successful but the number of rows
+        // affected is unknown
+        //
+        // Oracle 12
+        // https://docs.oracle.com/database/121/JJDBC/oraperf.htm#JJDBC28773
+        // For a prepared statement batch, the array contains the actual update counts indicating the number of rows
+        // affected by each operation.
+        return majorVersion >= 12;
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2007-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.comment.impl;
 
 import java.util.List;
@@ -42,12 +39,6 @@ public class CommentableDocumentAdapter implements CommentableDocument {
     }
 
     public DocumentModel addComment(DocumentModel comment) {
-        CommentManager commentManager = Framework.getService(CommentManager.class);
-        return commentManager.createComment(docModel, comment);
-    }
-
-    @Deprecated
-    public DocumentModel addComment(String comment) {
         CommentManager commentManager = Framework.getService(CommentManager.class);
         return commentManager.createComment(docModel, comment);
     }

@@ -26,17 +26,21 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.nuxeo.ecm.core.api.model.Delta;
 import org.nuxeo.ecm.core.storage.State.ListDiff;
 import org.nuxeo.ecm.core.storage.State.StateDiff;
+import org.nuxeo.runtime.api.Framework;
 
 /**
  * Helpers for deep copy and deep diff of {@link State} objects.
  */
 public class StateHelper {
+
+    private static final String DISABLED_DELTA_PROP = "org.nuxeo.core.delta.disabled";
 
     /** Utility class. */
     private StateHelper() {
@@ -426,6 +430,9 @@ public class StateHelper {
      * <p>
      * For values set to null or removed, the value is null.
      * <p>
+     * When setting a delta, the old value is checked to know if the delta should be kept or if a full value should be
+     * set instead.
+     * <p>
      * For sub-documents, a recursive diff is returned.
      *
      * @return a {@link StateDiff} which, when applied to a, gives b.
@@ -447,6 +454,17 @@ public class StateHelper {
                 // compare values
                 Serializable elemDiff = diff(va, vb);
                 if (elemDiff != NOP) {
+                    if (elemDiff instanceof Delta) {
+                        Delta delta = (Delta) elemDiff;
+                        Serializable deltaBase = delta.getBase();
+                        if (!Objects.equals(va, deltaBase)) {
+                            // delta's base is not the old value
+                            // -> set a new value, don't use a delta update
+                            elemDiff = delta.getFullValue();
+                        }
+                        // else delta's base is the in-database value
+                        // because base is consistent with old value, assume the delta is already properly computed
+                    }
                     diff.put(key, elemDiff);
                 }
             }
@@ -473,12 +491,15 @@ public class StateHelper {
      * @since 6.0
      */
     public static void resetDeltas(State state) {
+        if (Boolean.parseBoolean(Framework.getProperty(DISABLED_DELTA_PROP, "false"))) {
+            return;
+        }
         for (Entry<String, Serializable> en : state.entrySet()) {
             Serializable value = en.getValue();
             if (value instanceof State) {
                 resetDeltas((State) value);
             } else if (value instanceof Delta) {
-                state.putInternal(en.getKey(), ((Delta) value).getFullValue());
+                state.put(en.getKey(), ((Delta) value).getFullValue());
             }
         }
     }

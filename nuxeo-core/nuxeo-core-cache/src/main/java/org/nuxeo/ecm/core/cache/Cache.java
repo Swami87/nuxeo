@@ -20,6 +20,7 @@
 package org.nuxeo.ecm.core.cache;
 
 import java.io.Serializable;
+import java.util.Set;
 
 /**
  * The nuxeo cache interface that define generic methods to use cache technologies
@@ -44,6 +45,14 @@ public interface Cache {
      * @since 6.0
      */
     public Serializable get(String key);
+
+    /**
+     * Returns the set of all keys stored in the cache.
+     *
+     * @return the {@link Set} of all keys
+     * @since 8.3
+     */
+    public Set<String> keySet();
 
     /**
      * Invalidate the given key
@@ -78,5 +87,11 @@ public interface Cache {
      * @since 7.2
      */
     public boolean hasEntry(String key);
+
+    /**
+     * Return this cache size
+     * @since 9.1
+     */
+    public long getSize();
 
 }

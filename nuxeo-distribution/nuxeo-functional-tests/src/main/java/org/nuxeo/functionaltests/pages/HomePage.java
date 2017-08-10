@@ -19,6 +19,7 @@
 package org.nuxeo.functionaltests.pages;
 
 import org.nuxeo.functionaltests.AjaxRequestManager;
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -30,6 +31,8 @@ import org.openqa.selenium.support.FindBy;
  */
 public class HomePage extends DocumentBasePage {
 
+    static final String USERS_GROUPS_LABEL = "Users & Groups";
+
     static final String COLLECTIONS_LABEL = "Collections";
 
     static final String SEARCHES_LABEL = "Searches";
@@ -40,6 +43,14 @@ public class HomePage extends DocumentBasePage {
 
     public HomePage(WebDriver driver) {
         super(driver);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public UsersGroupsHomePage goToUsersGroupsHomePage() {
+        goTo(USERS_GROUPS_LABEL);
+        return asPage(UsersGroupsHomePage.class);
     }
 
     public CollectionsPage goToCollections() {
@@ -55,14 +66,17 @@ public class HomePage extends DocumentBasePage {
         return asPage(HomePage.class);
     }
 
-    private void goTo(String label) {
+    /**
+     * @since 8.3
+     */
+    public void goTo(String tabLabel) {
         if (useAjaxTabs()) {
             AjaxRequestManager arm = new AjaxRequestManager(driver);
             arm.begin();
-            menu.findElement(By.linkText(label)).click();
+            Locator.findElementWaitUntilEnabledAndClick(menu, By.linkText(tabLabel));
             arm.end();
         } else {
-            menu.findElement(By.linkText(label)).click();
+            Locator.findElementWaitUntilEnabledAndClick(menu, By.linkText(tabLabel));
         }
     }
 

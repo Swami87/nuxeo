@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  * 
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.common.utils;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -27,8 +27,9 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.List;
 
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.junit.Test;
-import static org.junit.Assert.*;
 
 public class TestZipUtils {
 
@@ -43,7 +44,8 @@ public class TestZipUtils {
         assertTrue("Contains mimetype file", ZipUtils.hasEntry(sourceFile, "mimetype"));
 
         InputStream entryContent = ZipUtils.getEntryContentAsStream(sourceFile, "mimetype");
-        assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text", FileUtils.read(entryContent));
+        assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text",
+                IOUtils.toString(entryContent, Charsets.UTF_8));
         // need to close returned InputStream
         entryContent.close();
 
@@ -69,10 +71,10 @@ public class TestZipUtils {
         assertTrue("Contains mimetype file", ZipUtils.hasEntry(stream, "mimetype"));
 
         stream = new FileInputStream(sourceFile);
-        InputStream entryContent = ZipUtils.getEntryContentAsStream(stream, "mimetype");
-        assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text", FileUtils.read(entryContent));
-        // need to close returned InputStream
-        entryContent.close();
+        try (InputStream entryContent = ZipUtils.getEntryContentAsStream(stream, "mimetype")) {
+            assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text",
+                    IOUtils.toString(entryContent, Charsets.UTF_8));
+        }
 
         // direct access to content - No need to close returned InputStream
 
@@ -96,10 +98,10 @@ public class TestZipUtils {
 
         assertTrue("Contains mimetype file", ZipUtils.hasEntry(url, "mimetype"));
 
-        InputStream entryContent = ZipUtils.getEntryContentAsStream(url, "mimetype");
-        assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text", FileUtils.read(entryContent));
-        // need to close returned InputStream
-        entryContent.close();
+        try (InputStream entryContent = ZipUtils.getEntryContentAsStream(url, "mimetype")) {
+            assertEquals("Mimetype content", "application/vnd.oasis.opendocument.text",
+                    IOUtils.toString(entryContent, Charsets.UTF_8));
+        }
 
         // direct access to content - No need to close returned InputStream
 

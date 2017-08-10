@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  *
  * Contributors:
  */
-
 package org.nuxeo.ecm.core.schema;
 
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.reload.ReloadService;
 import org.nuxeo.runtime.services.event.Event;
 import org.nuxeo.runtime.services.event.EventListener;
 
@@ -28,13 +28,8 @@ import org.nuxeo.runtime.services.event.EventListener;
 public class FlushPendingsRegistrationOnReloadListener implements EventListener {
 
     @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return "reload".equals(event.getId());
-    }
-
-    @Override
     public void handleEvent(Event event) {
-        if (!"reload".equals(event.getId())) {
+        if (!ReloadService.FLUSH_EVENT_ID.equals(event.getId())) {
             return;
         }
         SchemaManager mgr = Framework.getLocalService(SchemaManager.class);

@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -35,6 +36,8 @@ import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.platform.query.api.AbstractPageProvider;
 import org.nuxeo.ecm.platform.query.api.PageProviderDefinition;
 import org.nuxeo.ecm.platform.query.api.PageSelections;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
+import org.nuxeo.ecm.platform.query.api.WhereClauseDefinition;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.services.config.ConfigurationService;
 
@@ -180,16 +183,18 @@ public class CoreQueryDocumentPageProvider extends AbstractPageProvider<Document
                         if (resultsCount == 0) {
                             // fetch first page directly
                             if (log.isDebugEnabled()) {
-                                log.debug(String.format("Current page %s is not the first one but "
-                                        + "shows no result and there are " + "no results => rewind to first page",
+                                log.debug(String.format(
+                                        "Current page %s is not the first one but " + "shows no result and there are "
+                                                + "no results => rewind to first page",
                                         Long.valueOf(getCurrentPageIndex())));
                             }
                             firstPage();
                         } else {
                             // fetch last page
                             if (log.isDebugEnabled()) {
-                                log.debug(String.format("Current page %s is not the first one but "
-                                        + "shows no result and there are " + "%s results => fetch last page",
+                                log.debug(String.format(
+                                        "Current page %s is not the first one but " + "shows no result and there are "
+                                                + "%s results => fetch last page",
                                         Long.valueOf(getCurrentPageIndex()), Long.valueOf(resultsCount)));
                             }
                             lastPage();
@@ -218,28 +223,60 @@ public class CoreQueryDocumentPageProvider extends AbstractPageProvider<Document
         }
 
         // send event for statistics !
-        fireSearchEvent(getCoreSession().getPrincipal(), query, currentPageDocuments, System.currentTimeMillis()-t0);
+        fireSearchEvent(getCoreSession().getPrincipal(), query, currentPageDocuments, System.currentTimeMillis() - t0);
 
         return currentPageDocuments;
     }
 
     protected void buildQuery(CoreSession coreSession) {
-        SortInfo[] sortArray = null;
-        if (sortInfos != null) {
-            sortArray = sortInfos.toArray(new SortInfo[] {});
+        List<SortInfo> sort = null;
+        List<QuickFilter> quickFilters = getQuickFilters();
+        String quickFiltersClause = "";
+
+        if (quickFilters != null && !quickFilters.isEmpty()) {
+            sort = new ArrayList<>();
+            for (QuickFilter quickFilter : quickFilters) {
+                String clause = quickFilter.getClause();
+                if (clause != null) {
+                    if (!quickFiltersClause.isEmpty()) {
+                        quickFiltersClause = NXQLQueryBuilder.appendClause(quickFiltersClause, clause);
+                    } else {
+                        quickFiltersClause = clause;
+                    }
+                }
+                sort.addAll(quickFilter.getSortInfos());
+            }
+        } else if (sortInfos != null) {
+            sort = sortInfos;
         }
+
+        SortInfo[] sortArray = null;
+        if (sort != null) {
+            sortArray = sort.toArray(new SortInfo[] {});
+        }
+
         String newQuery;
         PageProviderDefinition def = getDefinition();
-        if (def.getWhereClause() == null) {
-            newQuery = NXQLQueryBuilder.getQuery(def.getPattern(), getParameters(), def.getQuotePatternParameters(),
+        WhereClauseDefinition whereClause = def.getWhereClause();
+        if (whereClause == null) {
+
+            String originalPattern = def.getPattern();
+            String pattern = quickFiltersClause.isEmpty() ? originalPattern
+                    : StringUtils.containsIgnoreCase(originalPattern, " WHERE ")
+                            ? NXQLQueryBuilder.appendClause(originalPattern, quickFiltersClause)
+                            : originalPattern + " WHERE " + quickFiltersClause;
+
+            newQuery = NXQLQueryBuilder.getQuery(pattern, getParameters(), def.getQuotePatternParameters(),
                     def.getEscapePatternParameters(), getSearchDocumentModel(), sortArray);
         } else {
+
             DocumentModel searchDocumentModel = getSearchDocumentModel();
             if (searchDocumentModel == null) {
                 throw new NuxeoException(String.format(
                         "Cannot build query of provider '%s': " + "no search document model is set", getName()));
             }
-            newQuery = NXQLQueryBuilder.getQuery(searchDocumentModel, def.getWhereClause(), getParameters(), sortArray);
+            newQuery = NXQLQueryBuilder.getQuery(searchDocumentModel, whereClause, quickFiltersClause, getParameters(),
+                    sortArray);
         }
 
         if (query != null && newQuery != null && !newQuery.equals(query)) {

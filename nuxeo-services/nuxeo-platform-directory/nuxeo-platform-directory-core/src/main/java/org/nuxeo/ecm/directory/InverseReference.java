@@ -23,15 +23,11 @@ package org.nuxeo.ecm.directory;
 
 import java.util.List;
 
-import org.nuxeo.common.xmap.annotation.XNode;
-import org.nuxeo.common.xmap.annotation.XObject;
-
 /**
  * Reference that uses the matching reference of the target directory to actually do the job.
  *
  * @author ogrisel
  */
-@XObject(value = "inverseReference")
 public class InverseReference extends AbstractReference {
 
     /**
@@ -41,23 +37,16 @@ public class InverseReference extends AbstractReference {
      */
     protected boolean readOnly = false;
 
-    @XNode("@dualReferenceField")
     protected String dualReferenceName;
 
     protected Reference dualReference;
 
-    @XNode("@field")
-    public void setFieldName(String fieldName) {
-        this.fieldName = fieldName;
+    public InverseReference(InverseReferenceDescriptor referenceDescriptor) {
+        super(referenceDescriptor.getFieldName(), referenceDescriptor.getDirectory());
+        dualReferenceName = referenceDescriptor.getDualReferenceName();
+        readOnly = referenceDescriptor.isReadOnly();
     }
 
-    @Override
-    @XNode("@directory")
-    public void setTargetDirectoryName(String targetDirectoryName) {
-        this.targetDirectoryName = targetDirectoryName;
-    }
-
-    @XNode("@readOnly")
     public void setReadOnly(boolean readOnly) {
         this.readOnly = readOnly;
     }
@@ -126,12 +115,30 @@ public class InverseReference extends AbstractReference {
     }
 
     @Override
+    public void removeLinksForTarget(String targetId, Session session) throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.removeLinksForSource(targetId, session);
+    }
+
+    @Override
     public void removeLinksForSource(String sourceId) throws DirectoryException {
         if (readOnly) {
             return;
         }
         checkDualReference();
         dualReference.removeLinksForTarget(sourceId);
+    }
+
+    @Override
+    public void removeLinksForSource(String sourceId, Session session) throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.removeLinksForTarget(sourceId, session);
     }
 
     @Override
@@ -156,6 +163,16 @@ public class InverseReference extends AbstractReference {
     }
 
     @Override
+    public void setTargetIdsForSource(String sourceId, List<String> targetIds, Session session)
+            throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.setSourceIdsForTarget(sourceId, targetIds, session);
+    }
+
+    @Override
     public void setSourceIdsForTarget(String targetId, List<String> sourceIds) throws DirectoryException {
         if (readOnly) {
             return;
@@ -165,9 +182,30 @@ public class InverseReference extends AbstractReference {
     }
 
     @Override
-    public InverseReference clone() {
-        InverseReference clone = (InverseReference) super.clone();
-        // basic fields are already copied by super.clone()
-        return clone;
+    public void setSourceIdsForTarget(String targetId, List<String> sourceIds, Session session)
+            throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.setTargetIdsForSource(targetId, sourceIds, session);
+    }
+
+    @Override
+    public void addLinks(String sourceId, List<String> targetIds, Session session) throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.addLinks(targetIds, sourceId, session);
+    }
+
+    @Override
+    public void addLinks(List<String> sourceIds, String targetId, Session session) throws DirectoryException {
+        if (readOnly) {
+            return;
+        }
+        checkDualReference();
+        dualReference.addLinks(targetId, sourceIds, session);
     }
 }

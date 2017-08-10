@@ -15,7 +15,10 @@
  */
 package org.nuxeo.ecm.core.redis;
 
+import java.util.List;
+
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPubSub;
 import redis.clients.jedis.exceptions.JedisException;
 import redis.clients.util.Pool;
 
@@ -26,21 +29,65 @@ import redis.clients.util.Pool;
  */
 public interface RedisExecutor {
 
-    public static final RedisExecutor NOOP = new RedisExecutor() {
+    /**
+     * Loads the script into Redis.
+     *
+     * @return the script SHA1
+     * @since 8.10
+     */
+    String scriptLoad(String script) throws JedisException;
 
-        @Override
-        public <T> T execute(RedisCallable<T> call) throws JedisException {
-            throw new UnsupportedOperationException("No redis executor available");
-        }
+    /**
+     * Evaluates the script of the given SHA1 with the given keys and arguments.
+     * <p>
+     * Can reload the script if the Redis instance restarted and the script isn't available anymore.
+     *
+     * @param sha1 the script SHA1
+     * @param keys the keys
+     * @param args the arguments
+     * @return the SHA1
+     * @since 8.10
+     */
+    Object evalsha(String sha1, List<String> keys, List<String> args) throws JedisException;
 
-        @Override
-        public Pool<Jedis> getPool() {
-            throw new UnsupportedOperationException("No pool available");
-        }
-
-    };
+    /**
+     * Evaluates the script of the given SHA1 with the given keys and arguments.
+     * <p>
+     * Can reload the script if the Redis instance restarted and the script isn't available anymore.
+     *
+     * @param sha1 the script SHA1
+     * @param keys the keys
+     * @param args the arguments
+     * @return the SHA1
+     * @since 8.10
+     */
+    Object evalsha(byte[] sha1, List<byte[]> keys, List<byte[]> args) throws JedisException;
 
     <T> T execute(RedisCallable<T> call) throws JedisException;
+
+    /**
+     * Run a subscriber, do not return.
+     */
+    default void subscribe(JedisPubSub subscriber, String channel) throws JedisException {
+        execute(jedis -> {
+            jedis.subscribe(subscriber, channel);
+            return null;
+        });
+    }
+
+    /**
+     * Runs a subscriber to the given patterns.
+     *
+     * @param subscriber the subscriber
+     * @param patterns the channel patterns
+     * @since 9.1
+     */
+    default void psubscribe(JedisPubSub subscriber, String... patterns) throws JedisException {
+        execute(jedis -> {
+            jedis.psubscribe(subscriber, patterns);
+            return null;
+        });
+    }
 
     Pool<Jedis> getPool();
 

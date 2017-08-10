@@ -1,248 +1,196 @@
 <%@ include file="includes/header.jsp" %>
-
-
 <%@page import="org.nuxeo.wizard.download.Preset"%><h1><fmt:message key="label.packagesSelection" /></h1>
 
 <%
-String baseUrl = ctx.getBaseUrl();
-if (baseUrl==null) {
-    baseUrl="/nuxeo/";
-}
-DownloadablePackageOptions options = PackageDownloader.instance().getPackageOptions();
-
-%>
-<script type="text/javascript" src="<%=contextPath%>/scripts/jquery.collapsibleCheckboxTree.js"></script>
-<script language="javascript">
-
-var jsonTree;
-
-function getTree() {
-  $.get('<%=baseUrl%>PackageOptionsResource', function(data) {
-     jsonTree = data;
-     displayTree();
-     displayBlocs();
-  });
-}
-
-function createCheckBox(pkg) {
-  var checkBox = "<input type=\"checkbox\"";
-  checkBox += " name=\"" + pkg.id + "\" ";
-  checkBox += " id=\"pkg_" + pkg.id + "\" ";
-  checkBox += " pkg=\"" + pkg.package + "\" ";
-  checkBox += " exclusive=\"" + pkg.exclusive + "\" ";
-  checkBox += " title=\"" + pkg.desc + "\" ";
-  checkBox += "/>";
-  checkBox += "<label for=";
-  checkBox += "\"pkg_" + pkg.id + "\">";
-  checkBox += pkg.label;
-  checkBox += "</label>";
-
-  checkBox = $(checkBox);
-  if (pkg.selected=='true') {
-    checkBox.attr('checked',true);
-  }
-  return checkBox;
-}
-
-function addNode(container, pkg, level) {
-  var li = $("<li></li>");
-  var chk = createCheckBox(pkg);
-  li.append(chk);
-  var nbChildren = pkg.children.length;
-  if (nbChildren>0) {
-    var ul = $("<ul></ul>");
-    li.append(ul);
-    for (var i=0; i <nbChildren; i++) {
-        addNode(ul, pkg.children[i], level+1);
+    String baseUrl = ctx.getBaseUrl();
+    if (baseUrl == null) {
+        baseUrl = "/nuxeo/";
     }
-  }
-  container.append(li);
-}
+    DownloadablePackageOptions options = PackageDownloader.instance().getPackageOptions();
+%>
 
-function displayTree() {
-    $('#tree').html("");
-    var ul = $("<ul id=\"treeul\"></ul>");
-    addNode(ul,jsonTree, 0);
-    $('#tree').append(ul);
-    ul.collapsibleCheckboxTree({
-      checkParents : true, // When checking a box, all parents are checked (Default: true)
-      checkChildren : false, // When checking a box, all children are checked (Default: false)
-      uncheckChildren : true, // When unchecking a box, all children are unchecked (Default: true)
-      initialState : 'expand', // Options - 'expand' (fully expanded), 'collapse' (fully collapsed) or default
-      displayCB : displayBlocs
+<script language="javascript">
+  var jsonTree;
+
+  function getTree() {
+    $.get('<%=baseUrl%>PackageOptionsResource', function (data) {
+      jsonTree = data;
+      buildList();
+    });
+  }
+
+  function buildList() {
+    var $tree = $('#tree');
+    jsonTree.children.forEach(function (child) {
+      $tree.append($('<h2>' + child.label + '</h2>'));
+      var $pkgContainer = $('<div class="packageContainer" />');
+      child.children.forEach(function (pkg) {
+        var $pkg = $('<div class="package" />');
+        $pkg.click(handlePackageClick);
+        var $chk = createChkBox(pkg);
+        // Bind a change listener to check exclusive / implies
+        $chk.change(handlePackageChanges);
+        $chk.click(handleStopPropagation);
+        $pkg.append($chk);
+
+        $pkg.append(createChkDescription(pkg));
+
+        $pkgContainer.append($pkg);
+      });
+      $tree.append($pkgContainer);
     });
 
-}
-
-function drawRow(container) {
-  var div = $("<div class=\"nxprow\"></div>");
-  container.prepend(div);
-  return div;
-}
-
-function drawBloc(container, idx, node2Display, parent, nbSiblings) {
-    var selected = node2Display.selected;
-    var node = node2Display.node;
-    if (node == null) {
-        return;
-    }
-    var span = $("<div class=\"nxpblock\">" + node.shortlabel + "</div>");
-    span.attr('pkg', node.package);
-    if (node2Display.root) {
-      span.attr('root', true);
-    }
-    var width = parent.width()/nbSiblings - 4;
-    if (node2Display.parent) {
-      width = node2Display.parent.width / nbSiblings -4 ;
-    }
-    node.width=width;
-    span.css("width", width +"px");
-    span.css("float","left")
-    span.css("background-color",node.color);
-    span.css("color",node.textcolor);
-    if (!selected) {
-      span.toggleClass("unselectedBloc");
-    }
-    container.append(span);
-    return span;
-}
-
-function displayRow(container, parent, level, childrenNodes2Display) {
-
-  var row = drawRow(container)
-  for (var i = 0; i < childrenNodes2Display.length; i++) {
-    drawBloc(row, i, childrenNodes2Display[i], parent,childrenNodes2Display.length);
+    checkImplies();
+    recomputePackageClasses();
   }
-  container.append($("<div style=\"clear:both;\"></div>"));
-  return row;
-}
 
-function displayNodes(container, parent,  level, nodes, ids) {
-  var childrenNodes2Display = [];
-  var allChildrenNodes2Display = [];
-  var childrenNodes = [];
-  var oneSelected=false;
-  for (var j = 0; j < nodes.length; j++) {
-    var node = nodes[j];
-    if (node==null) {
-        continue;
-    }
-    for (var i = 0; i < node.children.length; i++) {
-      var child = node.children[i];
-      var child2Display={'node' : child, 'parent' : node};
-      child2Display.selected=false;
-      if ($.inArray(child.id, ids)>=0) {
-        oneSelected=true;
-        child2Display.selected=true;
-        if (child.exclusive=='true') {
-          childrenNodes2Display = [child2Display];
-          childrenNodes = [ child ];
-          break;
-        } else {
-          childrenNodes2Display.push(child2Display);
-          childrenNodes.push(child);
-        }
-      } else {
-        if (child.exclusive!='true') {
-          childrenNodes2Display.push(child2Display);
-        }
+  /**
+   * Recompute `package` div classes to set checked / disabled / ...
+   */
+  function recomputePackageClasses() {
+    $('div.package').each(function (i, pkg) {
+      var $pkg = $(pkg);
+      var classes = ['package'];
+      if ($pkg.find('input[type="checkbox"]:disabled').size() > 0) {
+        classes.push('disabled');
       }
-      allChildrenNodes2Display.push(child2Display);
-    }
+      if ($pkg.find('input[type="checkbox"]:checked').size() > 0) {
+        classes.push('checked');
+      }
+      $pkg.attr('class', classes.join(' '));
+    });
   }
-  if (childrenNodes2Display.length>0) {
-    if (oneSelected) {
-      parent = displayRow(container, parent,level, childrenNodes2Display);
-      displayNodes(container, parent, level+1, childrenNodes, ids);
-    } else {
-      parent = displayRow(container, parent,level, allChildrenNodes2Display);
-    }
-  }
-}
 
-function displayBlocs() {
-  var checkBoxes = $("input[type='checkbox']:checked");
-  var ids = [];
-  for (var i = 0; i < checkBoxes.length; i++) {
-    ids.push($(checkBoxes[i]).attr('name'));
+  function handlePackageClick() {
+    var $i = $(this).find('input[type="checkbox"]');
+    $i.click();
+    $i.change();
   }
-  // draw root
-  var container = $("#blocs");
-  container.html("");
-  var parent = $("<div class=\"nxprow\" style=\"height:2px\"></div>");
-  container.append(parent);
-  var row = drawRow(container);
-  parent = drawBloc(row,0,{ 'node':jsonTree, 'selected' : true, 'root' : true}, parent,1);
-  displayNodes(container, parent, 0, [jsonTree], ids);
-  // bind click
-  $(".nxpblock").click(function(event) {
-    if ($(event.target).attr("root")) {
-      // can not deselect the root !!!
-      return;
+
+  function handleStopPropagation(e) {
+    e.stopPropagation();
+  }
+
+  function handlePackageChanges() {
+    followExclusiveRules($(this));
+    checkImplies();
+    recomputePackageClasses();
+  }
+
+  function followExclusiveRules($chk) {
+    var isExclu = $chk.attr('exclusive') === 'true';
+    $chk.parents('.packageContainer').find('input[type="checkbox"]').each(function (i, input) {
+      var $input = $(input);
+      if ($chk.attr('id') === $input.attr('id')) {
+        return;
+      }
+
+      if (isExclu) {
+        // If $chk is exclusive, uncheck all sibling nodes
+        $input.attr('checked', false);
+      } else if ($input.attr('exclusive') === 'true') {
+        // If $chk is not exclusive, disable sibling exclusive nodes
+        $input.attr('checked', false);
+      }
+    });
+  }
+
+  function createChkBox(pkg) {
+    var checkBox = "<input type=\"checkbox\"";
+    checkBox += " name=\"" + pkg.id + "\" ";
+    checkBox += " implies=\"" + pkg.implies + "\" ";
+    checkBox += " id=\"pkg_" + pkg.id + "\" ";
+    checkBox += " pkg=\"" + pkg.package + "\" ";
+    checkBox += " exclusive=\"" + pkg.exclusive + "\" ";
+    checkBox += " title=\"" + pkg.label + "\" ";
+    checkBox += "/>";
+    checkBox += "<label for=";
+    checkBox += "\"pkg_" + pkg.id + "\">";
+    checkBox += pkg.label;
+    checkBox += "</label>";
+
+    checkBox = $(checkBox);
+    if (pkg.selected == 'true') {
+      checkBox.attr('checked', true);
     }
-    var targetPkg = $(event.target).attr("pkg");
-    var filter = "input[type='checkbox'][name='" + targetPkg + "']";
-    if ( $(filter).attr("checked")==true) {
-        $(filter).removeAttr("checked");
-        $(filter).trigger('click');
-        $(filter).removeAttr("checked");
+
+    return checkBox;
+  }
+
+
+  function createChkDescription(pkg) {
+    var checkBox = '';
+    if (pkg.description && pkg.description !== 'null') {
+      checkBox += "<p class=\"packageDescription\">";
+      checkBox += pkg.description;
+      checkBox += "</p>";
     }
-    else {
-        $(filter).attr("checked","true");
-        $(filter).trigger('click');
-        $(filter).attr("checked","true");
+    return $(checkBox);
+  }
+
+  function checkImplies() {
+    $("input[type='checkbox']:disabled").attr('disabled', false);
+    $("input[type='checkbox']:checked").each(function (i, elt) {
+      var $elt = $(elt);
+      var implies = $elt.attr('implies');
+      if (!implies) {
+        return;
+      }
+
+      implies.split(',').forEach(function (imply) {
+        $("input[type='checkbox'][name='" + imply + "']").each(function (i, implied) {
+          var $implied = $(implied);
+          $implied.attr('checked', true);
+          $implied.attr('disabled', true);
+        });
+      });
+    });
+  }
+
+  function usePreset(optionArray) {
+    var $boxes = $("input[type='checkbox']");
+    $boxes.removeAttr("checked");
+    $boxes.removeAttr("disabled");
+    for (var i = 0; i < optionArray.length; i++) {
+      var filter = "input[type='checkbox'][name='" + optionArray[i] + "']";
+      $(filter).attr("checked", "true");
+      $(filter).trigger('click');
+      $(filter).attr("checked", "true");
     }
+  }
+
+  $(document).ready(function () {
+    getTree();
   });
-
-}
-
-function usePreset(optionArray) {
-  $("input[type='checkbox']").removeAttr("checked");
-  $("input[type='checkbox']").removeAttr("disabled");
-  for (var i = 0; i <optionArray.length; i++) {
-    var filter = "input[type='checkbox'][name='" + optionArray[i] + "']";
-    $(filter).attr("checked","true");
-    $(filter).trigger('click');
-    $(filter).attr("checked","true");
-  }
-}
-
-$(document).ready(function(){
-     getTree();
-   });
 </script>
 
 <%@ include file="includes/form-start.jsp" %>
 <span class="screenDescription">
-<fmt:message key="label.packagesSelection.description" /> <br/>
+<fmt:message key="label.packagesSelection.description"/> <br/>
 </span>
 <%
-String presetClass = "display:none";
-if ("true".equals(request.getParameter("showPresets"))) {
-    presetClass = "";
-}
+    String presetClass = "display:none";
+    if ("true".equals(request.getParameter("showPresets"))) {
+        presetClass = "";
+    }
 %>
 
 <%@ include file="includes/feedback.jsp" %>
 
-  <span style="<%=presetClass%>" id="hiddenPresets">
-  <div class="presetContainer"> <span class="presetLabel"><fmt:message key="label.packagesSelection.presets" /> :</span>
+<span style="<%=presetClass%>" id="hiddenPresets">
+  <div class="presetContainer"> <span class="presetLabel"><fmt:message key="label.packagesSelection.presets"/> :</span>
   <%for (Preset preset : options.getPresets()) { %>
-    <span class="presetBtn" id="preset_<%=preset.getId()%>" onclick="usePreset(<%=preset.getPkgsAsJsonArray()%>)"><%=preset.getLabel()%> </span>
+    <span class="presetBtn" id="preset_<%=preset.getId()%>"
+          onclick="usePreset(<%=preset.getPkgsAsJsonArray()%>)"><%=preset.getLabel()%> </span>
   <%} %>
   </div>
   </span>
-  <br/>
-  <div id="tree"></div>
-  <div class="blocContainer">
-     <div id="blocs"></div>
-  </div>
-  <div style="clear:both"></div>
+<br/>
+<div id="tree"></div>
 
 <span class="screenExplanations">
-<fmt:message key="label.packagesSelection.explanations" /> <br/>
+<fmt:message key="label.packagesSelection.explanations"/> <br/>
 </span>
 
-  <%@ include file="includes/prevnext.jsp" %>
-
+<%@ include file="includes/prevnext.jsp" %>
 <%@ include file="includes/footer.jsp" %>

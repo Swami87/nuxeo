@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2009 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,17 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.userworkspace.core.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+
+import java.security.Principal;
+import java.util.Arrays;
 
 import javax.inject.Inject;
 
@@ -43,29 +44,20 @@ import org.nuxeo.ecm.core.api.security.SecurityConstants;
 import org.nuxeo.ecm.core.api.security.impl.ACLImpl;
 import org.nuxeo.ecm.core.api.security.impl.ACPImpl;
 import org.nuxeo.ecm.core.test.CoreFeature;
+import org.nuxeo.ecm.platform.test.PlatformFeature;
 import org.nuxeo.ecm.platform.userworkspace.api.UserWorkspaceService;
-import org.nuxeo.ecm.platform.userworkspace.core.service.UserWorkspaceServiceImplComponent;
-import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.ecm.platform.userworkspace.core.service.AbstractUserWorkspaceImpl;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
-import org.nuxeo.runtime.test.runner.RuntimeHarness;
 
 @RunWith(FeaturesRunner.class)
-@Features(CoreFeature.class)
-@Deploy({ "org.nuxeo.ecm.platform.content.template", //
-        "org.nuxeo.ecm.platform.userworkspace.api", //
-        "org.nuxeo.ecm.platform.dublincore", //
+@Features(PlatformFeature.class)
+@Deploy({ "org.nuxeo.ecm.platform.userworkspace.api", //
         "org.nuxeo.ecm.platform.userworkspace.types", //
-        "org.nuxeo.ecm.directory.api", //
-        "org.nuxeo.ecm.directory", //
-        "org.nuxeo.ecm.directory.sql", //
         "org.nuxeo.ecm.platform.userworkspace.core", //
 })
 public class TestUserWorkspace {
-
-    @Inject
-    protected RuntimeHarness harness;
 
     @Inject
     protected CoreFeature coreFeature;
@@ -79,7 +71,6 @@ public class TestUserWorkspace {
     @Inject
     protected PathSegmentService pathSegments;
 
-
     @Test
     public void testRestrictedAccess() throws Exception {
         try (CoreSession userSession = coreFeature.openCoreSession("toto")) {
@@ -88,7 +79,7 @@ public class TestUserWorkspace {
 
             // check creator
             String creator = (String) uw.getProperty("dublincore", "creator");
-            assertEquals(creator, "toto");
+            assertEquals("toto", creator);
 
             // check write access
             uw.setProperty("dublibore", "description", "Toto's workspace");
@@ -149,73 +140,6 @@ public class TestUserWorkspace {
     }
 
     @Test
-    // @LocalDeploy("org.nuxeo.ecm.platform.userworkspace.core:OSGI-INF/compatUserWorkspaceImpl.xml")
-    public void testMultiDomainsCompat() throws Exception {
-        harness.deployContrib("org.nuxeo.ecm.platform.userworkspace.core", "OSGI-INF/compatUserWorkspaceImpl.xml");
-        uwm = Framework.getService(UserWorkspaceService.class); // re-compute
-        try {
-            doTestMultiDomainsCompat();
-        } finally {
-            harness.undeployContrib("org.nuxeo.ecm.platform.userworkspace.core", "OSGI-INF/compatUserWorkspaceImpl.xml");
-            uwm = Framework.getService(UserWorkspaceService.class); // re-compute
-        }
-    }
-
-    protected void doTestMultiDomainsCompat() throws Exception {
-        ACE ace = new ACE("Everyone", "Read", true);
-        ACL acl = new ACLImpl();
-        acl.add(ace);
-        ACP acp = new ACPImpl();
-        acp.addACL(acl);
-
-        DocumentModel ws1 = session.createDocumentModel("/default-domain/workspaces", "ws1", "Workspace");
-        ws1 = session.createDocument(ws1);
-        ws1.setACP(acp, true);
-        ws1 = session.saveDocument(ws1);
-
-        DocumentModel alternate = session.createDocumentModel("/", "alternate-domain", "Domain");
-        alternate = session.createDocument(alternate);
-        DocumentModel ws2 = session.createDocumentModel("/alternate-domain/workspaces", "ws2", "Workspace");
-        ws2 = session.createDocument(ws2);
-        ws2.setACP(acp, true);
-        ws2 = session.saveDocument(ws2);
-
-        session.save();
-
-        // force reset
-        UserWorkspaceServiceImplComponent.reset();
-        uwm = Framework.getService(UserWorkspaceService.class); // re-compute
-
-        try (CoreSession userSession = coreFeature.openCoreSession("toto")) {
-            // access from root
-            DocumentModel context = userSession.getRootDocument();
-            DocumentModel uw = uwm.getCurrentUserPersonalWorkspace(userSession, null);
-            assertNotNull(uw);
-            assertTrue(uw.getPathAsString().startsWith("/default-domain"));
-
-            // access form default domain
-            context = userSession.getDocument(ws1.getRef());
-            uw = uwm.getCurrentUserPersonalWorkspace(userSession, context);
-            assertNotNull(uw);
-            assertTrue(uw.getPathAsString().startsWith("/default-domain"));
-
-            // access form alternate domain
-            context = userSession.getDocument(ws2.getRef());
-            uw = uwm.getCurrentUserPersonalWorkspace(userSession, context);
-            assertNotNull(uw);
-            assertTrue(uw.getPathAsString().startsWith("/alternate-domain"));
-
-            // now delete the default-domain
-            session.removeDocument(new PathRef("/default-domain"));
-            session.save();
-            userSession.save();
-            uw = uwm.getCurrentUserPersonalWorkspace(userSession, context);
-            assertNotNull(uw);
-            assertTrue(uw.getPathAsString().startsWith("/alternate-domain"));
-        }
-    }
-
-    @Test
     public void testAnotherUserWorkspaceFinder() {
         DocumentModel context = session.getRootDocument();
         DocumentModel uw = uwm.getCurrentUserPersonalWorkspace("user1", context);
@@ -249,11 +173,11 @@ public class TestUserWorkspace {
         DocumentModel context = session.getRootDocument();
 
         // Automatically create the user workspace
-        DocumentModel uw = uwm.getUserPersonalWorkspace("Jack Von", context);
+        DocumentModel uw = uwm.getUserPersonalWorkspace("AC/DC", context);
 
         assertNotNull(uw);
         // Check the document name was mapped
-        assertEquals(uw.getPath().lastSegment(), "Jack-Von");
+        assertEquals(uw.getPath().lastSegment(), "AC~2fDC");
     }
 
     @Test
@@ -269,9 +193,7 @@ public class TestUserWorkspace {
     }
 
     String alongname(String name) {
-        return StringUtils
-                .repeat("a", pathSegments.getMaxSize())
-                .concat(name);
+        return StringUtils.repeat("a", pathSegments.getMaxSize()).concat(name);
     }
 
     @Test
@@ -322,5 +244,82 @@ public class TestUserWorkspace {
         }
     }
 
+    @Test
+    public void testCandidateNames() {
+        expectCandidateNames("user", //
+                "user");
+        expectCandidateNames("Dr. John Doe", //
+                "Dr. John Doe", //
+                "Dr-John-Doe");
+        expectCandidateNames("user@example.com", //
+                "user~40example.com", //
+                "user-example-com");
+        expectCandidateNames("a/b@c~d?f&g", //
+                "a~2fb~40c~7ed~3ff~26g", //
+                "a-b-c-d-f-g");
+        // 23 chars
+        expectCandidateNames("useruseruseruseruseruse", //
+                "useruseruseruseruseruse");
+        // 24 chars
+        expectCandidateNames("useruseruseruseruseruser", //
+                "useruseruseruseruseruser", //
+                "useruseruseruser37fcb8c6");
+        // 26 chars
+        expectCandidateNames("useruseruseruseruseruserus", //
+                "useruseruseruseruseruserus", //
+                "useruseruseruseruseruser", //
+                "useruseruserusercc1f8605");
+        // 30 chars
+        expectCandidateNames("useruseruseruseruseruseruserus", //
+                "useruseruseruseruseruseruserus", //
+                "useruseruseruseruseruser", //
+                "useruseruseruserbe8cd76e", //
+                "useruseruseruseruserusbe8cd76e");
+        // 32 chars
+        expectCandidateNames("useruseruseruseruseruseruseruser", //
+                "useruseruseruseruseruseruseruser", //
+                "useruseruseruseruseruser", //
+                "useruseruseruser13980873", //
+                "useruseruseruseruseruseruserus", //
+                "useruseruseruseruserus13980873");
+    }
+
+    protected void expectCandidateNames(String username, String... expected) {
+        assertEquals(Arrays.asList(expected),
+                ((AbstractUserWorkspaceImpl) uwm).getCandidateUserWorkspaceNames(username));
+    }
+
+    @Test
+    public void testIsUnderUserWorkspace() {
+        doTestIsUnderUserWorkspace("user1");
+    }
+
+    @Test
+    public void testIsUnderUserWorkspaceWithMangledName() {
+        doTestIsUnderUserWorkspace("user1@example.com");
+    }
+
+    protected void doTestIsUnderUserWorkspace(String username) {
+        DocumentModel foo = session.createDocumentModel("/", "foo" + username, "File");
+        foo = session.createDocument(foo);
+        ACP acp = new ACPImpl();
+        acp.addACE(ACL.LOCAL_ACL, new ACE(username, SecurityConstants.READ, true));
+        foo.setACP(acp, true);
+        session.save();
+
+        try (CoreSession userSession = coreFeature.openCoreSession(username)) {
+            Principal principal = userSession.getPrincipal();
+            DocumentModel uw = uwm.getCurrentUserPersonalWorkspace(userSession, userSession.getRootDocument());
+            DocumentModel bar = userSession.createDocumentModel(uw.getPathAsString(), "bar", "File");
+            bar = userSession.createDocument(bar);
+            userSession.save();
+
+            assertTrue(uwm.isUnderUserWorkspace(principal, null, uw));
+            assertTrue(uwm.isUnderUserWorkspace(principal, null, bar));
+
+            assertFalse(uwm.isUnderUserWorkspace(principal, null, userSession.getRootDocument()));
+            assertFalse(uwm.isUnderUserWorkspace(principal, null, userSession.getDocument(foo.getRef())));
+        }
+    }
 
 }

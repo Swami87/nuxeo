@@ -55,7 +55,7 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
 @RunWith(FeaturesRunner.class)
 @Features({ AutomationFeature.class })
 @RepositoryConfig(cleanup = Granularity.METHOD)
-@Deploy({ "org.nuxeo.ecm.platform.commandline.executor", "org.nuxeo.ecm.platform.picture.api",
+@Deploy({ "org.nuxeo.ecm.platform.commandline.executor", "org.nuxeo.ecm.actions", "org.nuxeo.ecm.platform.picture.api",
         "org.nuxeo.ecm.platform.picture.core", "org.nuxeo.ecm.platform.picture.convert" })
 @LocalDeploy("org.nuxeo.ecm.platform.picture.core:OSGI-INF/imaging-listeners-override.xml")
 public class TestImagingAdapter {
@@ -147,7 +147,7 @@ public class TestImagingAdapter {
 
         MultiviewPicture mvp = picture.getAdapter(MultiviewPicture.class);
         PictureView[] views = mvp.getViews();
-        assertEquals(4, views.length);
+        assertEquals(5, views.length);
 
         String path = ImagingResourcesHelper.TEST_DATA_FOLDER + "cat.gif";
         Blob blob = Blobs.createBlob(ImagingResourcesHelper.getFileFromPath(path));
@@ -167,7 +167,7 @@ public class TestImagingAdapter {
         picture = session.getDocument(picture.getRef());
         mvp = picture.getAdapter(MultiviewPicture.class);
         views = mvp.getViews();
-        assertEquals(5, views.length);
+        assertEquals(6, views.length);
 
         view = mvp.getView("a view");
         info = view.getImageInfo();

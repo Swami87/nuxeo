@@ -19,8 +19,8 @@
 package org.nuxeo.elasticsearch;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -55,12 +55,12 @@ import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
-@Deploy({ "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.runtime.metrics", "org.nuxeo.ecm.platform.audit", "org.nuxeo.ecm.platform.uidgen.core",
-        "org.nuxeo.elasticsearch.seqgen",
+@Deploy({ "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.runtime.metrics", "org.nuxeo.ecm.platform.audit",
+        "org.nuxeo.ecm.platform.uidgen.core", "org.nuxeo.elasticsearch.seqgen",
         "org.nuxeo.elasticsearch.seqgen.test:elasticsearch-seqgen-index-test-contrib.xml",
-        "org.nuxeo.elasticsearch.audit" })
+        "org.nuxeo.elasticsearch.audit", "org.nuxeo.admin.center" })
 @RunWith(FeaturesRunner.class)
-@Features(RepositoryElasticSearchFeature.class )
+@Features(RepositoryElasticSearchFeature.class)
 @LocalDeploy({ "org.nuxeo.elasticsearch.audit:elasticsearch-test-contrib.xml",
         "org.nuxeo.elasticsearch.audit:elasticsearch-audit-index-test-contrib.xml",
         "org.nuxeo.elasticsearch.audit:audit-test-contrib.xml" })
@@ -123,7 +123,7 @@ public class TestESHistoryProvider {
         // do some updates
         for (int i = 0; i < 5; i++) {
             doc.setPropertyValue("dc:description", "Update " + i);
-            doc.getContextData().put("comment", "Update " + i);
+            doc.putContextData("comment", "Update " + i);
             doc = session.saveDocument(doc);
             waitForAsyncCompletion();
         }
@@ -148,7 +148,7 @@ public class TestESHistoryProvider {
         // do some more updates
         for (int i = 5; i < 10; i++) {
             doc.setPropertyValue("dc:description", "Update " + i);
-            doc.getContextData().put("comment", "Update " + i);
+            doc.putContextData("comment", "Update " + i);
             doc = session.saveDocument(doc);
             session.save();
             waitForAsyncCompletion();
@@ -168,7 +168,7 @@ public class TestESHistoryProvider {
         // do some more updates
         for (int i = 10; i < 15; i++) {
             doc.setPropertyValue("dc:description", "Update " + i);
-            doc.getContextData().put("comment", "Update " + i);
+            doc.putContextData("comment", "Update " + i);
             doc = session.saveDocument(doc);
             session.save();
         }
@@ -204,7 +204,7 @@ public class TestESHistoryProvider {
         Framework.getLocalService(AuditLogger.class).addLogEntries(entries);
 
         LogEntryGen.flushAndSync();
-        List<LogEntry> logs = reader.getLogEntriesFor(doc.getId());
+        List<LogEntry> logs = reader.getLogEntriesFor(doc.getId(), doc.getRepositoryName());
         if (verbose) {
             dump(logs);
         }
@@ -282,8 +282,8 @@ public class TestESHistoryProvider {
 
             // filter on category
             searchDoc.setPropertyValue("basicauditsearch:eventIds", null);
-            searchDoc.setPropertyValue("basicauditsearch:eventCategories", new String[] { "eventDocumentCategory",
-                    "bonusCategory" });
+            searchDoc.setPropertyValue("basicauditsearch:eventCategories",
+                    new String[] { "eventDocumentCategory", "bonusCategory" });
             pp.setSearchDocumentModel(searchDoc);
             entries = (List<LogEntry>) pp.getCurrentPage();
             assertEquals(20, entries.size());

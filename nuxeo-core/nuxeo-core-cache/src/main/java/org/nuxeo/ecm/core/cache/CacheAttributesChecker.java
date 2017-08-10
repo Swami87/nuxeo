@@ -20,6 +20,7 @@
 package org.nuxeo.ecm.core.cache;
 
 import java.io.Serializable;
+import java.util.Set;
 
 /**
  * Class to implement mandatory check attributes before calling implementation of cache This enable to have the same
@@ -27,20 +28,10 @@ import java.io.Serializable;
  *
  * @since 6.0
  */
-public class CacheAttributesChecker extends AbstractCache {
+public class CacheAttributesChecker extends CacheWrapper {
 
-    protected Cache cache;
-
-    protected CacheAttributesChecker(CacheDescriptor desc) {
-        super(desc);
-    }
-
-    void setCache(Cache cache) {
-        this.cache = cache;
-    }
-
-    public Cache getCache() {
-        return cache;
+    protected CacheAttributesChecker(CacheDescriptor desc, Cache cache) {
+        super(cache);
     }
 
     @Override
@@ -52,9 +43,14 @@ public class CacheAttributesChecker extends AbstractCache {
     }
 
     @Override
+    public Set<String> keySet() {
+        return cache.keySet();
+    }
+
+    @Override
     public void invalidate(String key) {
         if (key == null) {
-            throw new IllegalArgumentException(String.format("Can't invalidate a null key for the cache '%s'!", name));
+            throw new IllegalArgumentException(String.format("Can't invalidate a null key for the cache '%s'!", cache.getName()));
         }
         cache.invalidate(key);
     }
@@ -67,7 +63,7 @@ public class CacheAttributesChecker extends AbstractCache {
     @Override
     public void put(String key, Serializable value) {
         if (key == null) {
-            throw new IllegalArgumentException(String.format("Can't put a null key for the cache '%s'!", name));
+            throw new IllegalArgumentException(String.format("Can't put a null key for the cache '%s'!", cache.getName()));
         }
         cache.put(key, value);
     }
@@ -80,4 +76,8 @@ public class CacheAttributesChecker extends AbstractCache {
         return cache.hasEntry(key);
     }
 
+    @Override
+    public long getSize() {
+        return cache.getSize();
+    }
 }

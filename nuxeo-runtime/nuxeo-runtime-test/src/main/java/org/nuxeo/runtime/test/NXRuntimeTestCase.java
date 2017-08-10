@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.runtime.test;
 
 import static org.junit.Assert.assertEquals;
@@ -25,24 +24,24 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.jar.Attributes;
-import java.util.jar.JarFile;
 import java.util.jar.Manifest;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
@@ -63,25 +62,41 @@ import org.nuxeo.osgi.SystemBundle;
 import org.nuxeo.osgi.SystemBundleFile;
 import org.nuxeo.osgi.application.StandaloneBundleLoader;
 import org.nuxeo.runtime.AbstractRuntimeService;
+import org.nuxeo.runtime.RuntimeServiceException;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.model.Extension;
+import org.nuxeo.runtime.model.RegistrationInfo;
 import org.nuxeo.runtime.model.RuntimeContext;
+import org.nuxeo.runtime.model.StreamRef;
+import org.nuxeo.runtime.model.URLStreamRef;
+import org.nuxeo.runtime.model.impl.DefaultRuntimeContext;
 import org.nuxeo.runtime.osgi.OSGiRuntimeContext;
 import org.nuxeo.runtime.osgi.OSGiRuntimeService;
+import org.nuxeo.runtime.test.protocols.inline.InlineURLFactory;
 import org.nuxeo.runtime.test.runner.ConditionalIgnoreRule;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.MDCFeature;
 import org.nuxeo.runtime.test.runner.RandomBug;
 import org.nuxeo.runtime.test.runner.RuntimeHarness;
+import org.nuxeo.runtime.test.runner.TargetExtensions;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.FrameworkEvent;
+
+import io.github.lukehutch.fastclasspathscanner.FastClasspathScanner;
 
 /**
  * Abstract base class for test cases that require a test runtime service.
  * <p>
  * The runtime service itself is conveniently available as the <code>runtime</code> instance variable in derived
  * classes.
+ * <p>
+ * <b>Warning:</b> NXRuntimeTestCase subclasses <b>must</b>
+ * <ul>
+ * <li>not declare they own @Before and @After.
+ * <li>override doSetUp and doTearDown (and postSetUp if needed) instead of setUp and tearDown.
+ * <li>never call deployXXX methods outside the doSetUp method.
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
@@ -116,6 +131,13 @@ public class NXRuntimeTestCase implements RuntimeHarness {
 
     protected boolean restart = false;
 
+    protected List<String[]> deploymentStack = new ArrayList<>();
+
+    /**
+     * Whether or not the runtime components were started. This is useful to ensure the runtime is started once.
+     */
+    protected boolean frameworkStarted = false;
+
     @Override
     public boolean isRestart() {
         return restart;
@@ -129,16 +151,27 @@ public class NXRuntimeTestCase implements RuntimeHarness {
 
     protected final TargetResourceLocator targetResourceLocator;
 
+    /**
+     * Set to true when the instance of this class is a JUnit test case. Set to false when the instance of this class is
+     * instantiated by the FeaturesRunner to manage the framework If the class is a JUnit test case then the runtime
+     * components will be started at the end of the setUp method
+     */
+    protected final boolean isTestUnit;
+
+    /**
+     * Used when subclassing to create standalone test cases
+     */
     public NXRuntimeTestCase() {
         targetResourceLocator = new TargetResourceLocator(this.getClass());
+        isTestUnit = true;
     }
 
-    public NXRuntimeTestCase(String name) {
-        this();
-    }
-
+    /**
+     * Used by the features runner to manage the Nuxeo framework
+     */
     public NXRuntimeTestCase(Class<?> clazz) {
         targetResourceLocator = new TargetResourceLocator(clazz);
+        isTestUnit = false;
     }
 
     @Override
@@ -167,11 +200,11 @@ public class NXRuntimeTestCase implements RuntimeHarness {
 
     @Override
     public void start() throws Exception {
-        setUp();
+        startRuntime();
     }
 
     @Before
-    public void setUp() throws Exception {
+    public void startRuntime() throws Exception {
         System.setProperty("org.nuxeo.runtime.testing", "true");
         // super.setUp();
         wipeRuntime();
@@ -180,14 +213,55 @@ public class NXRuntimeTestCase implements RuntimeHarness {
             throw new UnsupportedOperationException("no bundles available");
         }
         initOsgiRuntime();
+        setUp(); // let a chance to the subclasses to contribute bundles and/or components
+        if (isTestUnit) { // if this class is running as a test case start the runtime components
+            fireFrameworkStarted();
+        }
+        postSetUp();
     }
 
     /**
-     * Fire the event {@code FrameworkEvent.STARTED}.
+     * Implementors should override this method to setup tests and not the {@link #startRuntime()} method. This method
+     * should contain all the bundle or component deployments needed by the tests. At the time this method is called the
+     * components are not yet started. If you need to perform component/service lookups use instead the
+     * {@link #postSetUp()} method
+     */
+    protected void setUp() throws Exception {
+    }
+
+    /**
+     * Implementors should override this method to implement any specific test tear down and not the
+     * {@link #stopRuntime()} method
+     *
+     * @throws Exception
+     */
+    protected void tearDown() throws Exception {
+        deploymentStack = new ArrayList<>();
+    }
+
+    /**
+     * Called after framework was started (at the end of setUp). Implementors may use this to use deployed services to
+     * initialize fields etc.
+     */
+    protected void postSetUp() throws Exception {
+    }
+
+    /**
+     * Fire the event {@code FrameworkEvent.STARTED}. This will start all the resolved Nuxeo components
+     *
+     * @see OSGiRuntimeService#frameworkEvent(FrameworkEvent)
      */
     @Override
     public void fireFrameworkStarted() throws Exception {
-        boolean txStarted = !TransactionHelper.isTransactionActiveOrMarkedRollback() && TransactionHelper.startTransaction();
+        if (frameworkStarted) {
+            // avoid starting twice the runtime (fix situations where tests are starting themselves the runtime)
+            // If this happens the faulty test should be fixed
+            // TODO NXP-22534 - throw an exception?
+            return;
+        }
+        frameworkStarted = true;
+        boolean txStarted = !TransactionHelper.isTransactionActiveOrMarkedRollback()
+                && TransactionHelper.startTransaction();
         boolean txFinished = false;
         try {
             osgi.fireFrameworkEvent(new FrameworkEvent(FrameworkEvent.STARTED, runtimeBundle, null));
@@ -203,7 +277,8 @@ public class NXRuntimeTestCase implements RuntimeHarness {
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void stopRuntime() throws Exception {
+        tearDown();
         wipeRuntime();
         if (workingDir != null) {
             if (!restart) {
@@ -219,7 +294,7 @@ public class NXRuntimeTestCase implements RuntimeHarness {
 
     @Override
     public void stop() throws Exception {
-        tearDown();
+        stopRuntime();
     }
 
     @Override
@@ -234,8 +309,8 @@ public class NXRuntimeTestCase implements RuntimeHarness {
                 if (System.getProperties().remove("nuxeo.home") != null) {
                     log.warn("Removed System property nuxeo.home.");
                 }
-                workingDir = File.createTempFile("nxruntime-" + Thread.currentThread().getName() + "-", null, new File(
-                        "target"));
+                workingDir = File.createTempFile("nxruntime-" + Thread.currentThread().getName() + "-", null,
+                        new File("target"));
                 workingDir.delete();
             }
         } catch (IOException e) {
@@ -270,74 +345,18 @@ public class NXRuntimeTestCase implements RuntimeHarness {
     }
 
     public static URL[] introspectClasspath(ClassLoader loader) {
-        // normal case
-        if (loader instanceof URLClassLoader) {
-            return ((URLClassLoader) loader).getURLs();
-        }
-        // surefire suite runner
-        final Class<? extends ClassLoader> loaderClass = loader.getClass();
-        if (loaderClass.getName().equals("org.apache.tools.ant.AntClassLoader")) {
+        return new FastClasspathScanner().getUniqueClasspathElements().stream().map(file -> {
             try {
-                Method method = loaderClass.getMethod("getClasspath");
-                String cp = (String) method.invoke(loader);
-                String[] paths = cp.split(File.pathSeparator);
-                URL[] urls = new URL[paths.length];
-                for (int i = 0; i < paths.length; i++) {
-                    urls[i] = new URL("file:" + paths[i]);
-                }
-                return urls;
-            } catch (NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException
-                    | InvocationTargetException | MalformedURLException cause) {
-                throw new AssertionError("Cannot introspect mavent class loader", cause);
+                return file.toURI().toURL();
+            } catch (MalformedURLException cause) {
+                throw new Error("Could not get URL from " + file, cause);
             }
-        }
-        // try getURLs method
-        try {
-            Method m = loaderClass.getMethod("getURLs");
-            return (URL[]) m.invoke(loader);
-        } catch (NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException
-                | InvocationTargetException cause) {
-            throw new AssertionError("Unsupported classloader type: " + loaderClass.getName()
-                    + "\nWon't be able to load OSGI bundles");
-        }
+        }).toArray(URL[]::new);
     }
 
     protected void initUrls() throws Exception {
         ClassLoader classLoader = NXRuntimeTestCase.class.getClassLoader();
         urls = introspectClasspath(classLoader);
-        // special cases such as Surefire with useManifestOnlyJar or Jacoco
-        // Look for nuxeo-runtime
-        boolean found = false;
-        JarFile surefirebooterJar = null;
-        for (URL url : urls) {
-            URI uri = url.toURI();
-            if (uri.getPath().matches(".*/nuxeo-runtime-[^/]*\\.jar")) {
-                found = true;
-                break;
-            } else if (uri.getScheme().equals("file") && uri.getPath().contains("surefirebooter")) {
-                surefirebooterJar = new JarFile(new File(uri));
-            }
-        }
-        if (!found && surefirebooterJar != null) {
-            try {
-                String cp = surefirebooterJar.getManifest().getMainAttributes().getValue(Attributes.Name.CLASS_PATH);
-                if (cp != null) {
-                    String[] cpe = cp.split(" ");
-                    URL[] newUrls = new URL[cpe.length];
-                    for (int i = 0; i < cpe.length; i++) {
-                        // Don't need to add 'file:' with maven surefire
-                        // >= 2.4.2
-                        String newUrl = cpe[i].startsWith("file:") ? cpe[i] : "file:" + cpe[i];
-                        newUrls[i] = new URL(newUrl);
-                    }
-                    urls = newUrls;
-                }
-            } catch (Exception e) {
-                // skip
-            } finally {
-                surefirebooterJar.close();
-            }
-        }
         if (log.isDebugEnabled()) {
             StringBuilder sb = new StringBuilder();
             sb.append("URLs on the classpath: ");
@@ -362,6 +381,7 @@ public class NXRuntimeTestCase implements RuntimeHarness {
         // exception is raised during a previous setUp -> tearDown is not called
         // afterwards).
         runtime = null;
+        frameworkStarted = false;
         if (Framework.getRuntime() != null) {
             Framework.shutdown();
         }
@@ -388,15 +408,6 @@ public class NXRuntimeTestCase implements RuntimeHarness {
         return loader.getResource(name);
     }
 
-    /**
-     * @deprecated use <code>deployContrib()</code> instead
-     */
-    @Override
-    @Deprecated
-    public void deploy(String contrib) {
-        deployContrib(contrib);
-    }
-
     protected void deployContrib(URL url) {
         assertEquals(runtime, Framework.getRuntime());
         log.info("Deploying contribution from " + url.toString());
@@ -405,23 +416,6 @@ public class NXRuntimeTestCase implements RuntimeHarness {
         } catch (Exception e) {
             fail("Failed to deploy contrib " + url.toString());
         }
-    }
-
-    /**
-     * Deploys a contribution file by looking for it in the class loader.
-     * <p>
-     * The first contribution file found by the class loader will be used. You have no guarantee in case of name
-     * collisions.
-     *
-     * @deprecated use the less ambiguous {@link #deployContrib(String, String)}
-     * @param contrib the relative path to the contribution file
-     */
-    @Override
-    @Deprecated
-    public void deployContrib(String contrib) {
-        URL url = getResource(contrib);
-        assertNotNull("Test contribution not found: " + contrib, url);
-        deployContrib(url);
     }
 
     /**
@@ -453,6 +447,18 @@ public class NXRuntimeTestCase implements RuntimeHarness {
     }
 
     /**
+     * Deploy a contribution specified as a "bundleName:path" uri
+     */
+    public void deployContrib(String uri) throws Exception {
+        int i = uri.indexOf(':');
+        if (i == -1) {
+            throw new IllegalArgumentException(
+                    "Invalid deployment URI: " + uri + ". Must be of the form bundleSymbolicName:pathInBundleJar");
+        }
+        deployContrib(uri.substring(0, i), uri.substring(i + 1));
+    }
+
+    /**
      * Deploy an XML contribution from outside a bundle.
      * <p>
      * This should be used by tests wiling to deploy test contribution as part of a real bundle.
@@ -481,28 +487,66 @@ public class NXRuntimeTestCase implements RuntimeHarness {
         return ctx;
     }
 
-    /**
-     * @deprecated use {@link #undeployContrib(String, String)} instead
-     */
     @Override
-    @Deprecated
-    public void undeploy(String contrib) {
-        undeployContrib(contrib);
+    public RuntimeContext deployPartial(String name, Set<TargetExtensions> targetExtensions) throws Exception {
+        // Do not install bundle; we only need the Object to list his components
+        Bundle bundle = new BundleImpl(osgi, lookupBundle(name), null);
+
+        RuntimeContext ctx = new OSGiRuntimeContext(runtime, bundle);
+        listBundleComponents(bundle).map(URLStreamRef::new).forEach(component -> {
+            try {
+                deployPartialComponent(ctx, targetExtensions, component);
+            } catch (IOException e) {
+                log.error("PartialBundle: " + name + " failed to load: " + component, e);
+            }
+        });
+        return ctx;
     }
 
     /**
-     * @deprecated use {@link #undeployContrib(String, String)} instead
+     * Read a component from his StreamRef and create a new component (suffixed with `-partial`, and the base component
+     * name aliased) with only matching contributions of the extensionPoints parameter.
+     *
+     * @param ctx RuntimeContext in which the new component will be deployed
+     * @param extensionPoints Set of white listed TargetExtensions
+     * @param component Reference to the original component
      */
-    @Override
-    @Deprecated
-    public void undeployContrib(String contrib) {
-        URL url = getResource(contrib);
-        assertNotNull("Test contribution not found: " + contrib, url);
-        try {
-            runtime.getContext().undeploy(url);
-        } catch (Exception e) {
-            fail("Failed to undeploy contrib " + url.toString());
+    protected void deployPartialComponent(RuntimeContext ctx, Set<TargetExtensions> extensionPoints,
+            StreamRef component) throws IOException {
+        RegistrationInfo ri = ((DefaultRuntimeContext) ctx).createRegistrationInfo(component);
+        String name = ri.getName().getName() + "-partial";
+
+        // Flatten Target Extension Points
+        Set<String> targets = extensionPoints.stream()
+                                             .map(TargetExtensions::getTargetExtensions)
+                                             .flatMap(Set::stream)
+                                             .collect(Collectors.toSet());
+
+        String ext = Arrays.stream(ri.getExtensions())
+                           .filter(e -> targets.contains(TargetExtensions.newTargetExtension(
+                                   e.getTargetComponent().getName(), e.getExtensionPoint())))
+                           .map(Extension::toXML)
+                           .collect(Collectors.joining());
+
+        InlineURLFactory.install();
+        ctx.deploy(new InlineRef(name, String.format("<component name=\"%s\">%s</component>", name, ext)));
+    }
+
+    /**
+     * Listing component's urls of a bundle. Inspired from org.nuxeo.runtime.osgi.OSGiRuntimeService#loadComponents but
+     * without deploying anything.
+     *
+     * @param bundle Bundle to be read
+     */
+    protected Stream<URL> listBundleComponents(Bundle bundle) {
+        String list = OSGiRuntimeService.getComponentsList(bundle);
+        String name = bundle.getSymbolicName();
+        log.debug("PartialBundle: " + name + " components: " + list);
+        if (list == null) {
+            return null;
         }
+
+        return Arrays.stream(list.split("[, \t\n\r\f]")).map(bundle::getEntry).filter(Objects::nonNull);
     }
 
     /**
@@ -522,6 +566,15 @@ public class NXRuntimeTestCase implements RuntimeHarness {
             context = runtime.getContext();
         }
         context.undeploy(contrib);
+    }
+
+    public void undeployContrib(String uri) throws Exception {
+        int i = uri.indexOf(':');
+        if (i == -1) {
+            throw new IllegalArgumentException(
+                    "Invalid deployment URI: " + uri + ". Must be of the form bundleSymbolicName:pathInBundleJar");
+        }
+        undeployContrib(uri.substring(0, i), uri.substring(i + 1));
     }
 
     protected static boolean isVersionSuffix(String s) {
@@ -573,7 +626,7 @@ public class NXRuntimeTestCase implements RuntimeHarness {
     @Override
     public void deployBundle(String name) throws Exception {
         // install only if not yet installed
-        BundleImpl bundle = bundleLoader.getOSGi().getRegistry().getBundle(name);
+        Bundle bundle = bundleLoader.getOSGi().getRegistry().getBundle(name);
         if (bundle == null) {
             BundleFile bundleFile = lookupBundle(name);
             bundleLoader.loadBundle(bundleFile);
@@ -630,25 +683,7 @@ public class NXRuntimeTestCase implements RuntimeHarness {
                 return bundleFile;
             }
         }
-        log.warn(String.format("No bundle with symbolic name '%s'; Falling back to deprecated url lookup scheme",
-                bundleName));
-        return oldLookupBundle(bundleName);
-    }
-
-    @Deprecated
-    protected BundleFile oldLookupBundle(String bundle) throws Exception {
-        URL url = lookupBundleUrl(bundle);
-        File file = new File(url.toURI());
-        BundleFile bundleFile;
-        if (file.isDirectory()) {
-            bundleFile = new DirectoryBundleFile(file);
-        } else {
-            bundleFile = new JarBundleFile(file);
-        }
-        log.warn(String.format(
-                "URL-based bundle lookup is deprecated. Please use the symbolic name from MANIFEST (%s) instead",
-                readSymbolicName(bundleFile)));
-        return bundleFile;
+        throw new RuntimeServiceException(String.format("No bundle with symbolic name '%s';", bundleName));
     }
 
     @Override
@@ -684,6 +719,75 @@ public class NXRuntimeTestCase implements RuntimeHarness {
             files.add(url.toURI().getPath());
         }
         return files;
+    }
+
+    /**
+     * Should be called by subclasses after one or more inline deployments are made inside a test method. Without
+     * calling this the inline deployment(s) will not have any effects.
+     * <p />
+     * <b>Be Warned</b> that if you reference runtime services or components you should lookup them again after calling
+     * this method!
+     * <p />
+     * This method also calls {@link #postSetUp()} for convenience.
+     */
+    protected void applyInlineDeployments() throws Exception {
+        runtime.getComponentManager().refresh(false);
+        runtime.getComponentManager().start(); // make sure components are started
+        postSetUp();
+    }
+
+    /**
+     * Should be called by subclasses to remove any inline deployments made in the current test method.
+     * <p />
+     * <b>Be Warned</b> that if you reference runtime services or components you should lookup them again after calling
+     * this method!
+     * <p />
+     * This method also calls {@link #postSetUp()} for convenience.
+     */
+    protected void removeInlineDeployments() throws Exception {
+        runtime.getComponentManager().reset();
+        runtime.getComponentManager().start();
+        postSetUp();
+    }
+
+    /**
+     * Hot deploy the given components (identified by an URI). All the started components are stopped, the new ones are
+     * registered and then all components are started. You can undeploy these components by calling
+     * {@link #popInlineDeployments()}
+     * <p>
+     * A component URI is of the form: bundleSymbolicName:pathToComponentXmlInBundle
+     */
+    public void pushInlineDeployments(String... deploymentUris) throws Exception {
+        deploymentStack.add(deploymentUris);
+        for (String uri : deploymentUris) {
+            deployContrib(uri);
+        }
+        applyInlineDeployments();
+    }
+
+    /**
+     * Remove the latest deployed components using {@link #pushInlineDeployments(String...)}.
+     */
+    public void popInlineDeployments() throws Exception {
+        if (deploymentStack.isEmpty()) {
+            throw new IllegalStateException("deployment stack is empty");
+        }
+        popInlineDeployments(deploymentStack.size() - 1);
+    }
+
+    public void popInlineDeployments(int index) throws Exception {
+        if (index < 0 || index > deploymentStack.size() - 1) {
+            throw new IllegalStateException("deployment stack index is invalid: " + index);
+        }
+        deploymentStack.remove(index);
+
+        runtime.getComponentManager().reset();
+        for (String[] ar : deploymentStack) {
+            for (int i = 0, len = ar.length; i < len; i++) {
+                deployContrib(ar[i]);
+            }
+        }
+        applyInlineDeployments();
     }
 
 }

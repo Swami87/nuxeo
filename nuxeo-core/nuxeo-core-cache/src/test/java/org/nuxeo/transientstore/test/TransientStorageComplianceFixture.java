@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     <a href="mailto:tdelprat@nuxeo.com">Tiry</a>
  */
-
 package org.nuxeo.transientstore.test;
 
 import static org.junit.Assert.assertEquals;
@@ -35,6 +34,7 @@ import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.nuxeo.common.Environment;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.impl.blob.StringBlob;
 import org.nuxeo.ecm.core.event.EventContext;
@@ -50,11 +50,20 @@ import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
+import org.nuxeo.runtime.test.runner.HotDeployer;
+
+import com.google.inject.Inject;
 
 @RunWith(FeaturesRunner.class)
 @Features(TransientStoreFeature.class)
-@Deploy("org.nuxeo.ecm.core.event")
+@Deploy({ //
+        "org.nuxeo.ecm.core.event", //
+        "org.nuxeo.ecm.core.cache.test:test-in-memory-transientstore-contrib.xml", //
+})
 public class TransientStorageComplianceFixture {
+
+    @Inject
+    HotDeployer deployer;
 
     @Test
     public void verifyServiceDeclared() throws Exception {
@@ -104,6 +113,8 @@ public class TransientStorageComplianceFixture {
         // check that entry is stored
         assertTrue(ts.exists("1"));
         assertFalse(ts.isCompleted("1"));
+        assertEquals(1, ts.keySet().size());
+        assertTrue(ts.keySet().contains("1"));
         assertEquals(11, ts.getSize("1"));
         assertEquals("1", ts.getParameter("1", "A"));
         assertEquals("b", ts.getParameter("1", "B"));
@@ -127,6 +138,8 @@ public class TransientStorageComplianceFixture {
 
         // check update
         assertTrue(ts.exists("1"));
+        assertEquals(1, ts.keySet().size());
+        assertTrue(ts.keySet().contains("1"));
         assertEquals(23, ts.getSize("1"));
         blobs = ts.getBlobs("1");
         assertEquals(2, blobs.size());
@@ -139,10 +152,13 @@ public class TransientStorageComplianceFixture {
         // check that still here
         ts.release("1");
         assertTrue(ts.exists("1"));
+        assertEquals(1, ts.keySet().size());
+        assertTrue(ts.keySet().contains("1"));
 
         // check Remove
         ts.remove("1");
         assertFalse(ts.exists("1"));
+        assertEquals(0, ts.keySet().size());
 
         size = ((AbstractTransientStore) ts).getStorageSize();
         assertEquals(0, size);
@@ -329,6 +345,26 @@ public class TransientStorageComplianceFixture {
 
         // check no longer there
         assertFalse(ts.exists("XXX"));
+    }
+
+    @Test
+    public void verifyStorePathCanBeSpecified() throws Exception {
+        Framework.getProperties().setProperty("nuxeo.data.dir", Environment.getDefault().getData().getAbsolutePath());
+
+        TransientStoreService tss = Framework.getService(TransientStoreService.class);
+
+        // Verify default behavior (store cache dir is in ${nuxeo.data.dir}/transientstores/{name}
+        AbstractTransientStore ts = (AbstractTransientStore) tss.getStore("microStore");
+        assertEquals(Framework.expandVars("${nuxeo.data.dir}/transientstores/microStore"),
+                ts.getCacheDir().getAbsolutePath());
+
+        // Verify when a path is given
+        deployer.deploy("org.nuxeo.ecm.core.cache.test:testpath-store.xml");
+        // need to re-fecth service instance after hot deploy
+        tss = Framework.getService(TransientStoreService.class);
+        ts = (SimpleTransientStore) tss.getStore("testPath");
+        assertEquals(Framework.expandVars("${nuxeo.data.dir}/test"), ts.getCacheDir().getAbsolutePath());
+
     }
 
 }

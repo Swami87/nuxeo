@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  *
  * Contributors:
  *     <a href="mailto:grenard@nuxeo.com">Guillaume</a>
+ *     `Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.forms;
 
@@ -170,7 +171,7 @@ public class Select2WidgetElement extends WebFragmentImpl {
         boolean found = false;
         for (WebElement el : getSelectedValues()) {
             if (el.getText().equals(displayedText)) {
-                el.findElement(By.xpath("a[@class='select2-search-choice-close']")).click();
+                Locator.waitUntilEnabledAndClick(el.findElement(By.xpath("a[@class='select2-search-choice-close']")));
                 found = true;
             }
         }
@@ -214,7 +215,13 @@ public class Select2WidgetElement extends WebFragmentImpl {
      * @since 7.10
      */
     public void selectValue(final String value, final boolean wait4A4J, final boolean typeAll) {
-        clickSelect2Field();
+        selectValue(value, wait4A4J, typeAll, true);
+    }
+
+    public void selectValue(final String value, final boolean wait4A4J, final boolean typeAll, boolean click) {
+        if (click) {
+            clickSelect2Field();
+        }
 
         WebElement suggestInput = getSuggestInput();
 
@@ -240,17 +247,17 @@ public class Select2WidgetElement extends WebFragmentImpl {
 
         List<WebElement> suggestions = getSuggestedEntries();
         if (suggestions == null || suggestions.isEmpty()) {
-            log.warn("Suggestion for element " + element.getAttribute("id") + " returned no result.");
+            log.warn("Suggestion for element " + element.getAttribute("id") + " returned no result for value '" + value
+                    + "'.");
             return;
         }
         WebElement suggestion = suggestions.get(0);
         if (suggestions.size() > 1) {
-            log.warn("Suggestion for element " + element.getAttribute("id")
-                    + " returned more than 1 result, the first suggestion will be selected : " + suggestion.getText());
+            log.warn("Suggestion for element " + element.getAttribute("id") + " returned more than 1 result for value '"
+                    + value + "', the first suggestion will be selected : " + suggestion.getText());
         }
 
         AjaxRequestManager arm = new AjaxRequestManager(driver);
-        ;
         if (wait4A4J) {
             arm.watchAjaxRequests();
         }
@@ -272,8 +279,12 @@ public class Select2WidgetElement extends WebFragmentImpl {
      * @since 5.7.3
      */
     public void selectValues(final String[] values) {
+        boolean click = true;
         for (String value : values) {
-            selectValue(value);
+            // avoid clicking again when setting multiple values, to prevent accidental deletion of previously added
+            // element
+            selectValue(value, false, false, click);
+            click = false;
         }
     }
 
@@ -312,6 +323,8 @@ public class Select2WidgetElement extends WebFragmentImpl {
         } else {
             select2Field = element.findElement(By.xpath("a[contains(@class,'select2-choice')]"));
         }
+        Locator.waitUntilEnabled(select2Field);
+        Locator.scrollToElement(select2Field);
         select2Field.click();
     }
 
@@ -385,4 +398,10 @@ public class Select2WidgetElement extends WebFragmentImpl {
         return AbstractTest.asPage(SearchPage.class);
     }
 
+    /**
+     * @since 8.3
+     */
+    public void hideSuggestionsByEscapeKey() {
+        getSuggestInput().sendKeys(Keys.ESCAPE);
+    }
 }

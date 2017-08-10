@@ -30,11 +30,12 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.webengine.WebEngine;
 import org.nuxeo.ecm.webengine.model.Module;
+import org.nuxeo.ecm.webengine.model.WebContext;
 import org.nuxeo.ecm.webengine.scripting.ScriptFile;
 import org.nuxeo.runtime.api.Framework;
 
@@ -67,7 +68,7 @@ public class ResourceServlet extends HttpServlet {
             return;
         }
 
-        Module module = engine.getModule(moduleName);
+        Module module = engine.getModule(moduleName, (WebContext)req.getAttribute(WebContext.class.getName()));
         if (module == null) {
             resp.sendError(404);
             return;
@@ -87,7 +88,7 @@ public class ResourceServlet extends HttpServlet {
         ScriptFile file = module.getSkinResource(path);
         if (file != null) {
             long lastModified = file.lastModified();
-            resp.setDateHeader("Last-Modified:", lastModified);
+            resp.setDateHeader("Last-Modified", lastModified);
             resp.addHeader("Cache-Control", "public");
             resp.addHeader("Server", "Nuxeo/WebEngine-1.0");
 
@@ -109,25 +110,19 @@ public class ResourceServlet extends HttpServlet {
 
     protected static void sendBinaryContent(ScriptFile file, HttpServletResponse resp) throws IOException {
         OutputStream out = resp.getOutputStream();
-        InputStream in = file.getInputStream();
-        try {
-            FileUtils.copy(in, out);
-        } finally {
-            in.close();
+        try (InputStream in = file.getInputStream()) {
+            IOUtils.copy(in, out);
+            out.flush();
         }
-        out.flush();
     }
 
     protected static void sendTextContent(ScriptFile file, HttpServletResponse resp) throws IOException {
         // Writer out = resp.getWriter();
         OutputStream out = resp.getOutputStream();
-        InputStream in = file.getInputStream();
-        try {
-            FileUtils.copy(in, out);
-        } finally {
-            in.close();
+        try (InputStream in = file.getInputStream()) {
+            IOUtils.copy(in, out);
+            out.flush();
         }
-        out.flush();
     }
 
 }

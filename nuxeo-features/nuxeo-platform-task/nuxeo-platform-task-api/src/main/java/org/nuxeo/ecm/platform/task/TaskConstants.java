@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2011-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nicolas Ulrich
  */
-
 package org.nuxeo.ecm.platform.task;
 
 /**
@@ -27,8 +26,6 @@ public class TaskConstants {
     public static final String TASK_USERS_PROPERTY_NAME = "nt:actors";
 
     public static final String TASK_INITIATOR_PROPERTY_NAME = "nt:initiator";
-
-    public static final String TASK_TARGET_DOCUMENT_ID_PROPERTY_NAME = "nt:targetDocumentId";
 
     public static final String TASK_DESCRIPTION_PROPERTY_NAME = "dublincore:description";
 

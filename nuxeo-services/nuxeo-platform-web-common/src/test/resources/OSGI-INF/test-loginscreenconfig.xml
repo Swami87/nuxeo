@@ -1,9 +1,7 @@
 <?xml version="1.0"?>
 <component name="org.nuxeo.ecm.platform.ui.web.auth.loginScreenConfig">
 
-  <extension
-    target="org.nuxeo.ecm.platform.ui.web.auth.service.PluggableAuthenticationService"
-    point="loginScreen">
+  <extension target="org.nuxeo.ecm.platform.ui.web.auth.service.PluggableAuthenticationService" point="loginScreen">
 
     <loginScreenConfig>
 
@@ -35,6 +33,22 @@
           <description>YYYYY</description>
         </loginProvider>
       </loginProviders>
+
+      <startupPages>
+        <startupPage id="jsf" priority="10">
+          <path>nxstartup.faces</path>
+        </startupPage>
+        <startupPage id="other" priority="5">
+          <path>other.html</path>
+        </startupPage>
+      </startupPages>
+
+      <defaultLocale>es_ES</defaultLocale>
+      <supportedLocales>
+        <locale>es_ES</locale>
+        <locale>fr</locale>
+      </supportedLocales>
+
     </loginScreenConfig>
 
   </extension>

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
  */
 package org.nuxeo.ecm.automation.client.model;
 
+import java.util.Date;
+
 import org.codehaus.jackson.annotate.JsonIgnore;
 import org.codehaus.jackson.annotate.JsonProperty;
-
-import java.util.Date;
 
 /**
  * A document. Documents are as they are returned by the server. To modify documents use operations. Use
@@ -70,30 +70,6 @@ public class Document extends DocRef {
     protected final String changeToken;
 
     protected final PropertyList facets;
-
-    @Deprecated
-    /**
-     * Deprecated now use with the constructor with versionLabel and isCheckedOut
-     *
-     */
-    public Document(String id, String type, PropertyList facets, String changeToken, String path, String state,
-            String lockOwner, String lockCreated, String repository, PropertyMap properties,
-            PropertyMap contextParameters) {
-        this(id, type, facets, changeToken, path, state, lockOwner, lockCreated, repository, null, null, properties,
-                contextParameters);
-    }
-
-    @Deprecated
-    /**
-     * Deprecated now use with the constructor with isCheckedOut
-     *
-     */
-    public Document(String id, String type, PropertyList facets, String changeToken, String path, String state,
-            String lockOwner, String lockCreated, String repository, String versionLabel, PropertyMap properties,
-            PropertyMap contextParameters) {
-        this(id, type, facets, changeToken, path, state, lockOwner, lockCreated, repository, versionLabel, null,
-                properties, contextParameters);
-    }
 
     /**
      * Reserved to framework. Should be only called by client framework when unmarshalling documents.
@@ -193,7 +169,7 @@ public class Document extends DocRef {
     }
 
     public Boolean isCheckedOut() {
-        return (isCheckedOut == null) ? null : Boolean.parseBoolean(isCheckedOut);
+        return (isCheckedOut == null) ? null : Boolean.valueOf(isCheckedOut);
     }
 
     public Date getLastModified() {

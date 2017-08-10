@@ -19,6 +19,7 @@
  */
 package org.nuxeo.functionaltests.pages.tabs;
 
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.pages.AbstractPage;
 import org.nuxeo.functionaltests.pages.DocumentBasePage;
@@ -67,14 +68,44 @@ public class EditTabSubPage extends AbstractPage {
             descriptionInputText.sendKeys(description);
         }
         if (versionIncrementLabel != null) {
-            WebElement versionIncrementRadio = driver.findElement(By.xpath("//input[@value=\"" + versionIncrementLabel
-                    + "\"]"));
-            versionIncrementRadio.click();
+            WebElement versionIncrementRadio = driver.findElement(
+                    By.xpath("//input[@value=\"" + versionIncrementLabel + "\"]"));
+            Locator.waitUntilEnabledAndClick(versionIncrementRadio);
         }
 
-        save.click();
+        return save();
+    }
 
-        return asPage(DocumentBasePage.class);
+    /**
+     * @since 8.3
+     */
+    public String getTitle() {
+        return titleInputText.getAttribute("value");
+    }
+
+    /**
+     * @since 8.3
+     */
+    public EditTabSubPage setTitle(String title) {
+        titleInputText.clear();
+        titleInputText.sendKeys(title);
+        return this;
+    }
+
+    /**
+     * @since 8.3
+     */
+    public String getDescription() {
+        return descriptionInputText.getText();
+    }
+
+    /**
+     * @since 8.3
+     */
+    public EditTabSubPage setDescription(String description) {
+        descriptionInputText.clear();
+        descriptionInputText.sendKeys(description);
+        return this;
     }
 
     /**
@@ -83,7 +114,7 @@ public class EditTabSubPage extends AbstractPage {
      * @since 5.7.3
      */
     public DocumentBasePage save() {
-        save.click();
+        Locator.waitUntilEnabledAndClick(save);
         return asPage(DocumentBasePage.class);
     }
 

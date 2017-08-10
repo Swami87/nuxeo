@@ -14,7 +14,9 @@
  * limitations under the License.
  *
  * Contributors:
- *     bstefanescu
+ *     Bogdan Stefanescu
+ *     Ricardo Dias
+ *     Estelle Giuly
  */
 package org.nuxeo.ecm.automation.features;
 
@@ -25,11 +27,16 @@ import java.util.Set;
 
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.automation.core.scripting.CoreFunctions;
 import org.nuxeo.ecm.automation.core.util.StringList;
-import org.nuxeo.ecm.core.api.DataModel;
+import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.DocumentRef;
+import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
+import org.nuxeo.ecm.core.api.PathRef;
 import org.nuxeo.ecm.core.query.sql.NXQL;
 import org.nuxeo.ecm.core.uidgen.UIDGeneratorService;
 import org.nuxeo.ecm.core.uidgen.UIDSequencer;
@@ -44,6 +51,8 @@ import org.nuxeo.runtime.api.Framework;
 public class PlatformFunctions extends CoreFunctions {
 
     private volatile DirectoryService dirService;
+
+    private static final Log log = LogFactory.getLog(PlatformFunctions.class);
 
     private volatile UserManager userMgr;
 
@@ -63,13 +72,12 @@ public class PlatformFunctions extends CoreFunctions {
 
     public String getVocabularyLabel(String voc, String key) {
         try (Session session = getDirService().open(voc)) {
+            if (!session.hasEntry(key)) {
+                log.debug("Unable to find the key '" + key + "' in the vocabulary '" + voc + "'.");
+                return key;
+            }
             DocumentModel doc = session.getEntry(key);
-            // TODO: which is the best method to get "label" property when not
-            // knowing vocabulary schema?
-            // AT: the best is to accept it as a parameter of the method, and
-            // fallback on "label" when not given
-            DataModel dm = doc.getDataModels().values().iterator().next();
-            return (String) dm.getData("label");
+            return (String) doc.getPropertyValue("label"); // no schema prefix for vocabularies
         }
     }
 
@@ -194,7 +202,7 @@ public class PlatformFunctions extends CoreFunctions {
      *
      * @param <T>
      * @param list List of values of type A
-     * @param value Value can be instance of java.util.Collection<Object> or an array of Objects or simply a scalar
+     * @param values Value can be instance of java.util.Collection<Object> or an array of Objects or simply a scalar
      *            Object. If Null, the parameter is ignored
      * @return the list that contains the list contain and value (see value description)
      * @exception xxxxx if in values there is at least one object type not compatible with the collection list
@@ -242,6 +250,17 @@ public class PlatformFunctions extends CoreFunctions {
 
         List<T> result = new ArrayList<T>();
         return concatenateIntoList(result, values);
+    }
+
+    /**
+     * Checks if a document with the supplied id (or path) exists.
+     * @param session The CoreSession to obtain the document
+     * @param idOrPath The document Id or path
+     * @return true if the document exists, or false otherwise
+     */
+    public boolean documentExists(CoreSession session, String idOrPath) {
+        DocumentRef documentRef = idOrPath.startsWith("/") ? new PathRef(idOrPath) : new IdRef(idOrPath);
+        return session.exists(documentRef);
     }
 
 }

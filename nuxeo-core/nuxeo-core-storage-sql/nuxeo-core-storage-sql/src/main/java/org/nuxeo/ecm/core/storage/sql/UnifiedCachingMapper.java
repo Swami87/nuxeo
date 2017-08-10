@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import javax.transaction.xa.Xid;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.Lock;
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.query.QueryFilter;
 
 /**
@@ -50,6 +51,16 @@ public class UnifiedCachingMapper extends UnifiedCachingRowMapper implements Cac
             InvalidationsPropagator invalidationsPropagator, Map<String, String> properties) {
         super.initialize(repositoryName, model, mapper, invalidationsPropagator, properties);
         this.mapper = mapper;
+    }
+
+    @Override
+    public ScrollResult scroll(String query, int batchSize, int keepAliveSeconds) {
+        return mapper.scroll(query, batchSize, keepAliveSeconds);
+    }
+
+    @Override
+    public ScrollResult scroll(String scrollId) {
+        return mapper.scroll(scrollId);
     }
 
     @Override
@@ -98,6 +109,12 @@ public class UnifiedCachingMapper extends UnifiedCachingRowMapper implements Cac
     public IterableQueryResult queryAndFetch(String query, String queryType, QueryFilter queryFilter,
             boolean distinctDocuments, Object... params) {
         return mapper.queryAndFetch(query, queryType, queryFilter, distinctDocuments, params);
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, String queryType,
+            QueryFilter queryFilter, boolean distinctDocuments, long countUpTo, Object... params) {
+        return mapper.queryProjection(query, queryType, queryFilter, distinctDocuments, countUpTo, params);
     }
 
     @Override
@@ -219,8 +236,8 @@ public class UnifiedCachingMapper extends UnifiedCachingRowMapper implements Cac
     }
 
     @Override
-    public void connect() {
-        mapper.connect();
+    public void connect(boolean noSharing) {
+        mapper.connect(noSharing);
     }
 
     @Override

@@ -37,6 +37,12 @@ public class MongoDBRepositoryDescriptor extends DBSRepositoryDescriptor {
     @XNode("dbname")
     public String dbname;
 
+    @XNode("nativeId")
+    public Boolean nativeId;
+
+    @XNode("sequenceBlockSize")
+    public Integer sequenceBlockSize;
+
     @Override
     public MongoDBRepositoryDescriptor clone() {
         return (MongoDBRepositoryDescriptor) super.clone();
@@ -49,6 +55,12 @@ public class MongoDBRepositoryDescriptor extends DBSRepositoryDescriptor {
         }
         if (other.dbname != null) {
             dbname = other.dbname;
+        }
+        if (other.nativeId != null) {
+            nativeId = other.nativeId;
+        }
+        if (other.sequenceBlockSize != null) {
+            sequenceBlockSize = other.sequenceBlockSize;
         }
     }
 

@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.nuxeo.elasticsearch</groupId>
     <artifactId>nuxeo-elasticsearch-parent</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
   <artifactId>nuxeo-elasticsearch-seqgen</artifactId>
   <name>Elasticsearch based Sequence generator</name>
@@ -35,6 +35,16 @@
       <groupId>org.nuxeo.elasticsearch</groupId>
       <artifactId>nuxeo-elasticsearch-core</artifactId>
       <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.nuxeo.ecm.automation</groupId>
+      <artifactId>nuxeo-automation-server</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.nuxeo.ecm.automation</groupId>
+      <artifactId>nuxeo-automation-io</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

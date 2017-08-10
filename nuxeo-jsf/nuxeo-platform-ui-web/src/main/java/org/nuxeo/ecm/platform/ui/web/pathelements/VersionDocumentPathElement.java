@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2007-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.ui.web.pathelements;
 
 import org.nuxeo.ecm.core.api.DocumentModel;
@@ -40,9 +37,7 @@ public class VersionDocumentPathElement extends DocumentPathElement {
     @Override
     public String getName() {
         VersioningDocument docVer = docModel.getAdapter(VersioningDocument.class);
-        String minorVer = docVer.getMinorVersion().toString();
-        String majorVer = docVer.getMajorVersion().toString();
-        return majorVer + '.' + minorVer;
+        return docVer.getVersionLabel();
     }
 
     @Override

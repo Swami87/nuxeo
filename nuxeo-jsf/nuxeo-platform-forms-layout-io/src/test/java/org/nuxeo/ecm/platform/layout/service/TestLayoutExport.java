@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,8 +35,9 @@ import java.util.Map;
 
 import net.sf.json.JSONObject;
 
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
-import org.junit.Before;
 import org.junit.Test;
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.platform.forms.layout.api.BuiltinModes;
@@ -67,20 +68,22 @@ public class TestLayoutExport extends NXRuntimeTestCase {
 
     private LayoutStore service;
 
-    @Before
+    @Override
     public void setUp() throws Exception {
-        super.setUp();
         deployBundle("org.nuxeo.ecm.platform.forms.layout.core");
         deployContrib("org.nuxeo.ecm.platform.forms.layout.client", "OSGI-INF/layouts-framework.xml");
         deployContrib("org.nuxeo.ecm.platform.forms.layout.export.tests", "layouts-test-contrib.xml");
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
         service = Framework.getService(LayoutStore.class);
         assertNotNull(service);
     }
 
-    @SuppressWarnings("deprecation")
     protected void checkEquals(InputStream expected, InputStream actual) throws Exception {
-        String expectedString = FileUtils.read(expected).replaceAll("\r?\n", "");
-        String actualString = FileUtils.read(actual).replaceAll("\r?\n", "");
+        String expectedString = IOUtils.toString(expected, Charsets.UTF_8).replaceAll("\r?\n", "");
+        String actualString = IOUtils.toString(actual, Charsets.UTF_8).replaceAll("\r?\n", "");
         JSONAssert.assertEquals(expectedString, actualString, true);
     }
 
@@ -93,10 +96,11 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         FileOutputStream out = new FileOutputStream(file);
         JSONLayoutExporter.exportLayoutType(lTypeDef, out);
 
-        InputStream written = new FileInputStream(file);
-        InputStream expected = new FileInputStream(FileUtils.getResourcePathFromContext("layouttype-export.json"));
-
-        checkEquals(expected, written);
+        try (InputStream written = new FileInputStream(file);
+                InputStream expected = new FileInputStream(
+                        FileUtils.getResourcePathFromContext("layouttype-export.json"))) {
+            checkEquals(expected, written);
+        }
     }
 
     @Test
@@ -106,15 +110,10 @@ public class TestLayoutExport extends NXRuntimeTestCase {
 
     protected void checkLayoutTypeImport(String filename, boolean isCompat) throws Exception {
         JSONObject json = null;
-        InputStream in = new FileInputStream(FileUtils.getResourcePathFromContext(filename));
-        try {
-            byte[] bytes = FileUtils.readBytes(in);
+        try (InputStream in = new FileInputStream(FileUtils.getResourcePathFromContext(filename))) {
+            byte[] bytes = IOUtils.toByteArray(in);
             if (bytes.length != 0) {
                 json = JSONObject.fromObject(new String(bytes, "UTF-8"));
-            }
-        } finally {
-            if (in != null) {
-                in.close();
             }
         }
 
@@ -140,10 +139,11 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         FileOutputStream out = new FileOutputStream(file);
         JSONLayoutExporter.export(wTypeDef, out);
 
-        InputStream written = new FileInputStream(file);
-        InputStream expected = new FileInputStream(FileUtils.getResourcePathFromContext("widgettype-export.json"));
-
-        checkEquals(expected, written);
+        try (InputStream written = new FileInputStream(file);
+                InputStream expected = new FileInputStream(
+                        FileUtils.getResourcePathFromContext("widgettype-export.json"))) {
+            checkEquals(expected, written);
+        }
     }
 
     @Test
@@ -153,14 +153,15 @@ public class TestLayoutExport extends NXRuntimeTestCase {
 
         File file = Framework.createTempFile("widgettypes-export", ".json");
         FileOutputStream out = new FileOutputStream(file);
-        List<WidgetTypeDefinition> wTypeDefs = new ArrayList<WidgetTypeDefinition>();
+        List<WidgetTypeDefinition> wTypeDefs = new ArrayList<>();
         wTypeDefs.add(wTypeDef);
         JSONLayoutExporter.export(wTypeDefs, out);
 
-        InputStream written = new FileInputStream(file);
-        InputStream expected = new FileInputStream(FileUtils.getResourcePathFromContext("widgettypes-export.json"));
-
-        checkEquals(expected, written);
+        try (InputStream written = new FileInputStream(file);
+                InputStream expected = new FileInputStream(
+                        FileUtils.getResourcePathFromContext("widgettypes-export.json"))) {
+            checkEquals(expected, written);
+        }
     }
 
     @Test
@@ -172,15 +173,10 @@ public class TestLayoutExport extends NXRuntimeTestCase {
 
     protected void checkWidgetTypeImport(String filename, boolean isCompat) throws Exception {
         JSONObject json = null;
-        InputStream in = new FileInputStream(FileUtils.getResourcePathFromContext(filename));
-        try {
-            byte[] bytes = FileUtils.readBytes(in);
+        try (InputStream in = new FileInputStream(FileUtils.getResourcePathFromContext(filename))) {
+            byte[] bytes = IOUtils.toByteArray(in);
             if (bytes.length != 0) {
                 json = JSONObject.fromObject(new String(bytes, "UTF-8"));
-            }
-        } finally {
-            if (in != null) {
-                in.close();
             }
         }
 
@@ -268,9 +264,9 @@ public class TestLayoutExport extends NXRuntimeTestCase {
             assertEquals("layout_row_0", anyRow.getName());
         }
         assertEquals(0, anyRow.getProperties().size());
-        String[] anyRowWidgets = anyRow.getWidgets();
+        WidgetReference[] anyRowWidgets = anyRow.getWidgetReferences();
         assertEquals(1, anyRowWidgets.length);
-        assertEquals("required_property", anyRowWidgets[0]);
+        assertEquals("required_property", anyRowWidgets[0].getName());
 
         if (!isCompat) {
             Map<String, Map<String, Serializable>> defaultProps = conf.getDefaultPropertyValues();
@@ -336,9 +332,9 @@ public class TestLayoutExport extends NXRuntimeTestCase {
             assertEquals("layout_row_0", editRow.getName());
         }
         assertEquals(0, editRow.getProperties().size());
-        String[] editRowWidgets = editRow.getWidgets();
+        WidgetReference[] editRowWidgets = editRow.getWidgetReferences();
         assertEquals(1, editRowWidgets.length);
-        assertEquals("rendered_property", editRowWidgets[0]);
+        assertEquals("rendered_property", editRowWidgets[0].getName());
 
         WidgetDefinition renderedWidget = editLayout.getWidgetDefinition("rendered_property");
         assertNotNull(renderedWidget);
@@ -387,9 +383,9 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         editRow = editRows[1];
         assertEquals("selection_property_row", editRow.getName());
         assertEquals(0, editRow.getProperties().size());
-        editRowWidgets = editRow.getWidgets();
+        editRowWidgets = editRow.getWidgetReferences();
         assertEquals(1, editRowWidgets.length);
-        assertEquals("selection_property", editRowWidgets[0]);
+        assertEquals("selection_property", editRowWidgets[0].getName());
 
         WidgetDefinition selectionWidget = editLayout.getWidgetDefinition("selection_property");
         assertNotNull(selectionWidget);
@@ -438,9 +434,9 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         editRow = editRows[2];
         assertEquals("layout_row_2", editRow.getName());
         assertEquals(0, editRow.getProperties().size());
-        editRowWidgets = editRow.getWidgets();
+        editRowWidgets = editRow.getWidgetReferences();
         assertEquals(1, editRowWidgets.length);
-        assertEquals("subwidgets", editRowWidgets[0]);
+        assertEquals("subwidgets", editRowWidgets[0].getName());
 
         WidgetDefinition withSubwidgets = editLayout.getWidgetDefinition("subwidgets");
         assertNotNull(withSubwidgets);
@@ -482,9 +478,9 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         editRow = editRows[3];
         assertEquals("layout_row_3", editRow.getName());
         assertEquals(0, editRow.getProperties().size());
-        editRowWidgets = editRow.getWidgets();
+        editRowWidgets = editRow.getWidgetReferences();
         assertEquals(1, editRowWidgets.length);
-        assertEquals("subwidgetRefs", editRowWidgets[0]);
+        assertEquals("subwidgetRefs", editRowWidgets[0].getName());
 
         WidgetDefinition withSubwidgetRefs = editLayout.getWidgetDefinition("subwidgetRefs");
         assertNotNull(withSubwidgetRefs);
@@ -560,10 +556,11 @@ public class TestLayoutExport extends NXRuntimeTestCase {
         FileOutputStream out = new FileOutputStream(file);
         out.write(obj.toString(2).getBytes(JSONLayoutExporter.ENCODED_VALUES_ENCODING));
 
-        InputStream written = new FileInputStream(file);
-        InputStream expected = new FileInputStream(FileUtils.getResourcePathFromContext("layout-export.json"));
-
-        checkEquals(expected, written);
+        try (InputStream written = new FileInputStream(file);
+                InputStream expected = new FileInputStream(
+                        FileUtils.getResourcePathFromContext("layout-export.json"))) {
+            checkEquals(expected, written);
+        }
     }
 
 }

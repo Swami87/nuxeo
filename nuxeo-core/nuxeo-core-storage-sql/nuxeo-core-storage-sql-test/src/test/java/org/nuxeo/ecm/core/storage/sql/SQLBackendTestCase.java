@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.storage.sql;
 
 import java.util.Arrays;
@@ -48,7 +47,6 @@ public abstract class SQLBackendTestCase extends NXRuntimeTestCase {
 
     @Override
     public void setUp() throws Exception {
-        super.setUp();
         deployBundle("org.nuxeo.runtime.jtajca");
         deployBundle("org.nuxeo.runtime.datasource");
         deployBundle("org.nuxeo.ecm.core.api");
@@ -57,10 +55,14 @@ public abstract class SQLBackendTestCase extends NXRuntimeTestCase {
         deployBundle("org.nuxeo.ecm.core.event");
         deployBundle("org.nuxeo.ecm.core.storage");
         deployBundle("org.nuxeo.ecm.core.storage.sql");
+        deployBundle("org.nuxeo.ecm.platform.el");
         DatabaseHelper.DATABASE.setUp();
         deployTestContrib("org.nuxeo.ecm.core.storage", "OSGI-INF/test-repo-ds.xml");
-        fireFrameworkStarted();
-        repository = newRepository(-1);
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
+	repository = newRepository(-1);
     }
 
     protected Repository newRepository(long clusteringDelay) throws Exception {
@@ -114,7 +116,6 @@ public abstract class SQLBackendTestCase extends NXRuntimeTestCase {
     @Override
     public void tearDown() throws Exception {
         closeRepository();
-        super.tearDown();
     }
 
     protected void closeRepository() throws Exception {

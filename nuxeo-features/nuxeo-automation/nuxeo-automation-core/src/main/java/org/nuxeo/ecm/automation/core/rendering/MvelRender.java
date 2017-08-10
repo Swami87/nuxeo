@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.mvel2.templates.CompiledTemplate;
 import org.mvel2.templates.TemplateCompiler;
 import org.mvel2.templates.TemplateRuntime;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.services.resource.ResourceService;
@@ -44,8 +45,8 @@ public class MvelRender implements Renderer {
 
     @Override
     public String render(String uriOrContent, Map<String, Object> root) throws OperationException, IOException {
-        CompiledTemplate compiled = null;
-        String content = null;
+        CompiledTemplate compiled;
+        String content;
         if (uriOrContent.startsWith(Renderer.TEMPLATE_PREFIX)) {
             String name = uriOrContent.substring(Renderer.TEMPLATE_PREFIX.length());
             compiled = cache.get(name);
@@ -54,11 +55,8 @@ public class MvelRender implements Renderer {
                 if (url == null) {
                     throw new OperationException("Rendering resource not found: " + name);
                 }
-                InputStream in = url.openStream();
-                try {
-                    content = FileUtils.read(in);
-                } finally {
-                    in.close();
+                try (InputStream in = url.openStream()) {
+                    content = IOUtils.toString(in, Charsets.UTF_8);
                 }
                 compiled = TemplateCompiler.compileTemplate(content);
                 cache.put(name, compiled);

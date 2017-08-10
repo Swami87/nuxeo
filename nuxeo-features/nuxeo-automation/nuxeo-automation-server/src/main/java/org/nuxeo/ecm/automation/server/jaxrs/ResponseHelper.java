@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ package org.nuxeo.ecm.automation.server.jaxrs;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
@@ -39,6 +40,8 @@ import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.DocumentRef;
+import org.nuxeo.ecm.core.api.DocumentRefList;
+import org.nuxeo.ecm.core.api.impl.DocumentModelListImpl;
 import org.nuxeo.ecm.webengine.jaxrs.session.SessionFactory;
 
 /**
@@ -58,6 +61,10 @@ public class ResponseHelper {
         return Response.status(204).build();
     }
 
+    public static Response emptyBlobs() {
+        return Response.status(204).type("application/nuxeo-empty-list").build();
+    }
+
     public static Response notAllowed() {
         return Response.status(401).build();
     }
@@ -75,14 +82,25 @@ public class ResponseHelper {
         if (type == null || "???".equals(type)) {
             type = MediaType.APPLICATION_OCTET_STREAM;
         }
-        return Response.status(httpStatus).entity(blob).type(type).header("Content-Disposition",
-                "attachment; filename=" + blob.getFilename()).build();
+        if (blob.getEncoding() != null) {
+            type += "; charset=" + blob.getEncoding();
+        }
+        return Response.status(httpStatus)
+                       .entity(blob)
+                       .type(type)
+                       .header("Content-Disposition", "attachment; filename=" + blob.getFilename())
+                       .build();
     }
 
     public static Response blobs(List<Blob> blobs, int httpStatus) throws MessagingException, IOException {
+        if (blobs.isEmpty()) {
+            return emptyBlobs();
+        }
         MultipartBlobs multipartBlobs = new MultipartBlobs(blobs);
-        return Response.status(httpStatus).entity(multipartBlobs).type(
-                new BoundaryMediaType(multipartBlobs.getContentType())).build();
+        return Response.status(httpStatus)
+                       .entity(multipartBlobs)
+                       .type(new BoundaryMediaType(multipartBlobs.getContentType()))
+                       .build();
     }
 
     /**
@@ -97,8 +115,8 @@ public class ResponseHelper {
      *
      * @since 7.1
      */
-    public static Object getResponse(Object result, HttpServletRequest request, int httpStatus) throws IOException,
-            MessagingException {
+    public static Object getResponse(Object result, HttpServletRequest request, int httpStatus)
+            throws IOException, MessagingException {
         if (result == null || "true".equals(request.getHeader("X-NXVoidOperation"))) {
             return emptyContent();
         }
@@ -109,6 +127,10 @@ public class ResponseHelper {
         } else if (result instanceof DocumentRef) {
             CoreSession session = SessionFactory.getSession(request);
             return Response.status(httpStatus).entity(session.getDocument((DocumentRef) result)).build();
+        } else if (result instanceof DocumentRefList) {
+            CoreSession session = SessionFactory.getSession(request);
+            return Response.status(httpStatus).entity(((DocumentRefList) result).stream().map(session::getDocument)
+                    .collect(Collectors.toCollection(DocumentModelListImpl::new))).build();
         } else if (result instanceof DocumentModel || result instanceof DocumentModelList
                 || result instanceof JsonAdapter || result instanceof RecordSet || result instanceof Paginable<?>) {
             return Response.status(httpStatus).entity(result).build();

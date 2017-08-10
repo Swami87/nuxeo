@@ -20,20 +20,14 @@
 package org.nuxeo.elasticsearch.core;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHitField;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
-import org.nuxeo.ecm.core.query.sql.NXQL;
 import org.nuxeo.ecm.core.schema.types.Type;
-import org.nuxeo.ecm.core.schema.types.primitives.DateType;
 
 /**
  * Iterable query result of the results of an Elasticsearch query.
@@ -64,30 +58,7 @@ public class EsResultSetImpl implements IterableQueryResult, Iterator<Map<String
     }
 
     protected List<Map<String, Serializable>> buildMaps() {
-        List<Map<String, Serializable>> rows = new ArrayList<>(response.getHits().getHits().length);
-        Map<String, Serializable> emptyRow = new HashMap<>(selectFieldsAndTypes.size());
-        for (String fieldName : selectFieldsAndTypes.keySet()) {
-            emptyRow.put(fieldName, null);
-        }
-        for (SearchHit hit : response.getHits().getHits()) {
-            Map<String, Serializable> row = new HashMap<>(emptyRow);
-            for (SearchHitField field : hit.getFields().values()) {
-                String name = field.getName();
-                Serializable value = field.<Serializable> getValue();
-                // type conversion
-                Type type;
-                if (value instanceof String && (type = selectFieldsAndTypes.get(name)) instanceof DateType) {
-                    // convert back to calendar
-                    value = (Serializable) type.decode(((String) value));
-                }
-                row.put(name, value);
-            }
-            if (selectFieldsAndTypes.containsKey(NXQL.ECM_FULLTEXT_SCORE)) {
-                row.put(NXQL.ECM_FULLTEXT_SCORE, Double.valueOf(hit.getScore()));
-            }
-            rows.add(row);
-        }
-        return rows;
+        return new EsSearchHitConverter(selectFieldsAndTypes).convert(response.getHits().getHits());
     }
 
     @Override
@@ -96,6 +67,7 @@ public class EsResultSetImpl implements IterableQueryResult, Iterator<Map<String
         pos = -1;
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public boolean isLife() {
         return !closed;
@@ -106,8 +78,23 @@ public class EsResultSetImpl implements IterableQueryResult, Iterator<Map<String
         return false; // holds no resources
     }
 
+    /**
+     * Returns the number of results available in the iterator.
+     * Note that before 9.1 this method was returning the totalSize.
+     * 
+     * @since 9.1
+     */
     @Override
     public long size() {
+        return size;
+    }
+
+    /**
+     * Returns the total number of result that match the query.
+     *
+     * @since 9.1
+     */
+    public long totalSize() {
         return response.getHits().getTotalHits();
     }
 

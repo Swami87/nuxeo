@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.usermanager;
 
 import static org.junit.Assert.assertEquals;
@@ -45,13 +42,13 @@ import java.util.Map;
 
 import javax.inject.Inject;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
-import org.nuxeo.ecm.core.api.impl.NuxeoGroupImpl;
 import org.nuxeo.ecm.core.api.security.ACE;
 import org.nuxeo.ecm.core.api.security.ACL;
 import org.nuxeo.ecm.core.api.security.SecurityConstants;
@@ -61,6 +58,7 @@ import org.nuxeo.ecm.directory.DirectoryException;
 import org.nuxeo.ecm.platform.usermanager.exceptions.GroupAlreadyExistsException;
 import org.nuxeo.ecm.platform.usermanager.exceptions.UserAlreadyExistsException;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 import org.nuxeo.runtime.test.runner.RuntimeHarness;
 
@@ -119,19 +117,11 @@ public class TestUserManager extends UserManagerTestCase {
     }
 
     @Test
+    @Deploy("org.nuxeo.ecm.platform.usermanager.tests:test-usermanagerimpl/userservice-override-config.xml")
     public void testGetAdministratorOverride() throws Exception {
-        harness.deployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                "test-usermanagerimpl/userservice-override-config.xml");
         // user manager is recomputed after deployment => refetch it
         userManager = Framework.getService(UserManager.class);
-        try {
-            doTestGetAdministratorOverride();
-        } finally {
-            harness.undeployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                    "test-usermanagerimpl/userservice-override-config.xml");
-            // user manager is recomputed after undeployment => refetch it
-            userManager = Framework.getService(UserManager.class);
-        }
+        doTestGetAdministratorOverride();
     }
 
     public void doTestGetAdministratorOverride() throws Exception {
@@ -191,19 +181,9 @@ public class TestUserManager extends UserManagerTestCase {
     }
 
     @Test
+    @Deploy("org.nuxeo.ecm.platform.usermanager.tests:test-usermanagerimpl/userservice-override-config.xml")
     public void testGetVirtualUsersOverride() throws Exception {
-        harness.deployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                "test-usermanagerimpl/userservice-override-config.xml");
-        // user manager is recomputed after deployment => refetch it
-        userManager = Framework.getService(UserManager.class);
-        try {
-            doTestGetVirtualUsersOverride();
-        } finally {
-            harness.undeployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                    "test-usermanagerimpl/userservice-override-config.xml");
-            // user manager is recomputed after undeployment => refetch it
-            userManager = Framework.getService(UserManager.class);
-        }
+        doTestGetVirtualUsersOverride();
     }
 
     public void doTestGetVirtualUsersOverride() throws Exception {
@@ -247,28 +227,18 @@ public class TestUserManager extends UserManagerTestCase {
     @Test
     public void testGetAdministratorGroups() {
         List<String> adminGroups = userManager.getAdministratorsGroups();
-        assertEquals(Arrays.asList("administrators"), adminGroups);
+        assertEquals(Collections.singletonList("administrators"), adminGroups);
     }
 
     @Test
+    @Deploy("org.nuxeo.ecm.platform.usermanager.tests:test-usermanagerimpl/userservice-override-config.xml")
     public void testGetAdministratorGroupsOverride() throws Exception {
-        harness.deployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                "test-usermanagerimpl/userservice-override-config.xml");
-        // user manager is recomputed after deployment => refetch it
-        userManager = Framework.getService(UserManager.class);
-        try {
-            doTestGetAdministratorGroupsOverride();
-        } finally {
-            harness.undeployContrib("org.nuxeo.ecm.platform.usermanager.tests",
-                    "test-usermanagerimpl/userservice-override-config.xml");
-            // user manager is recomputed after undeployment => refetch it
-            userManager = Framework.getService(UserManager.class);
-        }
+        doTestGetAdministratorGroupsOverride();
     }
 
     public void doTestGetAdministratorGroupsOverride() throws Exception {
         List<String> adminGroups = userManager.getAdministratorsGroups();
-        assertEquals(Arrays.asList("myAdministrators"), adminGroups);
+        assertEquals(Collections.singletonList("myAdministrators"), adminGroups);
     }
 
     @Test
@@ -285,7 +255,7 @@ public class TestUserManager extends UserManagerTestCase {
         assertEquals("Coward", principal.getProperty("user", "lastName"));
 
         // search by map
-        Map<String, Serializable> filter = new HashMap<String, Serializable>();
+        Map<String, Serializable> filter = new HashMap<>();
         filter.put("lastName", "Cow");
         users = userManager.searchUsers(filter, filter.keySet());
         assertEquals(1, users.size());
@@ -353,7 +323,7 @@ public class TestUserManager extends UserManagerTestCase {
             String userName = "test_u" + i;
             userModel = getUser(userName);
             userModel.setProperty("user", "username", userName);
-            userModel.setProperty("user", "groups", Arrays.asList("test_grp0"));
+            userModel.setProperty("user", "groups", Collections.singletonList("test_grp0"));
             userManager.createUser(userModel);
         }
 
@@ -387,9 +357,9 @@ public class TestUserManager extends UserManagerTestCase {
 
         assertNotNull(g1);
 
-        List<String> groupNames = Arrays.asList("test_g1");
+        List<String> groupNames = Collections.singletonList("test_g1");
         List<String> groupNamesWithDefault = Arrays.asList("defgr", "test_g1");
-        List<String> roleNames = Arrays.asList("regular");
+        List<String> roleNames = Collections.singletonList("regular");
         user.setProperty("user", "firstName", "fname1");
         user.setProperty("user", "lastName", "lname1");
         user.setProperty("user", "company", "company1");
@@ -431,9 +401,9 @@ public class TestUserManager extends UserManagerTestCase {
         DocumentModel g3 = getGroup("test_g3");
         g3.setPropertyValue("group:grouplabel", "test_g3_label");
 
-        List<String> g1Users = Arrays.asList("test_u1");
+        List<String> g1Users = Collections.singletonList("test_u1");
         List<String> g2Users = Arrays.asList("test_u1", "test_u2");
-        List<String> g2Groups = Arrays.asList("test_g1");
+        List<String> g2Groups = Collections.singletonList("test_g1");
 
         g1.setProperty("group", "members", g1Users);
         userManager.createGroup(g1);
@@ -479,7 +449,7 @@ public class TestUserManager extends UserManagerTestCase {
         DocumentModel g1 = getGroup("test_g1");
         DocumentModel g2 = getGroup("test_g2");
 
-        List<String> g2Groups = Arrays.asList("test_g1");
+        List<String> g2Groups = Collections.singletonList("test_g1");
 
         userManager.createGroup(g1);
         g2.setProperty("group", "subGroups", g2Groups);
@@ -500,7 +470,7 @@ public class TestUserManager extends UserManagerTestCase {
 
         // re-create g2 as a parent of g1
         // test if g1 is not top-level and g2 is
-        g2Groups = Arrays.asList("test_g1");
+        g2Groups = Collections.singletonList("test_g1");
         g2.setProperty("group", "subGroups", g2Groups);
         userManager.createGroup(g2);
         expectedTopLevelGroups = Arrays.asList("administrators", "members", "powerusers", "test_g2");
@@ -527,10 +497,10 @@ public class TestUserManager extends UserManagerTestCase {
         DocumentModel g1 = getGroup("test_g1");
         DocumentModel g2 = getGroup("test_g2");
 
-        List<String> g1Users = Arrays.asList("test_u1");
+        List<String> g1Users = Collections.singletonList("test_u1");
         List<String> g2Users = Arrays.asList("test_u2", "test_u2bis");
 
-        List<String> g2Groups = Arrays.asList("test_g1");
+        List<String> g2Groups = Collections.singletonList("test_g1");
 
         g1.setProperty("group", "members", g1Users);
         userManager.createGroup(g1);
@@ -538,7 +508,7 @@ public class TestUserManager extends UserManagerTestCase {
         g2.setProperty("group", "subGroups", g2Groups);
         userManager.createGroup(g2);
 
-        List<String> expectedUsersInGroup1 = Arrays.asList("test_u1");
+        List<String> expectedUsersInGroup1 = Collections.singletonList("test_u1");
         List<String> expectedUsersInGroup2 = Arrays.asList("test_u2bis", "test_u2");
         Collections.sort(expectedUsersInGroup1);
         Collections.sort(expectedUsersInGroup2);
@@ -564,9 +534,9 @@ public class TestUserManager extends UserManagerTestCase {
         DocumentModel g1 = getGroup("test_g1");
         DocumentModel g2 = getGroup("test_g2");
 
-        List<String> g1Users = Arrays.asList("test_u1");
+        List<String> g1Users = Collections.singletonList("test_u1");
         List<String> g2Users = Arrays.asList("test_u2", "test_u2bis");
-        List<String> g2Groups = Arrays.asList("test_g1");
+        List<String> g2Groups = Collections.singletonList("test_g1");
 
         g1.setProperty("group", "members", g1Users);
         userManager.createGroup(g1);
@@ -574,7 +544,7 @@ public class TestUserManager extends UserManagerTestCase {
         g2.setProperty("group", "subGroups", g2Groups);
         userManager.createGroup(g2);
 
-        List<String> expectedUsersInGroup1 = Arrays.asList("test_u1");
+        List<String> expectedUsersInGroup1 = Collections.singletonList("test_u1");
         List<String> usersInGroupAndSubGroups1 = userManager.getUsersInGroupAndSubGroups("test_g1");
         Collections.sort(expectedUsersInGroup1);
         Collections.sort(usersInGroupAndSubGroups1);
@@ -606,11 +576,11 @@ public class TestUserManager extends UserManagerTestCase {
         DocumentModel g1 = getGroup("test_g1");
         DocumentModel g2 = getGroup("test_g2");
 
-        List<String> g1Users = Arrays.asList("test_u1");
+        List<String> g1Users = Collections.singletonList("test_u1");
         List<String> g2Users = Arrays.asList("test_u2", "test_u2bis");
-        List<String> g2Groups = Arrays.asList("test_g1");
+        List<String> g2Groups = Collections.singletonList("test_g1");
         // group1 is also a subgroup of group2
-        List<String> g1Groups = Arrays.asList("test_g2");
+        List<String> g1Groups = Collections.singletonList("test_g2");
 
         g1.setProperty("group", "members", g1Users);
         g1.setProperty("group", "subGroups", g1Groups);
@@ -620,11 +590,15 @@ public class TestUserManager extends UserManagerTestCase {
         userManager.createGroup(g2);
 
         List<String> expectedUsersInGroup2 = Arrays.asList("test_u2bis", "test_u2", "test_u1");
-        // infinite loop can occure here:
+        // infinite loop can occur here:
         List<String> usersInGroupAndSubGroups2 = userManager.getUsersInGroupAndSubGroups("test_g2");
         Collections.sort(expectedUsersInGroup2);
         Collections.sort(usersInGroupAndSubGroups2);
         assertEquals(expectedUsersInGroup2, usersInGroupAndSubGroups2);
+
+        // and here
+        List<String> g1AncestorGroups = userManager.getAncestorGroups("test_g1");
+        assertTrue(CollectionUtils.isEqualCollection(Arrays.asList("test_g2", "test_g1"), g1AncestorGroups));
     }
 
     @Test
@@ -664,21 +638,6 @@ public class TestUserManager extends UserManagerTestCase {
     }
 
     @Test
-    public void testSearchPrincipals() throws Exception {
-        deleteTestObjects();
-        userManager.createUser(getUser("test_u1"));
-        userManager.createUser(getUser("test_u2"));
-
-        List<NuxeoPrincipal> principals = userManager.searchPrincipals("test_");
-
-        assertEquals(2, principals.size());
-        String name1 = principals.get(0).getName();
-        String name2 = principals.get(1).getName();
-        assertTrue("test_u1".equals(name1) && "test_u2".equals(name2)
-                || "test_u1".equals(name2) && "test_u2".equals(name1));
-    }
-
-    @Test
     public void testSearchUser() throws Exception {
         assertEquals(0, userManager.searchUsers("test").size());
 
@@ -698,8 +657,6 @@ public class TestUserManager extends UserManagerTestCase {
         doc = getGroup("group_1");
         userManager.createGroup(doc);
 
-        Map<String, Serializable> filters = new HashMap<String, Serializable>();
-        filters.put(userManager.getGroupIdField(), "group");
         assertEquals(2, userManager.searchGroups("group").size());
 
         doc = getGroup("else");
@@ -715,18 +672,19 @@ public class TestUserManager extends UserManagerTestCase {
         u1.setFirstName("fname1");
         u1.setLastName("lname1");
         u1.setCompany("company1");
-        userManager.createPrincipal(u1);
+        DocumentModel u1Model = userManager.createUser(u1.getModel());
 
-        NuxeoGroup g1 = new NuxeoGroupImpl("test_g1");
-        g1.setMemberUsers(Arrays.asList("test_u1"));
-        userManager.createGroup(g1);
+        DocumentModel g1 = getGroup("test_g1");
+        g1 = userManager.createGroup(g1);
 
-        NuxeoGroup g2 = new NuxeoGroupImpl("test_g2");
-        g2.setMemberUsers(Arrays.asList("test_u1"));
-        userManager.createGroup(g2);
+        DocumentModel g2 = getGroup("test_g2");
+        g2 = userManager.createGroup(g2);
 
-        NuxeoGroup g3 = new NuxeoGroupImpl("test_g3");
-        userManager.createGroup(g3);
+        DocumentModel g3 = getGroup("test_g3");
+        g3 = userManager.createGroup(g3);
+
+        u1Model.setProperty("user", "groups", Arrays.asList("test_g1", "test_g2"));
+        userManager.updateUser(u1Model);
 
         // refresh u1
         u1 = userManager.getPrincipal("test_u1");
@@ -740,7 +698,7 @@ public class TestUserManager extends UserManagerTestCase {
         u1.setCompany("company2");
         u1.getGroups().remove("test_g2"); // ???!!!
         u1.getGroups().add("test_g3");
-        userManager.updatePrincipal(u1);
+        userManager.updateUser(u1.getModel());
 
         NuxeoPrincipal newU1 = userManager.getPrincipal("test_u1");
         assertNotNull(newU1);
@@ -757,18 +715,18 @@ public class TestUserManager extends UserManagerTestCase {
     public void testUpdateGroupLabel() throws Exception {
         deleteTestObjects();
 
-        NuxeoGroup g = new NuxeoGroupImpl("test_g");
-        g.setLabel("test group");
-        userManager.createGroup(g);
+        DocumentModel groupModel = getGroup("test_g");
+        groupModel.setProperty("group", "grouplabel", "test group");
+        groupModel = userManager.createGroup(groupModel);
 
-        g = userManager.getGroup("test_g");
-        assertEquals("test group", g.getLabel());
+        NuxeoGroup group = userManager.getGroup("test_g");
+        assertEquals("test group", group.getLabel());
 
-        g.setLabel("another group");
-        userManager.updateGroup(g);
+        groupModel.setProperty("group", "grouplabel", "another group");
+        userManager.updateGroup(groupModel);
 
-        g = userManager.getGroup("test_g");
-        assertEquals("another group", g.getLabel());
+        group = userManager.getGroup("test_g");
+        assertEquals("another group", group.getLabel());
 
     }
 
@@ -776,35 +734,35 @@ public class TestUserManager extends UserManagerTestCase {
     public void testUpdateGroup() throws Exception {
         deleteTestObjects();
         // setup group g
-        NuxeoPrincipal u1 = new NuxeoPrincipalImpl("test_u1");
-        userManager.createPrincipal(u1);
+        DocumentModel u1 = getUser("test_u1");
+        userManager.createUser(u1);
 
-        NuxeoPrincipal u2 = new NuxeoPrincipalImpl("test_u2");
-        userManager.createPrincipal(u2);
+        DocumentModel u2 = getUser("test_u2");
+        userManager.createUser(u2);
 
-        NuxeoPrincipal u3 = new NuxeoPrincipalImpl("test_u3");
-        userManager.createPrincipal(u3);
+        DocumentModel u3 = getUser("test_u3");
+        userManager.createUser(u3);
 
-        NuxeoGroup g1 = new NuxeoGroupImpl("test_g1");
+        DocumentModel g1 = getGroup("test_g1");
         userManager.createGroup(g1);
-        NuxeoGroup g2 = new NuxeoGroupImpl("test_g2");
+        DocumentModel g2 = getGroup("test_g2");
         userManager.createGroup(g2);
-        NuxeoGroup g3 = new NuxeoGroupImpl("test_g3");
+        DocumentModel g3 = getGroup("test_g3");
         userManager.createGroup(g3);
 
         List<String> gUsers = Arrays.asList("test_u1", "test_u2");
         List<String> gGroups = Arrays.asList("test_g1", "test_g2");
 
-        NuxeoGroup g = new NuxeoGroupImpl("test_g");
-        g.setMemberUsers(gUsers);
-        g.setMemberGroups(gGroups);
-        userManager.createGroup(g);
+        DocumentModel g = getGroup("test_g");
+        g.setProperty("group", "members", gUsers);
+        g.setProperty("group", "subGroups", gGroups);
+        g = userManager.createGroup(g);
 
         // update group g
-        g.getMemberUsers().remove("test_u2");
-        g.getMemberUsers().add("test_u3");
-        g.getMemberGroups().remove("test_g2");
-        g.getMemberGroups().add("test_g3");
+        gUsers = new ArrayList<>(Arrays.asList("test_u1", "test_u3"));
+        gGroups = new ArrayList<>(Arrays.asList("test_g1", "test_g3"));
+        g.setProperty("group", "members", gUsers);
+        g.setProperty("group", "subGroups", gGroups);
         userManager.updateGroup(g);
 
         // check new group
@@ -817,7 +775,43 @@ public class TestUserManager extends UserManagerTestCase {
         List<String> actualGroups = newG.getMemberGroups();
         Collections.sort(actualGroups);
         assertEquals(newGGroups, actualGroups);
-        assertEquals(newG, g);
+    }
+
+    @Test
+    public void testPasswordAuthenticate() {
+        assertTrue(userManager.checkUsernamePassword("Administrator", "Administrator"));
+    }
+
+    @Test
+    public void testPasswordChange() {
+        DocumentModel doc = userManager.getUserModel("Administrator");
+        doc.setProperty("user", "password", "newPassword123");
+        userManager.updateUser(doc);
+        // old one not valid anymore
+        assertFalse(userManager.checkUsernamePassword("Administrator", "Administrator"));
+        // new one can be used to authenticate
+        assertTrue(userManager.checkUsernamePassword("Administrator", "newPassword123"));
+    }
+
+    @Test
+    public void testPasswordNotReturned() {
+        // getPrincipal
+        NuxeoPrincipal principal = userManager.getPrincipal("Administrator");
+        DocumentModel doc = principal.getModel();
+        String password = (String) doc.getProperty("user", "password");
+        assertNull(password);
+
+        // getUserModel
+        doc = userManager.getUserModel("Administrator");
+        password = (String) doc.getProperty("user", "password");
+        assertNull(password);
+
+        // searchUsers
+        List<DocumentModel> docs = userManager.searchUsers("Administrator");
+        assertEquals(1, docs.size());
+        doc = docs.get(0);
+        password = (String) doc.getProperty("user", "password");
+        assertNull(password);
     }
 
     /**
@@ -842,8 +836,8 @@ public class TestUserManager extends UserManagerTestCase {
         userManager.createGroup(g2);
 
         // group3 has jdoe and a subgroup: g2
-        List<String> g3Users = Arrays.asList("jdoe");
-        List<String> g3SubGroups = Arrays.asList("group2");
+        List<String> g3Users = Collections.singletonList("jdoe");
+        List<String> g3SubGroups = Collections.singletonList("group2");
         DocumentModel g3 = getGroup("group3");
         g3.setProperty("group", "members", g3Users);
         g3.setProperty("group", "subGroups", g3SubGroups);
@@ -889,7 +883,7 @@ public class TestUserManager extends UserManagerTestCase {
 
         List<String> users = Arrays.asList(userManager.getUsersForPermission(SecurityConstants.READ, acp));
 
-        List<String> expectedUsers = Arrays.asList("alex");
+        List<String> expectedUsers = Collections.singletonList("alex");
         Collections.sort(users);
         Collections.sort(expectedUsers);
 
@@ -912,7 +906,7 @@ public class TestUserManager extends UserManagerTestCase {
 
         List<String> users = Arrays.asList(userManager.getUsersForPermission(SecurityConstants.READ, acp));
 
-        List<String> expectedUsers = Arrays.asList("alex");
+        List<String> expectedUsers = Collections.singletonList("alex");
         Collections.sort(users);
         Collections.sort(expectedUsers);
 
@@ -1034,7 +1028,7 @@ public class TestUserManager extends UserManagerTestCase {
 
         DocumentModel g1 = getGroup(groupNameWithSpaces);
 
-        List<String> g1Users = Arrays.asList(u1.getId());
+        List<String> g1Users = Collections.singletonList(u1.getId());
         g1.setProperty("group", "members", g1Users);
         g1 = userManager.createGroup(g1);
 
@@ -1074,7 +1068,7 @@ public class TestUserManager extends UserManagerTestCase {
     @Test
     public void testCacheAlter() {
         // Given we use a cache
-        assertNotNull(((UserManagerImpl)userManager).principalCache);
+        assertNotNull(((UserManagerImpl) userManager).principalCache);
         // Given a principal
         NuxeoPrincipal principal = userManager.getPrincipal("Administrator");
         // When I alter the principal without saving it
@@ -1088,30 +1082,25 @@ public class TestUserManager extends UserManagerTestCase {
         assertEquals("pfouh", userManager.getPrincipal("Administrator").getFirstName());
     }
 
-
     @Test
     public void testPrincipalSerialization() throws IOException, ClassNotFoundException {
-        class DebuggingObjectOutputStream
-            extends ObjectOutputStream {
+        class DebuggingObjectOutputStream extends ObjectOutputStream {
 
-          final List<Object> stack
-              = new ArrayList<Object>();
+            final List<Object> stack = new ArrayList<>();
 
-          DebuggingObjectOutputStream(
-              OutputStream out) throws IOException {
-            super(out);
-            enableReplaceObject(true);
-          }
+            DebuggingObjectOutputStream(OutputStream out) throws IOException {
+                super(out);
+                enableReplaceObject(true);
+            }
 
-          /**
-           * Abuse {@code replaceObject()} as a hook to
-           * maintain our stack.
-           */
-          @Override
-        protected Object replaceObject(Object o) {
-              stack.add(o);
-            return o;
-          }
+            /**
+             * Abuse {@code replaceObject()} as a hook to maintain our stack.
+             */
+            @Override
+            protected Object replaceObject(Object o) {
+                stack.add(o);
+                return o;
+            }
 
         }
 
@@ -1121,7 +1110,7 @@ public class TestUserManager extends UserManagerTestCase {
                 enableResolveObject(true);
             }
 
-            final List<Object> stack = new ArrayList<Object>();
+            final List<Object> stack = new ArrayList<>();
 
             @Override
             protected Object resolveObject(Object obj) throws IOException {
@@ -1137,11 +1126,57 @@ public class TestUserManager extends UserManagerTestCase {
             assertEquals(NuxeoPrincipalImpl.TransferableClone.DataTransferObject.class, oos.stack.get(0).getClass());
             assertEquals("Administrator", oos.stack.get(1));
         }
-        try (DebuggingObjectInputStream ois = new DebuggingObjectInputStream(new ByteArrayInputStream(bos.toByteArray()))) {
+        try (DebuggingObjectInputStream ois = new DebuggingObjectInputStream(
+                new ByteArrayInputStream(bos.toByteArray()))) {
             assertEquals(original, ois.readObject());
             assertEquals("Administrator", ois.stack.get(0));
             assertEquals(NuxeoPrincipalImpl.TransferableClone.class, ois.stack.get(1).getClass());
         }
+    }
+
+    /**
+     * Checks the ancestor groups of the ABCD group with the following hierarchy:
+     *
+     * <pre>
+     * A  B  C  D
+     *  \/    \/
+     *  AB    CD
+     *   \    /
+     *    \  /
+     *    ABCD
+     * </pre>
+     */
+    @Test
+    public void testAncestorGroups() throws Exception {
+        DocumentModel groupABCD = getGroup("ABCD");
+        userManager.createGroup(groupABCD);
+
+        DocumentModel groupAB = getGroup("AB");
+        groupAB.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("ABCD"));
+        userManager.createGroup(groupAB);
+
+        DocumentModel groupCD = getGroup("CD");
+        groupCD.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("ABCD"));
+        userManager.createGroup(groupCD);
+
+        DocumentModel groupA = getGroup("A");
+        groupA.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("AB"));
+        userManager.createGroup(groupA);
+
+        DocumentModel groupB = getGroup("B");
+        groupB.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("AB"));
+        userManager.createGroup(groupB);
+
+        DocumentModel groupC = getGroup("C");
+        groupC.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("CD"));
+        userManager.createGroup(groupC);
+
+        DocumentModel groupD = getGroup("D");
+        groupD.setPropertyValue("group:subGroups", (Serializable) Collections.singletonList("CD"));
+        userManager.createGroup(groupD);
+
+        assertTrue(CollectionUtils.isEqualCollection(Arrays.asList("AB", "A", "B", "CD", "C", "D"),
+                userManager.getAncestorGroups("ABCD")));
     }
 
 }

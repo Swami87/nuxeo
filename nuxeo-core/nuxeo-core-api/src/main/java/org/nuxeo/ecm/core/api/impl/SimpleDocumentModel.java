@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  *     Dragos Mihalache
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.api.impl;
 
 import static org.nuxeo.ecm.core.schema.types.ComplexTypeImpl.canonicalXPath;
@@ -26,6 +25,7 @@ import static org.nuxeo.ecm.core.schema.types.ComplexTypeImpl.canonicalXPath;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,7 +37,6 @@ import org.nuxeo.common.collections.ScopedMap;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DataModel;
-import org.nuxeo.ecm.core.api.DataModelMap;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.Lock;
@@ -67,7 +66,7 @@ public class SimpleDocumentModel implements DocumentModel {
 
     protected final boolean anySchema;
 
-    protected final DataModelMap dataModels = new DataModelMapImpl();
+    protected final Map<String, DataModel> dataModels = new HashMap<>();
 
     protected Set<String> schemas;
 
@@ -96,79 +95,6 @@ public class SimpleDocumentModel implements DocumentModel {
     public SimpleDocumentModel() {
         schemas = new HashSet<>();
         anySchema = true;
-    }
-
-    /**
-     * A data model that is not tied to a particular schema, neither has anything to do with a session (CoreSession).
-     *
-     * @deprecated since 5.7.3. Use standard {@link DataModelImpl} instead.
-     */
-    @Deprecated
-    public static class SimpleDataModel implements DataModel {
-
-        private static final long serialVersionUID = 1L;
-
-        public final String schema;
-
-        public final Map<String, Object> data = new HashMap<String, Object>();
-
-        public SimpleDataModel(String schema) {
-            this.schema = schema;
-        }
-
-        @Override
-        public void setData(String key, Object value) throws PropertyException {
-            data.put(key, value);
-        }
-
-        @Override
-        public Object getData(String key) throws PropertyException {
-            return data.get(key);
-        }
-
-        @Override
-        public String getSchema() {
-            return schema;
-        }
-
-        @Override
-        public Map<String, Object> getMap() throws PropertyException {
-            return data;
-        }
-
-        @Override
-        public void setMap(Map<String, Object> data) throws PropertyException {
-            data = new HashMap<String, Object>(data);
-        }
-
-        @Override
-        public boolean isDirty() {
-            return true;
-        }
-
-        @Override
-        public boolean isDirty(String name) throws PropertyNotFoundException {
-            return true;
-        }
-
-        @Override
-        public void setDirty(String name) throws PropertyNotFoundException {
-        }
-
-        @Override
-        public Collection<String> getDirtyFields() {
-            return data.keySet();
-        }
-
-        @Override
-        public Object getValue(String path) throws PropertyException {
-            throw new UnsupportedOperationException("getValue");
-        }
-
-        @Override
-        public Object setValue(String path, Object value) throws PropertyException {
-            throw new UnsupportedOperationException("setValue");
-        }
     }
 
     protected DataModel getDataModelInternal(String schema) {
@@ -202,6 +128,12 @@ public class SimpleDocumentModel implements DocumentModel {
     }
 
     @Override
+    public Property getPropertyObject(String schema, String name) {
+        DocumentPart part = getPart(schema);
+        return part == null ? null : part.get(name);
+    }
+
+    @Override
     public void setProperty(String schemaName, String name, Object value) {
         if (name.contains(":")) {
             name = name.substring(name.indexOf(":"), name.length());
@@ -231,30 +163,27 @@ public class SimpleDocumentModel implements DocumentModel {
 
     @Override
     public Serializable getContextData(ScopeType scope, String key) {
-        return contextData.getScopedValue(scope, key);
+        return getContextData(key);
     }
 
     @Override
     public void putContextData(ScopeType scope, String key, Serializable value) {
-        contextData.putScopedValue(scope, key, value);
+        putContextData(key, value);
     }
 
     @Override
     public Serializable getContextData(String key) {
-        return contextData.getScopedValue(key);
+        return contextData.get(key);
     }
 
     @Override
     public void putContextData(String key, Serializable value) {
-        contextData.putScopedValue(key, value);
+        contextData.put(key, value);
     }
 
     @Override
     public void copyContextData(DocumentModel otherDocument) {
-        ScopedMap otherMap = otherDocument.getContextData();
-        if (otherMap != null) {
-            contextData.putAll(otherMap);
-        }
+        contextData.putAll(otherDocument.getContextData());
     }
 
     @Override
@@ -283,7 +212,7 @@ public class SimpleDocumentModel implements DocumentModel {
         String partPath = cxpath.substring(cxpath.indexOf(':') + 1);
         try {
             Property property = part.resolvePath(partPath);
-		    // force dirty for updated properties
+            // force dirty for updated properties
             property.setForceDirty(true);
             return property;
         } catch (PropertyNotFoundException e) {
@@ -390,16 +319,19 @@ public class SimpleDocumentModel implements DocumentModel {
     }
 
     @Override
+    @Deprecated
     public Collection<DataModel> getDataModelsCollection() {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public DataModelMap getDataModels() {
+    @Deprecated
+    public Map<String, DataModel> getDataModels() {
         return dataModels;
     }
 
     @Override
+    @Deprecated
     public DataModel getDataModel(String schema) {
         return getDataModelInternal(schema);
     }
@@ -410,22 +342,7 @@ public class SimpleDocumentModel implements DocumentModel {
     }
 
     @Override
-    public String getLock() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public boolean isLocked() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void setLock(String key) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void unlock() {
         throw new UnsupportedOperationException();
     }
 
@@ -605,6 +522,7 @@ public class SimpleDocumentModel implements DocumentModel {
     }
 
     @Override
+    @Deprecated
     public DocumentPart getPart(String schema) {
         DataModel dm = getDataModel(schema);
         if (dm != null) {
@@ -614,8 +532,15 @@ public class SimpleDocumentModel implements DocumentModel {
     }
 
     @Override
+    @Deprecated
     public DocumentPart[] getParts() {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Collection<Property> getPropertyObjects(String schema) {
+        DocumentPart part = getPart(schema);
+        return part == null ? Collections.emptyList() : part.getChildren();
     }
 
     @Override

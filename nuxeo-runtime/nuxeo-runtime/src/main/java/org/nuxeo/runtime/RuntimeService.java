@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
  */
-
 package org.nuxeo.runtime;
 
 import java.io.File;
@@ -55,8 +53,9 @@ public interface RuntimeService {
 
     /**
      * Stops the runtime.
+     * @throws InterruptedException
      */
-    void stop();
+    void stop() throws InterruptedException;
 
     /**
      * Returns true if the runtime is started.
@@ -198,10 +197,22 @@ public interface RuntimeService {
 
     /**
      * Gets a list of startup warnings. Can be modified to add new warnings.
+     * <p />
+     * Warning messages don't block server startup.
      *
      * @return the warning list
      */
     List<String> getWarnings();
+
+    /**
+     * Gets a list of startup errors. Can be modified to add new errors.
+     * <p />
+     * Error messages block server startup in strict mode.
+     *
+     * @return the error list
+     * @since 9.1
+     */
+    List<String> getErrors();
 
     /**
      * OSGi frameworks are using a string {@link Bundle#getLocation()} to identify bundle locations.
@@ -217,8 +228,6 @@ public interface RuntimeService {
 
     /**
      * Get an installed bundle given its symbolic name. This method is not handling versions.
-     *
-     * @param symbolicName
      */
     Bundle getBundle(String symbolicName);
 
@@ -227,7 +236,6 @@ public interface RuntimeService {
      * detected.
      *
      * @since 5.6
-     * @param msg
      * @return true if there are warnings/errors on current runtime.
      */
     boolean getStatusMessage(StringBuilder msg);

@@ -22,16 +22,18 @@ package org.nuxeo.ecm.platform.usermanager.io;
 import javax.inject.Inject;
 
 import org.junit.Test;
+import org.nuxeo.directory.test.DirectoryFeature;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.SystemPrincipal;
 import org.nuxeo.ecm.core.io.marshallers.json.AbstractJsonWriterTest;
 import org.nuxeo.ecm.core.io.marshallers.json.JsonAssert;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.runtime.test.runner.Deploy;
+import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 
-@Deploy({ "org.nuxeo.ecm.directory", "org.nuxeo.ecm.directory.sql", "org.nuxeo.ecm.core.cache",
-        "org.nuxeo.ecm.directory.types.contrib", "org.nuxeo.ecm.platform.usermanager" })
+@Features(DirectoryFeature.class)
+@Deploy({ "org.nuxeo.ecm.core.cache", "org.nuxeo.ecm.platform.usermanager" })
 @LocalDeploy({ "org.nuxeo.ecm.platform.usermanager.tests:test-usermanagerimpl/directory-config.xml" })
 public class NuxeoPrincipalJsonWriterTest extends
         AbstractJsonWriterTest.External<NuxeoPrincipalJsonWriter, NuxeoPrincipal> {
@@ -53,13 +55,12 @@ public class NuxeoPrincipalJsonWriterTest extends
         json.has("id").isEquals("Administrator");
         json.has("isAdministrator").isTrue();
         json.has("isAnonymous").isFalse();
-        JsonAssert model = json.has("properties").properties(8);
+        JsonAssert model = json.has("properties").properties(7);
         model.has("lastName").isEmptyStringOrNull();
         model.has("username").isEquals("Administrator");
         model.has("email").isEquals("devnull@nuxeo.com");
         model.has("company").isEmptyStringOrNull();
         model.has("firstName").isEmptyStringOrNull();
-        model.has("password").isEmptyStringOrNull();
         model.has("groups").contains("administrators");
         JsonAssert exGroup = json.has("extendedGroups").length(1).has(0);
         exGroup.properties(3);

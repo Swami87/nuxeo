@@ -40,6 +40,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
+import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.directory.BaseSession;
 import org.nuxeo.ecm.directory.Directory;
 import org.nuxeo.ecm.directory.DirectoryException;
@@ -64,6 +65,9 @@ public class TestCoreDirectory {
 
     @Inject
     protected LoginService loginService;
+
+    @Inject
+    protected CoreFeature coreFeature;
 
     @Inject
     protected RuntimeHarness harness;
@@ -138,10 +142,15 @@ public class TestCoreDirectory {
 
     @Test
     public void testAuthenticate() throws Exception {
-        Assert.assertTrue(dirSession.authenticate(CoreDirectoryInit.DOC_ID_USER1,
-                CoreDirectoryInit.DOC_PWD_USER1));
+        Assert.assertTrue(dirSession.authenticate(CoreDirectoryInit.DOC_ID_USER1, CoreDirectoryInit.DOC_PWD_USER1));
         Assert.assertFalse(dirSession.authenticate(CoreDirectoryInit.DOC_ID_USER1, "bad-pwd"));
         Assert.assertFalse(dirSession.authenticate("bad-id", "haha"));
+        Assert.assertTrue(
+                dirSession.authenticate(CoreDirectoryInit.DOC_ID_USERSHA1, CoreDirectoryInit.DOC_PWD_USERSHA1));
+        Assert.assertFalse(
+                dirSession.authenticate(CoreDirectoryInit.DOC_ID_USERSHA1, CoreDirectoryInit.DOC_PWD_BADPWDSHA1));
+        // null password (avoid NPE)
+        Assert.assertFalse(dirSession.authenticate(CoreDirectoryInit.DOC_ID_USERSHA1, null));
     }
 
     @Test
@@ -192,11 +201,13 @@ public class TestCoreDirectory {
     @Test
     public void queryWithFilter() {
         Map<String, Serializable> usernamefilter = ImmutableMap.<String, Serializable> builder() //
-        .put("username", CoreDirectoryInit.DOC_ID_USER1) //
-        .build();
+                                                               .put("username", CoreDirectoryInit.DOC_ID_USER1) //
+                                                               .build();
 
         DocumentModelList users = dirSession.query(usernamefilter);
         assertEquals(1, users.size());
+
+        coreFeature.getStorageConfiguration().sleepForFulltext();
 
         Set<String> fulltext = new HashSet<>();
         fulltext.add("username");

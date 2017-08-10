@@ -20,6 +20,25 @@
  */
 package org.nuxeo.ecm.automation.core;
 
+import static org.nuxeo.ecm.automation.core.Constants.T_BOOLEAN;
+import static org.nuxeo.ecm.automation.core.Constants.T_DATE;
+import static org.nuxeo.ecm.automation.core.Constants.T_DOCUMENT;
+import static org.nuxeo.ecm.automation.core.Constants.T_DOCUMENTS;
+import static org.nuxeo.ecm.automation.core.Constants.T_FLOAT;
+import static org.nuxeo.ecm.automation.core.Constants.T_INTEGER;
+import static org.nuxeo.ecm.automation.core.Constants.T_LONG;
+import static org.nuxeo.ecm.automation.core.Constants.T_PROPERTIES;
+import static org.nuxeo.ecm.automation.core.Constants.T_RESOURCE;
+import static org.nuxeo.ecm.automation.core.Constants.T_STRING;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.commons.lang.StringEscapeUtils;
 import org.nuxeo.common.utils.StringUtils;
 import org.nuxeo.common.xmap.annotation.XContent;
@@ -31,30 +50,12 @@ import org.nuxeo.ecm.automation.OperationChain;
 import org.nuxeo.ecm.automation.OperationDocumentation;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.ecm.automation.OperationParameters;
-import org.nuxeo.ecm.automation.core.impl.adapters.StringToDocRef;
+import org.nuxeo.ecm.automation.core.impl.adapters.helper.TypeAdapterHelper;
 import org.nuxeo.ecm.automation.core.scripting.Scripting;
 import org.nuxeo.ecm.automation.core.util.Properties;
 import org.nuxeo.ecm.core.api.impl.DocumentRefListImpl;
 import org.nuxeo.ecm.core.schema.utils.DateParser;
 import org.osgi.framework.Bundle;
-
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-
-import static org.nuxeo.ecm.automation.core.Constants.T_BOOLEAN;
-import static org.nuxeo.ecm.automation.core.Constants.T_DATE;
-import static org.nuxeo.ecm.automation.core.Constants.T_DOCUMENT;
-import static org.nuxeo.ecm.automation.core.Constants.T_DOCUMENTS;
-import static org.nuxeo.ecm.automation.core.Constants.T_FLOAT;
-import static org.nuxeo.ecm.automation.core.Constants.T_INTEGER;
-import static org.nuxeo.ecm.automation.core.Constants.T_LONG;
-import static org.nuxeo.ecm.automation.core.Constants.T_PROPERTIES;
-import static org.nuxeo.ecm.automation.core.Constants.T_RESOURCE;
-import static org.nuxeo.ecm.automation.core.Constants.T_STRING;
 
 /**
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
@@ -92,13 +93,13 @@ public class OperationChainContribution {
         protected String id;
 
         @XNodeList(value = "param", type = ArrayList.class, componentType = Param.class)
-        protected ArrayList<Param> params;
+        protected List<Param> params = new ArrayList<>();
 
         public String getId() {
             return id;
         }
 
-        public ArrayList<Param> getParams() {
+        public List<Param> getParams() {
             return params;
         }
     }
@@ -159,11 +160,11 @@ public class OperationChainContribution {
                 // decode XML entities in every case
                 param.value = StringEscapeUtils.unescapeXml(param.value);
                 if (param.value.startsWith("expr:")) {
-                    param.value = param.value.substring(5);
-                    if (param.value.contains("@{")) {
-                        params.set(param.name, Scripting.newTemplate(param.value));
+                    String value = param.value.substring(5);
+                    if (value.contains("@{")) {
+                        params.set(param.name, Scripting.newTemplate(value));
                     } else {
-                        params.set(param.name, Scripting.newExpression(param.value));
+                        params.set(param.name, Scripting.newExpression(value));
                     }
                 } else {
                     Object val = null;
@@ -205,16 +206,12 @@ public class OperationChainContribution {
                         break;
                     case 'd':
                         if (T_DOCUMENT.equals(type)) {
-                            if (param.value.startsWith(".")) {
-                                val = Scripting.newExpression("Document" + ".resolvePathAsRef(\"" + param.value + "\")");
-                            } else {
-                                val = StringToDocRef.createRef(param.value);
-                            }
+                            val = TypeAdapterHelper.createDocumentRefOrExpression(param.value);
                         } else if (T_DOCUMENTS.equals(type)) {
                             String[] ar = StringUtils.split(param.value, ',', true);
                             DocumentRefListImpl result = new DocumentRefListImpl(ar.length);
                             for (String ref : ar) {
-                                result.add(StringToDocRef.createRef(ref));
+                                result.add(TypeAdapterHelper.createDocumentRef(ref));
                             }
                             val = result;
                         } else if (T_DATE.equals(type)) {
@@ -276,5 +273,41 @@ public class OperationChainContribution {
 
     public String[] getAliases() {
         return aliases;
+    }
+
+    public static OperationChainContribution contribOf(OperationChain chain, boolean replace) {
+        OperationChainContribution contrib = new OperationChainContribution();
+        contrib.id = chain.getId();
+        contrib.aliases = chain.getAliases();
+        contrib.description = "inlined chain of " + contrib.id;
+        contrib.isPublic = false;
+        contrib.params = paramsOf(chain.getChainParameters());
+        contrib.ops = operationsOf(chain.getOperations());
+        contrib.replace = replace;
+        return contrib;
+    }
+
+    public static OperationDocumentation.Param[] paramsOf(Map<String, ?> args) {
+        return args.entrySet().stream().map(entry -> {
+            OperationDocumentation.Param param = new OperationDocumentation.Param();
+            param.name = entry.getKey();
+            param.type = entry.getClass().getName();
+            return param;
+        }).toArray(OperationDocumentation.Param[]::new);
+    }
+
+    public static Operation[] operationsOf(List<OperationParameters> operations) {
+        return operations.stream().map(params -> {
+            Operation op = new Operation();
+            op.id = params.id();
+            params.map().forEach((k,v) -> {
+                Param param = new Param();
+                param.name = k;
+                param.type = "unknown";
+                param.value = v == null ? "null" : v.toString();
+                op.params.add(param);
+            });
+            return op;
+        }).toArray(Operation[]::new);
     }
 }

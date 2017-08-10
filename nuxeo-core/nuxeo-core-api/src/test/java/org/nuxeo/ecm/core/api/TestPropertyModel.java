@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.core.api;
 
 import static org.junit.Assert.assertEquals;
@@ -42,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.junit.Before;
 import org.junit.Test;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.ReadOnlyPropertyException;
@@ -85,7 +81,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         String lastName;
 
         HashMap<String, Serializable> getMap() {
-            HashMap<String, Serializable> map = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> map = new HashMap<>();
             map.put("lastName", lastName);
             map.put("firstName", firstName);
             return map;
@@ -101,11 +97,11 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         }
 
         Author(long age) {
-            this.age = age;
+            this.age = Long.valueOf(age);
         }
 
         HashMap<String, Serializable> getMap() {
-            HashMap<String, Serializable> map = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> map = new HashMap<>();
             map.put("name", name.getMap());
             map.put("age", age);
             return map;
@@ -120,7 +116,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         String extension;
 
         HashMap<String, Serializable> getMap() {
-            HashMap<String, Serializable> map = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> map = new HashMap<>();
             map.put("name", name);
             map.put("extension", extension);
             return map;
@@ -135,7 +131,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         Blob blob;
 
         HashMap<String, Serializable> getMap() {
-            HashMap<String, Serializable> map = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> map = new HashMap<>();
             map.put("fileName", fileName.getMap());
             map.put("blob", (Serializable) blob);
             return map;
@@ -159,7 +155,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         private BlobFile file;
 
         HashMap<String, Serializable> getMap() {
-            HashMap<String, Serializable> map = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> map = new HashMap<>();
             map.put("book:title", title);
             map.put("book:creationDate", creationDate);
             map.put("book:price", price);
@@ -183,11 +179,14 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         }
     }
 
-    @Before
-    public void setUp() throws Exception {
-        super.setUp();
+    @Override
+    protected void setUp() throws Exception {
         deployBundle("org.nuxeo.ecm.core.schema");
         deployContrib("org.nuxeo.ecm.core.api.tests", "OSGI-INF/test-propmodel-types-contrib.xml");
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
         SchemaManager mgr = Framework.getService(SchemaManager.class);
         // XSDLoader loader = new XSDLoader((SchemaManagerImpl) mgr);
         // schema = loader.loadSchema("test", "book",
@@ -276,6 +275,37 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         return Thread.currentThread().getContextClassLoader().getResource(resource);
     }
 
+    @Test
+    public void testXPath() throws Exception {
+        Property prop = dp.get("file");
+        assertEquals("book:file", prop.getXPath());
+        prop = prop.get("fileName");
+        assertEquals("book:file/fileName", prop.getXPath());
+
+        prop = dp.resolvePath("file/blob");
+        assertEquals("book:file/blob", prop.getXPath());
+
+        Author author = new Author();
+        dp.get("authors").addValue(author.getMap());
+        prop = dp.get("book:authors");
+        assertEquals("book:authors", prop.getXPath());
+        prop = prop.get("0");
+        assertEquals("book:authors/0", prop.getXPath());
+        prop = prop.get("name");
+        assertEquals("book:authors/0/name", prop.getXPath());
+        prop = prop.get("firstName");
+        assertEquals("book:authors/0/name/firstName", prop.getXPath());
+
+        // schema without prefix: no prefix either in xpath
+        SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+        DocumentPartImpl dp2 = new DocumentPartImpl(schemaManager.getSchema("wihtoutpref"));
+        prop = dp2.get("blobname");
+        assertEquals("blobname", prop.getXPath());
+        prop = dp2.resolvePath("blob/mime-type");
+        assertEquals("blob/mime-type", prop.getXPath());
+    }
+
+    @SuppressWarnings("deprecation")
     @Test
     public void testPath() throws Exception {
         String path = dp.get("file").get("fileName").getPath();
@@ -444,7 +474,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         Book book = new Book();
         Author author = new Author();
         author.name.firstName = "John";
-        book.authors = new ArrayList<Author>();
+        book.authors = new ArrayList<>();
         book.authors.add(author);
         book.title = "My Title";
         book.creationDate = Calendar.getInstance();
@@ -469,7 +499,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
     @Test
     public void testListDiffCompatibility() throws Exception {
         Book book = new Book();
-        book.authors = new ArrayList<Author>();
+        book.authors = new ArrayList<>();
         book.authors.add(new Author(1));
         book.authors.add(new Author(2));
         book.authors.add(new Author(3));
@@ -495,7 +525,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         book.authors.set(1, a);
         book.authors.remove(2);
 
-        ArrayList<Serializable> authors = new ArrayList<Serializable>();
+        ArrayList<Serializable> authors = new ArrayList<>();
         for (Author author : book.authors) {
             authors.add(author.getMap());
         }
@@ -632,7 +662,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         Book book = new Book();
         Author author = new Author();
         author.name.firstName = "John";
-        book.authors = new ArrayList<Author>();
+        book.authors = new ArrayList<>();
         book.authors.add(author);
         book.title = "My Title";
 
@@ -651,7 +681,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         dp.setValue(map);
 
         it = dp.getDirtyChildren();
-        List<Property> properties = new ArrayList<Property>();
+        List<Property> properties = new ArrayList<>();
         while (it.hasNext()) {
             properties.add(it.next());
         }
@@ -684,7 +714,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         Book book = new Book();
         Author author = new Author();
         author.name.firstName = "John";
-        book.authors = new ArrayList<Author>();
+        book.authors = new ArrayList<>();
         book.authors.add(author);
         book.title = "My Title";
         BlobFile file = new BlobFile();
@@ -731,12 +761,13 @@ public class TestPropertyModel extends NXRuntimeTestCase {
         assertEquals(2, dp.get("references").size());
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testExport() throws Exception {
         Book book = new Book();
         Author author = new Author();
         author.name.firstName = "John";
-        book.authors = new ArrayList<Author>();
+        book.authors = new ArrayList<>();
         book.authors.add(author);
         book.title = "My Title";
         BlobFile file = new BlobFile();
@@ -760,7 +791,7 @@ public class TestPropertyModel extends NXRuntimeTestCase {
 
         Map<String, Serializable> value = (Map<String, Serializable>) dp.getValue();
         clearMap(value);
-        HashMap<String, Serializable> m = new HashMap<String, Serializable>(map);
+        HashMap<String, Serializable> m = new HashMap<>(map);
         m.put("book:price", Long.valueOf(111)); // default value exported too
         assertEquals(m, value);
 

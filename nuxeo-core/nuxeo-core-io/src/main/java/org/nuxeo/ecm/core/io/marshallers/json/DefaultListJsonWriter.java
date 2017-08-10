@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.codehaus.jackson.JsonGenerator;
@@ -36,6 +37,7 @@ import org.nuxeo.ecm.core.io.registry.Writer;
 import org.nuxeo.ecm.core.io.registry.context.RenderingContext;
 import org.nuxeo.ecm.platform.query.api.Aggregate;
 import org.nuxeo.ecm.platform.query.api.Bucket;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
 
 /**
  * Base class to convert {@link List} as json.
@@ -135,6 +137,7 @@ public abstract class DefaultListJsonWriter<EntityType> extends AbstractJsonWrit
             jg.writeNumberField("maxPageSize", paginable.getMaxPageSize());
             jg.writeNumberField("currentPageSize", paginable.getCurrentPageSize());
             jg.writeNumberField("currentPageIndex", paginable.getCurrentPageIndex());
+            jg.writeNumberField("currentPageOffset", paginable.getCurrentPageOffset());
             jg.writeNumberField("numberOfPages", paginable.getNumberOfPages());
             jg.writeBooleanField("isPreviousPageAvailable", paginable.isPreviousPageAvailable());
             jg.writeBooleanField("isNextPageAvailable", paginable.isNextPageAvailable());
@@ -151,8 +154,25 @@ public abstract class DefaultListJsonWriter<EntityType> extends AbstractJsonWrit
             if (paginable.hasAggregateSupport()) {
                 Map<String, Aggregate<? extends Bucket>> aggregates = paginable.getAggregates();
                 if (aggregates != null && !paginable.getAggregates().isEmpty()) {
-                    jg.writeObjectField("aggregations", paginable.getAggregates());
+                    jg.writeObjectFieldStart("aggregations");
+                    for (Entry<String, Aggregate<? extends Bucket>> e : aggregates.entrySet()) {
+                        writeEntityField(e.getKey(), e.getValue(), jg);
+                    }
+                    jg.writeEndObject();
                 }
+
+            }
+            List<QuickFilter> qfs = paginable.getActiveQuickFilters();
+            List<QuickFilter> aqfs = paginable.getAvailableQuickFilters();
+            if (aqfs != null && !aqfs.isEmpty()) {
+                jg.writeArrayFieldStart("quickFilters");
+                for (QuickFilter aqf : aqfs) {
+                    jg.writeStartObject();
+                    jg.writeStringField("name", aqf.getName());
+                    jg.writeBooleanField("active", qfs.contains(aqf));
+                    jg.writeEndObject();
+                }
+                jg.writeEndArray();
             }
         }
     }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.usermanager;
 
 import java.io.Serializable;
@@ -49,31 +46,20 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
         EXACT, SUBSTRING
     }
 
+    @Override
     boolean checkUsernamePassword(String username, String password);
 
     boolean validatePassword(String password);
 
     /**
-     * Update a new password according to the given old password to the given user.
-     *
-     * @since 8.2
-     * @param username The username.
-     * @param oldPassword The old password of the given user.
-     * @param newPassword The new password to set for this given user.
-     */
-    void updatePassword(String username, String oldPassword, String newPassword);
-
-    /**
      * Retrieves the principal with the given username or null if it does not exist.
      * <p>
      * Can build principals for anonymous and virtual users as well as for users defined in the users directory.
-     *
      */
     NuxeoPrincipal getPrincipal(String username);
 
     /**
      * Returns the nuxeo group with given name or null if it does not exist.
-     *
      */
     NuxeoGroup getGroup(String groupName);
 
@@ -108,7 +94,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
     /**
      * Updates user represented by given model.
      *
-     * @param userModel
      * @since 5.2M4
      */
     void updateUser(DocumentModel userModel);
@@ -206,7 +191,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
     /**
      * Deletes group represented by given model.
      *
-     * @param groupModel
      * @since 5.2M4
      * @throws DirectoryException if given entry does not exist
      */
@@ -215,7 +199,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
     /**
      * Deletes group with given id.
      *
-     * @param groupId
      * @since 5.2M4
      * @throws DirectoryException if given entry does not exist
      */
@@ -246,14 +229,11 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
      * Returns the list of groups that belong to this group.
      *
      * @param parentId the name of the parent group.
-     * @return
      */
     List<String> getGroupsInGroup(String parentId);
 
     /**
      * Returns the list of groups that are not members of other groups.
-     *
-     * @return
      */
     List<String> getTopLevelGroups();
 
@@ -261,7 +241,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
      * Returns the list of users that belong to this group.
      *
      * @param groupId ID of the group
-     * @return
      */
     List<String> getUsersInGroup(String groupId);
 
@@ -269,7 +248,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
      * Get users from a group and its subgroups.
      *
      * @param groupId ID of the group
-     * @return
      */
     List<String> getUsersInGroupAndSubGroups(String groupId);
 
@@ -399,68 +377,6 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
      */
     List<String> getAdministratorsGroups();
 
-    // DEPRECATED API
-
-    /**
-     * @deprecated use {@link #getUserModel(String)}
-     */
-    @Deprecated
-    DocumentModel getModelForUser(String name);
-
-    /**
-     * @deprecated use {@link #getUserIds()} or {@link #searchUsers(null)}
-     */
-    @Deprecated
-    List<NuxeoPrincipal> getAvailablePrincipals();
-
-    /**
-     * @deprecated use {@link #createUser(DocumentModel)}
-     */
-    @Deprecated
-    void createPrincipal(NuxeoPrincipal principal);
-
-    /**
-     * @deprecated use {@link #updateUser(DocumentModel)}
-     */
-    @Deprecated
-    void updatePrincipal(NuxeoPrincipal principal);
-
-    /**
-     * @deprecated use {@link #deleteUser(DocumentModel)}
-     */
-    @Deprecated
-    void deletePrincipal(NuxeoPrincipal principal);
-
-    /**
-     * @deprecated use {@link #searchUsers(Map, Set)}
-     */
-    @Deprecated
-    List<NuxeoPrincipal> searchByMap(Map<String, Serializable> filter, Set<String> pattern);
-
-    /**
-     * @deprecated use {@link #getGroupIds()} or {@link #searchGroups(Map, Set)}
-     */
-    @Deprecated
-    List<NuxeoGroup> getAvailableGroups();
-
-    /**
-     * @deprecated use {@link #createGroup(DocumentModel)}
-     */
-    @Deprecated
-    void createGroup(NuxeoGroup group);
-
-    /**
-     * @deprecated use {@link #deleteGroup(DocumentModel)}
-     */
-    @Deprecated
-    void deleteGroup(NuxeoGroup group);
-
-    /**
-     * @deprecated use {@link #updateGroup(DocumentModel)}
-     */
-    @Deprecated
-    void updateGroup(NuxeoGroup group);
-
     /**
      * For an ACP, get the list of user that has a permission. This method should be use with care as it can cause
      * performance issues while getting the list of users.
@@ -471,5 +387,51 @@ public interface UserManager extends Authenticator, EventListener, Serializable 
      * @return the list of user ids
      */
     String[] getUsersForPermission(String perm, ACP acp);
+
+    /**
+     * Returns the ancestor groups of the group with the given id.
+     *
+     * @since 9.2
+     */
+    List<String> getAncestorGroups(String groupId);
+
+    /**
+     * Notifies that the given user has changed with the given event:
+     * <ul>
+     * <li>At the runtime level so that the JaasCacheFlusher listener can make sure the principal cache is reset.</li>
+     * <li>At the core level, passing the {@code userName} as the {@code "id"} property of the fired event.</li>
+     * </ul>
+     *
+     * @since 9.2
+     */
+    void notifyUserChanged(String userName, String eventId);
+
+    /**
+     * Notifies that the given group has changed with the given event:
+     * <ul>
+     * <li>At the runtime level so that the JaasCacheFlusher listener can make sure the principal cache is reset.</li>
+     * <li>At the core level, passing the {@code groupName} as the {@code "id"} property of the fired event.</li>
+     * </ul>
+     *
+     * @since 9.2
+     */
+    default void notifyGroupChanged(String groupName, String eventId) {
+        notifyGroupChanged(groupName, eventId, null);
+    }
+
+    /**
+     * Notifies that the given group has changed with the given event:
+     * <ul>
+     * <li>At the runtime level so that the JaasCacheFlusher listener can make sure the principal cache is reset.</li>
+     * <li>At the core level, passing the {@code groupName} as the {@code "id"} property of the fired event.</li>
+     * </ul>
+     * <p>
+     * The {@code ancestorGroupNames} list must contain the ancestor groups of the given group. It can be computed by
+     * calling {@link #getAncestorGroups(String)}. It will be passed as the {@code "ancestorGroups"} property of the
+     * fired core event.
+     *
+     * @since 9.2
+     */
+    void notifyGroupChanged(String groupName, String eventId, List<String> ancestorGroupNames);
 
 }

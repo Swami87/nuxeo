@@ -29,7 +29,12 @@ import org.nuxeo.ecm.core.schema.types.Schema;
  * A document part is the root of a property tree which is specified by a schema
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
+ * @deprecated since 8.4, use direct {@link Property} getters on {@link org.nuxeo.ecm.core.api.DocumentModel
+ *             DocumentModel} instead
+ * @see org.nuxeo.ecm.core.api.DocumentModel#getPropertyObject
+ * @see org.nuxeo.ecm.core.api.DocumentModel#getPropertyObjects
  */
+@Deprecated
 public interface DocumentPart extends Property {
 
     /**
@@ -47,6 +52,14 @@ public interface DocumentPart extends Property {
     PropertyDiff exportDiff() throws PropertyException;
 
     void importDiff(PropertyDiff diff) throws PropertyException;
+
+    /**
+     * Whether or not to ignore any previous values when setting complex properties.
+     *
+     * @return {@code true} if setting a complex property ignores any previous values
+     * @since 9.3
+     */
+    boolean getClearComplexPropertyBeforeSet();
 
     //
     // public void setContextData(String key, Object value);

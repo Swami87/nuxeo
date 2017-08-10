@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@
  */
 package org.nuxeo.ecm.platform.relations.services;
 
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,12 +38,9 @@ import org.nuxeo.ecm.platform.relations.api.DocumentRelationManager;
 import org.nuxeo.ecm.platform.relations.api.Graph;
 import org.nuxeo.ecm.platform.relations.api.GraphDescription;
 import org.nuxeo.ecm.platform.relations.api.GraphFactory;
-import org.nuxeo.ecm.platform.relations.api.Node;
-import org.nuxeo.ecm.platform.relations.api.QueryResult;
 import org.nuxeo.ecm.platform.relations.api.RelationManager;
 import org.nuxeo.ecm.platform.relations.api.Resource;
 import org.nuxeo.ecm.platform.relations.api.ResourceAdapter;
-import org.nuxeo.ecm.platform.relations.api.Statement;
 import org.nuxeo.ecm.platform.relations.descriptors.GraphTypeDescriptor;
 import org.nuxeo.ecm.platform.relations.descriptors.ResourceAdapterDescriptor;
 import org.nuxeo.runtime.api.Framework;
@@ -85,11 +80,11 @@ public class RelationService extends DefaultComponent implements RelationManager
 
     public RelationService() {
         // Hashtable to get implicit synchronization
-        graphTypes = new Hashtable<String, Class<?>>();
-        graphDescriptions = new Hashtable<String, GraphDescription>();
-        graphRegistry = new Hashtable<String, Graph>();
-        graphFactories = new Hashtable<String, GraphFactory>();
-        resourceAdapterRegistry = new Hashtable<String, String>();
+        graphTypes = new Hashtable<>();
+        graphDescriptions = new Hashtable<>();
+        graphRegistry = new Hashtable<>();
+        graphFactories = new Hashtable<>();
+        resourceAdapterRegistry = new Hashtable<>();
     }
 
     @Override
@@ -149,8 +144,8 @@ public class RelationService extends DefaultComponent implements RelationManager
         try {
             klass = getClass().getClassLoader().loadClass(className);
         } catch (ClassNotFoundException e) {
-            throw new RuntimeException(String.format("Cannot register unknown class for graph type %s: %s", graphType,
-                    className), e);
+            throw new RuntimeException(
+                    String.format("Cannot register unknown class for graph type %s: %s", graphType, className), e);
         }
         if (!Graph.class.isAssignableFrom(klass) && !GraphFactory.class.isAssignableFrom(klass)) {
             throw new RuntimeException("Invalid graph class/factory type: " + className);
@@ -165,7 +160,7 @@ public class RelationService extends DefaultComponent implements RelationManager
     private void unregisterGraphType(Object contrib) {
         GraphTypeDescriptor graphTypeExtension = (GraphTypeDescriptor) contrib;
         String graphType = graphTypeExtension.getName();
-        List<GraphDescription> list = new ArrayList<GraphDescription>(graphDescriptions.values()); // copy
+        List<GraphDescription> list = new ArrayList<>(graphDescriptions.values()); // copy
         for (GraphDescription graphDescription : list) {
             if (graphType.equals(graphDescription.getGraphType())) {
                 String name = graphDescription.getName();
@@ -180,11 +175,7 @@ public class RelationService extends DefaultComponent implements RelationManager
     }
 
     public List<String> getGraphTypes() {
-        List<String> res = new ArrayList<String>();
-        for (String type : graphTypes.keySet()) {
-            res.add(type);
-        }
-        return res;
+        return new ArrayList<>(graphTypes.keySet());
     }
 
     /**
@@ -256,8 +247,9 @@ public class RelationService extends DefaultComponent implements RelationManager
         } else {
             try {
                 // Thread context loader is not working in isolated EARs
-                ResourceAdapter adapter = (ResourceAdapter) RelationService.class.getClassLoader().loadClass(
-                        adapterClassName).newInstance();
+                ResourceAdapter adapter = (ResourceAdapter) RelationService.class.getClassLoader()
+                                                                                 .loadClass(adapterClassName)
+                                                                                 .newInstance();
                 adapter.setNamespace(namespace);
                 return adapter;
             } catch (ReflectiveOperationException e) {
@@ -353,8 +345,7 @@ public class RelationService extends DefaultComponent implements RelationManager
     }
 
     @Override
-    public Resource getResource(String namespace, Serializable object, Map<String, Object> context)
-            {
+    public Resource getResource(String namespace, Serializable object, Map<String, Object> context) {
         ResourceAdapter adapter = getResourceAdapterForNamespace(namespace);
         if (adapter == null) {
             log.error("Cannot find adapter for namespace: " + namespace);
@@ -367,7 +358,7 @@ public class RelationService extends DefaultComponent implements RelationManager
     @Override
     public Set<Resource> getAllResources(Serializable object, Map<String, Object> context) {
         // TODO OPTIM implement reverse map in registerContribution
-        Set<Resource> res = new HashSet<Resource>();
+        Set<Resource> res = new HashSet<>();
         for (String ns : resourceAdapterRegistry.keySet()) {
             ResourceAdapter adapter = getResourceAdapterForNamespace(ns);
             if (adapter == null) {
@@ -385,8 +376,7 @@ public class RelationService extends DefaultComponent implements RelationManager
     }
 
     @Override
-    public Serializable getResourceRepresentation(String namespace, Resource resource, Map<String, Object> context)
-            {
+    public Serializable getResourceRepresentation(String namespace, Resource resource, Map<String, Object> context) {
         ResourceAdapter adapter = getResourceAdapterForNamespace(namespace);
         if (adapter == null) {
             log.error("Cannot find adapter for namespace: " + namespace);
@@ -397,97 +387,12 @@ public class RelationService extends DefaultComponent implements RelationManager
     }
 
     @Override
-    @Deprecated
-    public void add(String graphName, List<Statement> statements) {
-        getGraphByName(graphName).add(statements);
-    }
-
-    @Override
-    @Deprecated
-    public void clear(String graphName) {
-        getGraphByName(graphName).clear();
-    }
-
-    @Override
-    @Deprecated
-    public List<Node> getObjects(String graphName, Node subject, Node predicate) {
-        return getGraphByName(graphName).getObjects(subject, predicate);
-    }
-
-    @Override
-    @Deprecated
-    public List<Node> getPredicates(String graphName, Node subject, Node object) {
-        return getGraphByName(graphName).getPredicates(subject, object);
-    }
-
-    @Override
-    @Deprecated
-    public List<Statement> getStatements(String graphName, Statement statement) {
-        return getGraphByName(graphName).getStatements(statement);
-    }
-
-    @Override
-    @Deprecated
-    public List<Statement> getStatements(String graphName) {
-        return getGraphByName(graphName).getStatements();
-    }
-
-    @Override
-    @Deprecated
-    public List<Node> getSubjects(String graphName, Node predicate, Node object) {
-        return getGraphByName(graphName).getSubjects(predicate, object);
-    }
-
-    @Override
-    @Deprecated
-    public boolean hasResource(String graphName, Resource resource) {
-        return getGraphByName(graphName).hasResource(resource);
-    }
-
-    @Override
-    @Deprecated
-    public boolean hasStatement(String graphName, Statement statement) {
-        return getGraphByName(graphName).hasStatement(statement);
-    }
-
-    @Override
-    @Deprecated
-    public QueryResult query(String graphName, String queryString, String language, String baseURI)
-            {
-        return getGraphByName(graphName).query(queryString, language, baseURI);
-    }
-
-    @Override
-    @Deprecated
-    public boolean read(String graphName, InputStream in, String lang, String base) {
-        return getGraphByName(graphName).read(in, lang, base);
-    }
-
-    @Override
-    @Deprecated
-    public void remove(String graphName, List<Statement> statements) {
-        getGraphByName(graphName).remove(statements);
-    }
-
-    @Override
-    @Deprecated
-    public Long size(String graphName) {
-        return getGraphByName(graphName).size();
-    }
-
-    @Override
-    @Deprecated
-    public boolean write(String graphName, OutputStream out, String lang, String base) {
-        return getGraphByName(graphName).write(out, lang, base);
-    }
-
-    @Override
     public List<String> getGraphNames() {
-        return new ArrayList<String>(graphDescriptions.keySet());
+        return new ArrayList<>(graphDescriptions.keySet());
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         RepositoryService repositoryService = Framework.getService(RepositoryService.class);
         if (repositoryService == null) {
             // RepositoryService failed to start, no need to go further
@@ -500,8 +405,7 @@ public class RelationService extends DefaultComponent implements RelationManager
             // init jena Graph outside of Tx
             for (String graphName : graphDescriptions.keySet()) {
                 GraphDescription desc = graphDescriptions.get(graphName);
-                if (desc.getGraphType()
-                        .equalsIgnoreCase("jena")) {
+                if (desc.getGraphType().equalsIgnoreCase("jena")) {
                     log.info("create RDF Graph " + graphName);
                     Graph graph = getGraphByName(graphName);
                     graph.size();
@@ -519,8 +423,7 @@ public class RelationService extends DefaultComponent implements RelationManager
         try {
             for (String graphName : graphDescriptions.keySet()) {
                 GraphDescription desc = graphDescriptions.get(graphName);
-                if (!desc.getGraphType()
-                        .equalsIgnoreCase("jena")) {
+                if (!desc.getGraphType().equalsIgnoreCase("jena")) {
                     log.info("create RDF Graph " + graphName);
                     Graph graph = getGraphByName(graphName);
                     graph.size();

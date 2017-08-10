@@ -44,6 +44,7 @@ import org.nuxeo.elasticsearch.api.EsResult;
 import org.nuxeo.elasticsearch.query.NxQueryBuilder;
 import org.nuxeo.elasticsearch.query.NxqlQueryConverter;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 
 /**
  * Elasticsearch Page provider that converts the NXQL query build by CoreQueryDocumentPageProvider.
@@ -52,17 +53,25 @@ import org.nuxeo.runtime.api.Framework;
  */
 public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider {
 
-    public static final String CORE_SESSION_PROPERTY = "coreSession";
-
-    public static final String SEARCH_ON_ALL_REPOSITORIES_PROPERTY = "searchAllRepositories";
-
     protected static final Log log = LogFactory.getLog(ElasticSearchNxqlPageProvider.class);
 
     private static final long serialVersionUID = 1L;
 
+    public static final String CORE_SESSION_PROPERTY = "coreSession";
+
+    public static final String SEARCH_ON_ALL_REPOSITORIES_PROPERTY = "searchAllRepositories";
+
+    // @since 9.2
+    public static final String ES_MAX_RESULT_WINDOW_PROPERTY = "org.nuxeo.elasticsearch.provider.maxResultWindow";
+
+    // This is the default ES index.max_result_window
+    public static final String DEFAULT_ES_MAX_RESULT_WINDOW_VALUE = "10000";
+
     protected List<DocumentModel> currentPageDocuments;
 
     protected HashMap<String, Aggregate<? extends Bucket>> currentAggregates;
+
+    protected Long maxResultWindow;
 
     @Override
     public List<DocumentModel> getCurrentPage() {
@@ -79,7 +88,7 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
             log.debug(String.format("Perform query for provider '%s': with pageSize=%d, offset=%d", getName(),
                     getMinMaxPageSize(), getCurrentPageOffset()));
         }
-        currentPageDocuments = new ArrayList<DocumentModel>();
+        currentPageDocuments = new ArrayList<>();
         CoreSession coreSession = getCoreSession();
         if (query == null) {
             buildQuery(coreSession);
@@ -90,11 +99,19 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
         // Build and execute the ES query
         ElasticSearchService ess = Framework.getLocalService(ElasticSearchService.class);
         try {
-            NxQueryBuilder nxQuery = new NxQueryBuilder(getCoreSession()).nxql(query).offset(
-                    (int) getCurrentPageOffset()).limit(getLimit()).addAggregates(buildAggregates());
+            NxQueryBuilder nxQuery = new NxQueryBuilder(getCoreSession()).nxql(query)
+                                                                         .offset((int) getCurrentPageOffset())
+                                                                         .limit(getLimit())
+                                                                         .addAggregates(buildAggregates());
             if (searchOnAllRepositories()) {
                 nxQuery.searchOnAllRepositories();
             }
+
+            List<String> highlightFields = getHighlights();
+            if (highlightFields != null && !highlightFields.isEmpty()) {
+                nxQuery.highlight(highlightFields);
+            }
+
             EsResult ret = ess.queryAndAggregate(nxQuery);
             DocumentModelList dmList = ret.getDocuments();
             currentAggregates = new HashMap<>(ret.getAggregates().size());
@@ -165,7 +182,7 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
         if (value == null) {
             return false;
         }
-        return Boolean.valueOf(value);
+        return Boolean.parseBoolean(value);
     }
 
     @Override
@@ -182,7 +199,6 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
     /**
      * Extends the default implementation to add results of aggregates
      *
-     * @param eventProps
      * @since 7.4
      */
     @Override
@@ -190,12 +206,12 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
 
         super.incorporateAggregates(eventProps);
         if (currentAggregates != null) {
-            HashMap<String, Serializable> aggregateMatches = new HashMap<String, Serializable>();
+            HashMap<String, Serializable> aggregateMatches = new HashMap<>();
             for (String key : currentAggregates.keySet()) {
                 Aggregate<? extends Bucket> ag = currentAggregates.get(key);
-                ArrayList<HashMap<String, Serializable>> buckets = new ArrayList<HashMap<String, Serializable>>();
+                ArrayList<HashMap<String, Serializable>> buckets = new ArrayList<>();
                 for (Bucket bucket : ag.getBuckets()) {
-                    HashMap<String, Serializable> b = new HashMap<String, Serializable>();
+                    HashMap<String, Serializable> b = new HashMap<>();
                     b.put("key", bucket.getKey());
                     b.put("count", bucket.getDocCount());
                     buckets.add(b);
@@ -205,4 +221,58 @@ public class ElasticSearchNxqlPageProvider extends CoreQueryDocumentPageProvider
             eventProps.put("aggregatesMatches", aggregateMatches);
         }
     }
+
+    @Override
+    public boolean isLastPageAvailable() {
+        if ((getResultsCount() + getPageSize()) <= getMaxResultWindow()) {
+            return super.isNextPageAvailable();
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isNextPageAvailable() {
+        if ((getCurrentPageOffset() + 2 * getPageSize()) <= getMaxResultWindow()) {
+            return super.isNextPageAvailable();
+        }
+        return false;
+    }
+
+    @Override
+    public long getPageLimit() {
+        return getMaxResultWindow() / getPageSize();
+    }
+
+    /**
+     * Returns the max result window where the PP can navigate without raising Elasticsearch
+     * QueryPhaseExecutionException. {@code from + size} must be less than or equal to this value.
+     *
+     * @since 9.2
+     */
+    public long getMaxResultWindow() {
+        if (maxResultWindow == null) {
+            ConfigurationService cs = Framework.getService(ConfigurationService.class);
+            String maxResultWindowStr = cs.getProperty(ES_MAX_RESULT_WINDOW_PROPERTY,
+                    DEFAULT_ES_MAX_RESULT_WINDOW_VALUE);
+            try {
+                maxResultWindow = Long.valueOf(maxResultWindowStr);
+            } catch (NumberFormatException e) {
+                log.warn(String.format(
+                    "Invalid maxResultWindow property value: %s for page provider: %s, fallback to default.",
+                            maxResultWindowStr, getName()));
+                maxResultWindow = Long.valueOf(DEFAULT_ES_MAX_RESULT_WINDOW_VALUE);
+            }
+        }
+        return maxResultWindow;
+    }
+
+    /**
+     * Set the max result window where the PP can navigate, for testing purpose.
+     *
+     * @since 9.2
+     */
+    public void setMaxResultWindow(long maxResultWindow) {
+        this.maxResultWindow = maxResultWindow;
+    }
+
 }

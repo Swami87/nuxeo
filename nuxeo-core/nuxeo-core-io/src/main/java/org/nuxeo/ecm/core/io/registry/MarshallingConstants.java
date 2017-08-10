@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nicolas Chapurlat <nchapurlat@nuxeo.com>
  */
-
 package org.nuxeo.ecm.core.io.registry;
 
 import org.nuxeo.ecm.core.io.registry.context.RenderingContext;
@@ -77,19 +76,6 @@ public interface MarshallingConstants {
      * Value to specify embed all or fetch all
      */
     String WILDCARD_VALUE = "*";
-
-    /**
-     * @deprecated use {@value #EMBED_PROPERTIES} instead
-     */
-    @Deprecated
-    String DOCUMENT_PROPERTIES_HEADER = "X-NXDocumentProperties";
-
-    /**
-     * @deprecated use {@value #EMBED_ENRICHERS} concatenated with the entity type "document" seprated with a '-'
-     *             (example: enrichers-document=acls)
-     */
-    @Deprecated
-    String NXCONTENT_CATEGORY_HEADER = "X-NXContext-Category";
 
     // Technical
 

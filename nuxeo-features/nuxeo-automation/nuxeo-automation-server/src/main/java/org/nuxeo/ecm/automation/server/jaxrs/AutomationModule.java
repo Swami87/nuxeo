@@ -28,7 +28,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.automation.jaxrs.JsonFactoryProvider;
 import org.nuxeo.ecm.automation.jaxrs.io.operations.MultiPartFormRequestReader;
-import org.nuxeo.ecm.automation.jaxrs.io.operations.MultiPartRequestReader;
 import org.nuxeo.ecm.automation.server.AutomationServer;
 import org.nuxeo.ecm.webengine.app.WebEngineModule;
 import org.nuxeo.ecm.webengine.jaxrs.coreiodelegate.JsonCoreIODelegate;
@@ -47,7 +46,6 @@ public class AutomationModule extends WebEngineModule {
         Set<Class<?>> result = super.getClasses();
         // need to be stateless since it needs the request member to be
         // injected
-        result.add(MultiPartRequestReader.class);
         result.add(MultiPartFormRequestReader.class);
         return result;
     }
@@ -74,7 +72,10 @@ public class AutomationModule extends WebEngineModule {
             }
         }
 
+        result.add(new AutomationServiceProvider());
+        result.add(new AutomationServerProvider());
         result.add(new JsonFactoryProvider());
+        result.add(new CoreSessionProvider());
         // nuxeo-core-io MarshallerRegistry service reading and writing
         result.add(new JsonCoreIODelegate());
         return result;

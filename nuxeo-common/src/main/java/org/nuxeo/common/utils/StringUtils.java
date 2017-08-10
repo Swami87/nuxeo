@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: StringUtils.java 28482 2008-01-04 15:33:39Z sfermigier $
  */
-
 package org.nuxeo.common.utils;
 
 import java.text.Normalizer;
@@ -37,7 +34,7 @@ public final class StringUtils {
     private static final String PLAIN_ASCII =
     // grave
     "AaEeIiOoUu"
-    // acute
+            // acute
             + "AaEeIiOoUuYy"
             // circumflex
             + "AaEeIiOoUuYy"
@@ -93,67 +90,60 @@ public final class StringUtils {
     }
 
     /**
-     * Joins the elements of the provided array into a single String containing the provided list of elements.
+     * Split the given string.
      *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(Object[])} instead
+     * @param str the string to split
+     * @param delimiter the delimiter to split with
+     * @param escape the character used to escape the delimiter
+     * @param trim trim the extracted segments
+     * @return the list of strings computed by splitting this string
+     * @since 9.1
      */
-    @Deprecated
-    public static String join(Object[] array) {
-        return org.apache.commons.lang.StringUtils.join(array);
-    }
-
-    /**
-     * Joins the elements of the provided array with an optional separator into a single String containing the provided
-     * list of elements.
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(Object[], String)} instead
-     */
-    @Deprecated
-    public static String join(Object[] array, String separator) {
-        return org.apache.commons.lang.StringUtils.join(array, separator);
-    }
-
-    /**
-     * Joins the elements of the provided array with an optional separator into a single String containing the provided
-     * list of elements.
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(Object[], char)} instead
-     */
-    @Deprecated
-    public static String join(Object[] array, char separator) {
-        return org.apache.commons.lang.StringUtils.join(array, separator);
-    }
-
-    /**
-     * Joins the elements of the provided {@link List} with an optional separator into a single String containing the
-     * provided elements.
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(java.util.Collection, String)} instead
-     */
-    @Deprecated
-    public static String join(List<String> list, String separator) {
-        return org.apache.commons.lang.StringUtils.join(list, separator);
-    }
-
-    /**
-     * Joins the elements of the provided {@link List} into a single String containing the provided elements.
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(java.util.Collection, null)} instead
-     */
-    @Deprecated
-    public static String join(List<String> list) {
-        return org.apache.commons.lang.StringUtils.join(list, null);
-    }
-
-    /**
-     * Joins the elements of the provided {@link List} with an optional separator into a single String containing the
-     * provided elements.
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.lang.StringUtils#join(java.util.Collection, char)} instead
-     */
-    @Deprecated
-    public static String join(List<String> list, char separator) {
-        return org.apache.commons.lang.StringUtils.join(list, separator);
+    public static List<String> split(String str, char delimiter, char escape, boolean trim) {
+        if (delimiter == escape) {
+            throw new IllegalArgumentException("Delimiter cannot be the escape character");
+        }
+        List<String> ar = new ArrayList<>();
+        if (str.isEmpty()) {
+            ar.add(str);
+            return ar;
+        }
+        StringBuilder segment = new StringBuilder();
+        int i = 0;
+        int length = str.length();
+        boolean lastCharDelimiter = false;
+        while (i < length) {
+            char c = str.charAt(i);
+            if (c == escape) {
+                if (i < length - 1) {
+                    char nextC = str.charAt(i + 1);
+                    if (nextC == delimiter || nextC == escape) {
+                        segment.append(nextC);
+                        i = i + 2;
+                    } else {
+                        segment.append(c);
+                        i++;
+                    }
+                } else {
+                    segment.append(c);
+                    i++;
+                }
+            } else if (c == delimiter) {
+                ar.add(trim ? segment.toString().trim() : segment.toString());
+                segment = new StringBuilder();
+                if (i == length - 1) {
+                    lastCharDelimiter = true;
+                }
+                i++;
+            } else {
+                segment.append(c);
+                i++;
+            }
+        }
+        if (segment.length() > 0 || lastCharDelimiter) {
+            ar.add(trim ? segment.toString().trim() : segment.toString());
+        }
+        return ar;
     }
 
     public static String[] split(String str, char delimiter, boolean trim) {
@@ -165,7 +155,7 @@ public final class StringUtils {
             }
             return new String[] { str };
         }
-        List<String> ar = new ArrayList<String>();
+        List<String> ar = new ArrayList<>();
         do {
             String segment = str.substring(s, e);
             if (trim) {
@@ -188,22 +178,6 @@ public final class StringUtils {
         }
 
         return ar.toArray(new String[ar.size()]);
-    }
-
-    /**
-     * Converts a string to a sequence of hexadecimal characters, using a non-obvious encoding (unicode code points with
-     * all leading 0 stripped for each character).
-     *
-     * @deprecated since 5.7, use {@link org.apache.commons.codec.binary.Hex#encodeHexString(byte[])} instead
-     */
-    @Deprecated
-    public static String toHex(String string) {
-        char[] chars = string.toCharArray();
-        StringBuilder buf = new StringBuilder();
-        for (char c : chars) {
-            buf.append(Integer.toHexString(c).toUpperCase());
-        }
-        return buf.toString();
     }
 
     /**

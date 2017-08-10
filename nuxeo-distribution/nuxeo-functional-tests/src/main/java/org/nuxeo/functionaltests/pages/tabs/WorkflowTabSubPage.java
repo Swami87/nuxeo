@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  *
  * Contributors:
  *     Mariana Cedica
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.pages.tabs;
 
@@ -26,7 +27,10 @@ import java.util.Date;
 import java.util.Locale;
 
 import org.junit.Assert;
+import org.nuxeo.functionaltests.AjaxRequestManager;
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.forms.Select2WidgetElement;
+import org.nuxeo.functionaltests.pages.AbstractPage;
 import org.nuxeo.functionaltests.pages.DocumentBasePage;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -78,15 +82,21 @@ public class WorkflowTabSubPage extends DocumentBasePage {
     }
 
     public void showGraphView() {
-        findElementAndWaitUntilEnabled(By.linkText("Show Graph View")).click();
+        AjaxRequestManager arm = new AjaxRequestManager(driver);
+        arm.begin();
+        findElementWaitUntilEnabledAndClick(By.linkText("Show Graph View"));
+        arm.end();
+        // wait for load
+        AbstractPage.getFancyBoxContent();
+        Locator.waitUntilElementPresent(By.id("fancybox-close"));
     }
 
     public void closeGraphView() {
-        findElementAndWaitUntilEnabled(By.id("fancybox-close")).click();
+        AbstractPage.closeFancyBox();
     }
 
     public void startWorkflow() {
-        findElementAndWaitUntilEnabled(By.xpath("//input[@value='Start the Review']")).click();
+        findElementWaitUntilEnabledAndClick(By.xpath("//input[@value='Start the Review']"));
     }
 
     /**
@@ -94,11 +104,11 @@ public class WorkflowTabSubPage extends DocumentBasePage {
      */
     public void endTask(String taskName, String comment) {
         findElementAndWaitUntilEnabled(By.tagName("textarea")).sendKeys(comment);
-        findElementAndWaitUntilEnabled(By.xpath(String.format("//input[@value='%s']", taskName))).click();
+        findElementWaitUntilEnabledAndClick(By.xpath(String.format("//input[@value='%s']", taskName)));
     }
 
     public void endTask(String taskName) {
-        findElementAndWaitUntilEnabled(By.xpath(String.format("//input[@value='%s']", taskName))).click();
+        findElementWaitUntilEnabledAndClick(By.xpath(String.format("//input[@value='%s']", taskName)));
     }
 
     /**
@@ -113,7 +123,8 @@ public class WorkflowTabSubPage extends DocumentBasePage {
      * @since 5.8
      */
     public WebElement getTaskLayoutNode() {
-        return findElementWithTimeout(By.xpath("//div[starts-with(@id, 'nxl_current_route_layout:nxw_current_route_user_tasks_panel')]"));
+        return findElementWithTimeout(
+                By.xpath("//div[starts-with(@id, 'nxl_current_route_layout:nxw_current_route_user_tasks_panel')]"));
     }
 
     @Override

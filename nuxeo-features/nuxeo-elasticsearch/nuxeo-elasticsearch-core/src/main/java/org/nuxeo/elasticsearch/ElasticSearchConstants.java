@@ -106,7 +106,9 @@ final public class ElasticSearchConstants {
 
     public static final String REINDEX_BUCKET_WRITE_PROPERTY = "elasticsearch.reindex.bucketWriteSize";
 
-    public static final String REINDEX_ON_STARTUP_PROPERTY = "elastcisearch.reindex.onStartup";
+    public static final String REINDEX_ON_STARTUP_PROPERTY = "elasticsearch.reindex.onStartup";
+
+    public static final String INDEX_BULK_MAX_SIZE_PROPERTY = "elasticsearch.index.bulkMaxSize";
 
     public static final String DISABLE_AUTO_INDEXING = "disableAutoIndexing";
 
@@ -116,5 +118,7 @@ final public class ElasticSearchConstants {
 
     /** @since 7.4 */
     public static final String INDEXING_QUEUE_ID = "elasticSearchIndexing";
+
+    public static final String EPOCH_MILLIS_FORMAT = "epoch_millis";
 
 }

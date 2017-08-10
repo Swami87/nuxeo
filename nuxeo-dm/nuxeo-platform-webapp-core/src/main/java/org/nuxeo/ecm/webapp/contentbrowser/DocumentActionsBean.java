@@ -25,14 +25,11 @@ import static org.jboss.seam.ScopeType.EVENT;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import javax.faces.context.FacesContext;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -45,7 +42,6 @@ import org.jboss.seam.annotations.remoting.WebRemote;
 import org.jboss.seam.annotations.web.RequestParameter;
 import org.jboss.seam.core.Events;
 import org.jboss.seam.international.StatusMessage;
-import org.nuxeo.common.collections.ScopeType;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentLocation;
@@ -54,12 +50,10 @@ import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
 import org.nuxeo.ecm.core.api.event.CoreEventConstants;
-import org.nuxeo.ecm.core.api.facet.VersioningDocument;
 import org.nuxeo.ecm.core.api.pathsegment.PathSegmentService;
 import org.nuxeo.ecm.core.api.security.SecurityConstants;
 import org.nuxeo.ecm.core.api.validation.DocumentValidationException;
 import org.nuxeo.ecm.core.blob.BlobManager;
-import org.nuxeo.ecm.core.blob.BlobManager.UsageHint;
 import org.nuxeo.ecm.core.blob.BlobProvider;
 import org.nuxeo.ecm.core.blob.ManagedBlob;
 import org.nuxeo.ecm.core.blob.apps.AppLink;
@@ -67,7 +61,6 @@ import org.nuxeo.ecm.core.io.download.DownloadService;
 import org.nuxeo.ecm.core.schema.FacetNames;
 import org.nuxeo.ecm.platform.actions.Action;
 import org.nuxeo.ecm.platform.actions.ActionContext;
-import org.nuxeo.ecm.platform.forms.layout.api.BuiltinModes;
 import org.nuxeo.ecm.platform.types.Type;
 import org.nuxeo.ecm.platform.ui.web.api.NavigationContext;
 import org.nuxeo.ecm.platform.ui.web.api.UserAction;
@@ -99,12 +92,6 @@ public class DocumentActionsBean extends InputController implements DocumentActi
     private static final long serialVersionUID = 1L;
 
     private static final Log log = LogFactory.getLog(DocumentActionsBean.class);
-
-    /**
-     * @deprecated since 5.6: default layout can now be defined on the nxl:documentLayout tag
-     */
-    @Deprecated
-    public static final String DEFAULT_SUMMARY_LAYOUT = "default_summary_layout";
 
     public static final String LIFE_CYCLE_TRANSITION_KEY = "lifeCycleTransition";
 
@@ -152,22 +139,6 @@ public class DocumentActionsBean extends InputController implements DocumentActi
     @In(create = true)
     protected Map<String, String> messages;
 
-    @Deprecated
-    @Override
-    @Factory(autoCreate = true, value = "currentDocumentSummaryLayout", scope = EVENT)
-    public String getCurrentDocumentSummaryLayout() {
-        DocumentModel doc = navigationContext.getCurrentDocument();
-        if (doc == null) {
-            return null;
-        }
-        String[] layouts = typeManager.getType(doc.getType()).getLayouts(BuiltinModes.SUMMARY, null);
-
-        if (layouts != null && layouts.length > 0) {
-            return layouts[0];
-        }
-        return DEFAULT_SUMMARY_LAYOUT;
-    }
-
     @Override
     @Factory(autoCreate = true, value = "currentDocumentType", scope = EVENT)
     public Type getCurrentType() {
@@ -190,13 +161,6 @@ public class DocumentActionsBean extends InputController implements DocumentActi
             return null;
         }
         return typeManager.getType(changeableDocument.getType());
-    }
-
-    @Deprecated
-    @Override
-    public String editDocument() {
-        navigationContext.setChangeableDocument(navigationContext.getCurrentDocument());
-        return navigationContext.navigateToDocument(navigationContext.getCurrentDocument(), "edit");
     }
 
     public String getFileName(DocumentModel doc) {
@@ -246,38 +210,18 @@ public class DocumentActionsBean extends InputController implements DocumentActi
         }
         // get properties from document view
         String filename = DocumentFileCodec.getFilename(doc, docView);
-        // download
-        FacesContext context = FacesContext.getCurrentInstance();
-        HttpServletRequest request = (HttpServletRequest) context.getExternalContext().getRequest();
-        HttpServletResponse response = (HttpServletResponse) context.getExternalContext().getResponse();
-
-        BlobManager blobManager = Framework.getService(BlobManager.class);
-        try {
-            URI uri = blobManager.getURI(blob, UsageHint.DOWNLOAD, request);
-            if (uri != null) {
-                response.sendRedirect(uri.toString());
-                return;
-            }
-        } catch (IOException e) {
-            log.error("Error while redirecting to blob provider's uri", e);
-        }
 
         if (blob.getLength() > Functions.getBigFileSizeLimit()) {
-            String bigDownloadURL = BaseURL.getBaseURL(request) + downloadService.getDownloadUrl(doc, xpath, filename);
+            FacesContext context = FacesContext.getCurrentInstance();
+            String bigDownloadURL = BaseURL.getBaseURL() + "/" + downloadService.getDownloadUrl(doc, xpath, filename);
             try {
-                response.sendRedirect(bigDownloadURL);
+                context.getExternalContext().redirect(bigDownloadURL);
             } catch (IOException e) {
                 log.error("Error while redirecting for big file downloader", e);
             }
         } else {
             ComponentUtils.download(doc, xpath, blob, filename, "download");
         }
-    }
-
-    @Deprecated
-    @Override
-    public String downloadFromList() {
-        return null;
     }
 
     @Override
@@ -323,26 +267,6 @@ public class DocumentActionsBean extends InputController implements DocumentActi
     public String updateCurrentDocument() {
         DocumentModel currentDocument = navigationContext.getCurrentDocument();
         return updateDocument(currentDocument);
-    }
-
-    @Deprecated
-    @Override
-    public String updateDocument() {
-        DocumentModel changeableDocument = navigationContext.getChangeableDocument();
-        return updateDocument(changeableDocument);
-    }
-
-    @Override
-    public String updateDocumentAsNewVersion() {
-        DocumentModel changeableDocument = navigationContext.getChangeableDocument();
-        changeableDocument.putContextData(org.nuxeo.common.collections.ScopeType.REQUEST,
-                VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY, Boolean.TRUE);
-        changeableDocument = documentManager.saveDocument(changeableDocument);
-
-        facesMessages.add(StatusMessage.Severity.INFO, messages.get("new_version_created"));
-        // then follow the standard pageflow for edited documents
-        EventManager.raiseEventsOnDocumentChange(changeableDocument);
-        return navigationContext.navigateToDocument(changeableDocument, "after-edit");
     }
 
     @Override
@@ -424,20 +348,8 @@ public class DocumentActionsBean extends InputController implements DocumentActi
     // Send the comment of the update to the Core
     private void throwUpdateComments(DocumentModel changeableDocument) {
         if (comment != null && !"".equals(comment)) {
-            changeableDocument.getContextData().put("comment", comment);
+            changeableDocument.putContextData("comment", comment);
         }
-    }
-
-    @Deprecated
-    @Override
-    public String getComment() {
-        return "";
-    }
-
-    @Deprecated
-    @Override
-    public void setComment(String comment) {
-        this.comment = comment;
     }
 
     @Override
@@ -458,8 +370,7 @@ public class DocumentActionsBean extends InputController implements DocumentActi
     @Override
     @Observer(EventNames.BEFORE_DOCUMENT_CHANGED)
     public void followTransition(DocumentModel changedDocument) {
-        String transitionToFollow = (String) changedDocument.getContextData(ScopeType.REQUEST,
-                LIFE_CYCLE_TRANSITION_KEY);
+        String transitionToFollow = (String) changedDocument.getContextData(LIFE_CYCLE_TRANSITION_KEY);
         if (transitionToFollow != null) {
             documentManager.followTransition(changedDocument.getRef(), transitionToFollow);
             documentManager.save();

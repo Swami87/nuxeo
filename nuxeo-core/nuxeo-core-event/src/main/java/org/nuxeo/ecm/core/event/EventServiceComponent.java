@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ package org.nuxeo.ecm.core.event;
 
 import org.nuxeo.ecm.core.event.impl.EventListenerDescriptor;
 import org.nuxeo.ecm.core.event.impl.EventServiceImpl;
+import org.nuxeo.ecm.core.event.pipe.EventPipeDescriptor;
+import org.nuxeo.ecm.core.event.pipe.dispatch.EventDispatcherDescriptor;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
@@ -36,6 +38,10 @@ public class EventServiceComponent extends DefaultComponent {
 
     public static final String EVENT_LISTENER_XP = "listener";
 
+    public static final String EVENT_PIPE_XP = "pipe";
+
+    public static final String EVENT_DISPATCHER_XP = "dispatcher";
+
     public static final long DEFAULT_SHUTDOWN_TIMEOUT = 5 * 1000; // 5 seconds
 
     protected EventServiceImpl service;
@@ -43,6 +49,11 @@ public class EventServiceComponent extends DefaultComponent {
     @Override
     public void activate(ComponentContext context) {
         service = new EventServiceImpl();
+    }
+
+    @Override
+    public void applicationStarted(ComponentContext context) {
+        service.init();
     }
 
     @Override
@@ -71,7 +82,19 @@ public class EventServiceComponent extends DefaultComponent {
         if (EVENT_LISTENER_XP.equals(extensionPoint)) {
             EventListenerDescriptor descriptor = (EventListenerDescriptor) contribution;
             descriptor.setRuntimeContext(contributor.getRuntimeContext());
-            service.addEventListener(descriptor);
+            try {
+                service.addEventListener(descriptor);
+            } catch (RuntimeException e) {
+                String msg = "Failed to register event listener in component '" + contributor.getName()
+                        + "': error initializing event listener '" + descriptor.getName() + "' (" + e.toString() + ')';
+                Framework.getRuntime().getErrors().add(msg);
+            }
+        } else if (EVENT_PIPE_XP.equals(extensionPoint)) {
+            EventPipeDescriptor descriptor = (EventPipeDescriptor) contribution;
+            service.addEventPipe(descriptor);
+        } else if (EVENT_DISPATCHER_XP.equals(extensionPoint)) {
+            EventDispatcherDescriptor descriptor = (EventDispatcherDescriptor) contribution;
+            service.addEventDispatcher(descriptor);
         }
     }
 
@@ -79,6 +102,12 @@ public class EventServiceComponent extends DefaultComponent {
     public void unregisterContribution(Object contribution, String extensionPoint, ComponentInstance contributor) {
         if (EVENT_LISTENER_XP.equals(extensionPoint)) {
             service.removeEventListener((EventListenerDescriptor) contribution);
+        } else if (EVENT_PIPE_XP.equals(extensionPoint)) {
+            EventPipeDescriptor descriptor = (EventPipeDescriptor) contribution;
+            service.removeEventPipe(descriptor);
+        } else if (EVENT_DISPATCHER_XP.equals(extensionPoint)) {
+            EventDispatcherDescriptor descriptor = (EventDispatcherDescriptor) contribution;
+            service.removeEventDispatcher(descriptor);
         }
     }
 

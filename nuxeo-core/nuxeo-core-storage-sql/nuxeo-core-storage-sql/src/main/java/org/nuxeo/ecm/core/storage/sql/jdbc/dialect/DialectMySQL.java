@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.storage.sql.jdbc.dialect;
 
 import java.io.Serializable;
@@ -27,16 +26,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-import org.nuxeo.common.utils.StringUtils;
-import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer.FulltextQuery;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer.Op;
@@ -73,10 +70,9 @@ public class DialectMySQL extends Dialect {
     @Override
     public String getAddForeignKeyConstraintString(String constraintName, String[] foreignKeys, String referencedTable,
             String[] primaryKeys, boolean referencesPrimaryKey) {
-        String cols = StringUtils.join(foreignKeys, ", ");
-        String sql = String.format(" ADD INDEX %s (%s), ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
-                constraintName, cols, constraintName, cols, referencedTable, StringUtils.join(primaryKeys, ", "));
-        return sql;
+        String cols = String.join(", ", foreignKeys);
+        return String.format(" ADD INDEX %s (%s), ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
+                constraintName, cols, constraintName, cols, referencedTable, String.join(", ", primaryKeys));
     }
 
     @Override
@@ -111,10 +107,10 @@ public class DialectMySQL extends Dialect {
         case DOUBLE:
             return jdbcInfo("DOUBLE", Types.DOUBLE);
         case TIMESTAMP:
-            return jdbcInfo("DATETIME", Types.TIMESTAMP);
+            return jdbcInfo("DATETIME(3)", Types.TIMESTAMP);
         case BLOBID:
             return jdbcInfo("VARCHAR(250) BINARY", Types.VARCHAR);
-            // -----
+        // -----
         case NODEID:
         case NODEIDFK:
         case NODEIDFKNP:
@@ -218,14 +214,11 @@ public class DialectMySQL extends Dialect {
     }
 
     @Override
-    public String getCreateFulltextIndexSql(String indexName, String quotedIndexName, Table table,
-            List<Column> columns, Model model) {
-        List<String> columnNames = new ArrayList<String>(columns.size());
-        for (Column col : columns) {
-            columnNames.add(col.getQuotedName());
-        }
+    public String getCreateFulltextIndexSql(String indexName, String quotedIndexName, Table table, List<Column> columns,
+            Model model) {
+        String indexedColumns = columns.stream().map(Column::getQuotedName).collect(Collectors.joining(", "));
         return String.format("CREATE FULLTEXT INDEX %s ON %s (%s)", quotedIndexName, table.getQuotedName(),
-                StringUtils.join(columnNames, ", "));
+                indexedColumns);
     }
 
     @Override
@@ -254,7 +247,6 @@ public class DialectMySQL extends Dialect {
                 translateForMySQL(term, ft.op, buf);
             }
             buf.append(')');
-            return;
         } else {
             if (ft.op == Op.NOTWORD) {
                 buf.append('-');
@@ -285,10 +277,10 @@ public class DialectMySQL extends Dialect {
             Column mainColumn, Model model, Database database) {
         String nthSuffix = nthMatch == 1 ? "" : String.valueOf(nthMatch);
         String indexSuffix = model.getFulltextIndexSuffix(indexName);
-        Table ft = database.getTable(model.FULLTEXT_TABLE_NAME);
-        Column ftMain = ft.getColumn(model.MAIN_KEY);
-        Column stColumn = ft.getColumn(model.FULLTEXT_SIMPLETEXT_KEY + indexSuffix);
-        Column btColumn = ft.getColumn(model.FULLTEXT_BINARYTEXT_KEY + indexSuffix);
+        Table ft = database.getTable(Model.FULLTEXT_TABLE_NAME);
+        Column ftMain = ft.getColumn(Model.MAIN_KEY);
+        Column stColumn = ft.getColumn(Model.FULLTEXT_SIMPLETEXT_KEY + indexSuffix);
+        Column btColumn = ft.getColumn(Model.FULLTEXT_BINARYTEXT_KEY + indexSuffix);
         String match = String.format("MATCH (%s, %s)", stColumn.getFullQuotedName(), btColumn.getFullQuotedName());
         FulltextMatchInfo info = new FulltextMatchInfo();
         if (nthMatch == 1) {
@@ -371,7 +363,7 @@ public class DialectMySQL extends Dialect {
 
     @Override
     public Map<String, Serializable> getSQLStatementsProperties(Model model, Database database) {
-        Map<String, Serializable> properties = new HashMap<String, Serializable>();
+        Map<String, Serializable> properties = new HashMap<>();
         properties.put("idType", "varchar(36)");
         properties.put("fulltextEnabled", Boolean.valueOf(!fulltextDisabled));
         properties.put("fulltextSearchEnabled", Boolean.valueOf(!fulltextSearchDisabled));
@@ -381,23 +373,23 @@ public class DialectMySQL extends Dialect {
 
     @Override
     public boolean isConcurrentUpdateException(Throwable t) {
-        while (t.getCause() != null) {
+        do {
+            if (t instanceof SQLException) {
+                String sqlState = ((SQLException) t).getSQLState();
+                if ("23000".equals(sqlState)) {
+                    // Integrity constraint violation: 1452 Cannot add or update a child row:
+                    // a foreign key constraint fails
+                    return true;
+                }
+                if ("40001".equals(sqlState)) {
+                    // com.mysql.jdbc.exceptions.jdbc4.MySQLTransactionRollbackException:
+                    // java.sql.SQLTransactionRollbackException for MariaDB:
+                    // Deadlock found when trying to get lock; try restarting transaction
+                    return true;
+                }
+            }
             t = t.getCause();
-        }
-        if (t instanceof SQLException) {
-            String sqlState = ((SQLException) t).getSQLState();
-            if ("23000".equals(sqlState)) {
-                // Integrity constraint violation: 1452 Cannot add or update a
-                // child row: a foreign key constraint fails
-                return true;
-            }
-            if ("40001".equals(sqlState)) {
-                // com.mysql.jdbc.exceptions.jdbc4.MySQLTransactionRollbackException:
-                // Deadlock found when trying to get lock; try restarting
-                // transaction
-                return true;
-            }
-        }
+        } while (t != null);
         return false;
     }
 
@@ -438,7 +430,7 @@ public class DialectMySQL extends Dialect {
 
     @Override
     public String getBinaryFulltextSql(List<String> columns) {
-        return "SELECT " + StringUtils.join(columns, ", ") + " FROM `fulltext` WHERE id=?";
+        return "SELECT " + String.join(", ", columns) + " FROM `fulltext` WHERE id=?";
     }
 
     @Override

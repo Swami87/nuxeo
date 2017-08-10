@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: MimetypeRegistry.java 20731 2007-06-18 15:13:32Z ogrisel $
+ *     Julien Anguenot <ja@nuxeo.com>
+ *     Estelle Giuly <egiuly@nuxeo.com>
  */
 package org.nuxeo.ecm.platform.mimetype.interfaces;
 
 import java.io.File;
-import java.io.InputStream;
 import java.util.List;
 
 import org.nuxeo.ecm.core.api.Blob;
@@ -32,21 +31,14 @@ import org.nuxeo.ecm.platform.mimetype.MimetypeNotFoundException;
  * MimetypeEntry registry.
  * <p>
  * Flexible registry of mimetypes.
- *
- * @author <a href="ja@nuxeo.com">Julien Anguenot</a>
  */
 public interface MimetypeRegistry {
 
     String DEFAULT_MIMETYPE = "application/octet-stream";
 
-    /**
-     * Returns the mime type from a given stream.
-     *
-     * @return String mimetype name.
-     * @throws MimetypeNotFoundException if mimetype sniffing failed to identify a registered mime type
-     * @throws MimetypeDetectionException if unexpected problem prevent the detection to work as expected
-     */
-    String getMimetypeFromStream(InputStream stream) throws MimetypeNotFoundException, MimetypeDetectionException;
+    String PDF_MIMETYPE = "application/pdf";
+
+    String PDF_EXTENSION = ".pdf";
 
     /**
      * Returns the mime type from a given stream.
@@ -58,18 +50,14 @@ public interface MimetypeRegistry {
     String getMimetypeFromBlob(Blob blob) throws MimetypeNotFoundException, MimetypeDetectionException;
 
     /**
-     * Returns the mime type from a given blob or provided default if not possible.
+     * Finds the mimetype of a Blob content and returns provided default if not possible.
      *
+     * @param blob content to be analyzed
+     * @param defaultMimetype defaultMimeType to be used if no found
+     * @return the string mimetype
      * @throws MimetypeDetectionException
      */
     String getMimetypeFromBlobWithDefault(Blob blob, String defaultMimetype) throws MimetypeDetectionException;
-
-    /**
-     * Returns the mime type from a given stream or provided default if not possible.
-     *
-     * @throws MimetypeDetectionException
-     */
-    String getMimetypeFromStreamWithDefault(InputStream is, String defaultMimetype) throws MimetypeDetectionException;
 
     /**
      * Returns the mime type from a given filename.
@@ -120,6 +108,32 @@ public interface MimetypeRegistry {
      */
     String getMimetypeFromFilenameAndBlobWithDefault(String filename, Blob blob, String defaultMimetype)
             throws MimetypeDetectionException;
+
+    /**
+     * Finds the mimetype of some content according to its filename or binary mime type or binary content.
+     *
+     * @param filename extension to analyze
+     * @param blob content to be analyzed if filename is ambiguous
+     * @param defaultMimetype defaultMimeType to be used if no found
+     * @return the string mimetype
+     * @throws MimetypeDetectionException
+     * @since 8.4
+     */
+    String getMimetypeFromFilenameWithBlobMimetypeFallback(String filename, Blob blob, String defaultMimetype)
+            throws MimetypeDetectionException;
+
+    /**
+     * Update the mimetype field of a Blob based on the provided filename with fallback to binary. If the embedded
+     * filename is null, the provided filename is embedded into the blob as well.
+     *
+     * @param blob content to be analyzed if filename is ambiguous
+     * @param filename with extension to analyze
+     * @param withBlobMimetypeFallback to consider blob mimetype as fallback or not
+     * @return updated blob (persisted if necessary)
+     * @throws MimetypeDetectionException
+     * @since 8.4
+     */
+    Blob updateMimetype(Blob blob, String filename, Boolean withBlobMimetypeFallback) throws MimetypeDetectionException;
 
     /**
      * Update the mimetype field of a Blob based on the provided filename with fallback to binary sniffing. If the

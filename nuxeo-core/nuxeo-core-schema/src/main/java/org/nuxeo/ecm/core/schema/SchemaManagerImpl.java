@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Bogdan Stefanescu
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.schema;
 
 import java.io.File;
@@ -37,12 +36,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.nuxeo.common.Environment;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.core.schema.types.AnyType;
 import org.nuxeo.ecm.core.schema.types.ComplexType;
 import org.nuxeo.ecm.core.schema.types.CompositeType;
@@ -53,7 +51,6 @@ import org.nuxeo.ecm.core.schema.types.QName;
 import org.nuxeo.ecm.core.schema.types.Schema;
 import org.nuxeo.ecm.core.schema.types.Type;
 import org.nuxeo.ecm.core.schema.types.TypeException;
-
 import org.xml.sax.SAXException;
 
 /**
@@ -93,6 +90,9 @@ public class SchemaManagerImpl implements SchemaManager {
     /** Effective prefetch info. */
     protected PrefetchInfo prefetchInfo;
 
+    /** Effective clearComplexPropertyBeforeSet flag. */
+    protected boolean clearComplexPropertyBeforeSet;
+
     /** Effective schemas. */
     protected Map<String, Schema> schemas = new HashMap<>();
 
@@ -125,7 +125,22 @@ public class SchemaManagerImpl implements SchemaManager {
 
     public static final String SCHEMAS_DIR_NAME = "schemas";
 
+    /**
+     * Default used for clearComplexPropertyBeforeSet if there is no XML configuration found.
+     * @since 9.3
+     */
+    public static final boolean CLEAR_COMPLEX_PROP_BEFORE_SET_DEFAULT = true;
+
+    protected List<Runnable> recomputeCallbacks;
+
+    /** @since 9.2 */
+    protected Map<String, Map<String, String>> deprecatedProperties = new HashMap<>();
+
+    /** @since 9.2 */
+    protected Map<String, Map<String, String>> removedProperties = new HashMap<>();
+
     public SchemaManagerImpl() {
+        recomputeCallbacks = new ArrayList<>();
         schemaDir = new File(Environment.getDefault().getTemp(), SCHEMAS_DIR_NAME);
         schemaDir.mkdirs();
         clearSchemaDir();
@@ -168,16 +183,25 @@ public class SchemaManagerImpl implements SchemaManager {
     public synchronized void registerConfiguration(TypeConfiguration config) {
         allConfigurations.add(config);
         dirty = true;
-        log.info("Registered global prefetch: " + config.prefetchInfo);
+        if (StringUtils.isNotBlank(config.prefetchInfo)) {
+            log.info("Registered global prefetch: " + config.prefetchInfo);
+        }
+        if (config.clearComplexPropertyBeforeSet != null) {
+            log.info("Registered clearComplexPropertyBeforeSet: " + config.clearComplexPropertyBeforeSet);
+        }
     }
 
     public synchronized void unregisterConfiguration(TypeConfiguration config) {
         if (allConfigurations.remove(config)) {
             dirty = true;
-            log.info("Unregistered global prefetch: " + config.prefetchInfo);
+            if (StringUtils.isNotBlank(config.prefetchInfo)) {
+                log.info("Unregistered global prefetch: " + config.prefetchInfo);
+            }
+            if (config.clearComplexPropertyBeforeSet != null) {
+                log.info("Unregistered clearComplexPropertyBeforeSet: " + config.clearComplexPropertyBeforeSet);
+            }
         } else {
-            log.error("Unregistering unknown prefetch: " + config.prefetchInfo);
-
+            log.error("Unregistering unknown configuration: " + config);
         }
     }
 
@@ -197,6 +221,7 @@ public class SchemaManagerImpl implements SchemaManager {
     }
 
     public synchronized void registerFacet(FacetDescriptor fd) {
+        allFacets.removeIf(f -> f.getName().equals(fd.getName()));
         allFacets.add(fd);
         dirty = true;
         log.info("Registered facet: " + fd.name);
@@ -237,6 +262,17 @@ public class SchemaManagerImpl implements SchemaManager {
         return last;
     }
 
+    // NXP-14218: used for tests, to be able to unregister it
+    public FacetDescriptor getFacetDescriptor(String name) {
+        return allFacets.stream().filter(f -> f.getName().equals(name)).reduce((a, b) -> b).orElse(null);
+    }
+
+    // NXP-14218: used for tests, to recompute available facets
+    public void recomputeDynamicFacets() {
+        recomputeFacets();
+        dirty = false;
+    }
+
     public synchronized void registerProxies(ProxiesDescriptor pd) {
         allProxies.add(pd);
         dirty = true;
@@ -267,6 +303,7 @@ public class SchemaManagerImpl implements SchemaManager {
             // call recompute() synchronized
             recompute();
             dirty = false;
+            executeRecomputeCallbacks();
         }
     }
 
@@ -287,11 +324,15 @@ public class SchemaManagerImpl implements SchemaManager {
      */
 
     protected void recomputeConfiguration() {
-        if (allConfigurations.isEmpty()) {
-            prefetchInfo = null;
-        } else {
-            TypeConfiguration last = allConfigurations.get(allConfigurations.size() - 1);
-            prefetchInfo = new PrefetchInfo(last.prefetchInfo);
+        prefetchInfo = null;
+        clearComplexPropertyBeforeSet = CLEAR_COMPLEX_PROP_BEFORE_SET_DEFAULT;
+        for (TypeConfiguration tc : allConfigurations) {
+            if (StringUtils.isNotBlank(tc.prefetchInfo)) {
+                prefetchInfo = new PrefetchInfo(tc.prefetchInfo);
+            }
+            if (tc.clearComplexPropertyBeforeSet != null) {
+                clearComplexPropertyBeforeSet = tc.clearComplexPropertyBeforeSet.booleanValue();
+            }
         }
     }
 
@@ -354,12 +395,9 @@ public class SchemaManagerImpl implements SchemaManager {
             log.error("XSD Schema not found: " + sd.src);
             return;
         }
-        InputStream in = url.openStream();
-        try {
+        try (InputStream in = url.openStream()) {
             sd.file = new File(schemaDir, sd.name + ".xsd");
-            FileUtils.copyToFile(in, sd.file); // may overwrite
-        } finally {
-            in.close();
+            FileUtils.copyInputStreamToFile(in, sd.file); // may overwrite
         }
     }
 
@@ -370,7 +408,7 @@ public class SchemaManagerImpl implements SchemaManager {
         }
         // loadSchema calls this.registerSchema
         XSDLoader schemaLoader = new XSDLoader(this, sd);
-        schemaLoader.loadSchema(sd.name, sd.prefix, sd.file, sd.xsdRootElement);
+        schemaLoader.loadSchema(sd.name, sd.prefix, sd.file, sd.xsdRootElement, sd.isVersionWritable);
         log.info("Registered schema: " + sd.name + " from " + sd.file);
     }
 
@@ -501,7 +539,8 @@ public class SchemaManagerImpl implements SchemaManager {
 
     }
 
-    protected DocumentTypeDescriptor mergeDocumentTypeDescriptors(DocumentTypeDescriptor src, DocumentTypeDescriptor dst) {
+    protected DocumentTypeDescriptor mergeDocumentTypeDescriptors(DocumentTypeDescriptor src,
+            DocumentTypeDescriptor dst) {
         return dst.clone().merge(src);
     }
 
@@ -550,6 +589,8 @@ public class SchemaManagerImpl implements SchemaManager {
         Set<String> facetNames = new HashSet<>();
         Set<String> schemaNames = SchemaDescriptor.getSchemaNames(dtd.schemas);
         facetNames.addAll(Arrays.asList(dtd.facets));
+        Set<String> subtypes = new HashSet<>(Arrays.asList(dtd.subtypes));
+        Set<String> forbidden = new HashSet<>(Arrays.asList(dtd.forbiddenSubtypes));
 
         // inherited
         if (parent != null) {
@@ -582,6 +623,8 @@ public class SchemaManagerImpl implements SchemaManager {
         // create doctype
         PrefetchInfo prefetch = dtd.prefetch == null ? prefetchInfo : new PrefetchInfo(dtd.prefetch);
         DocumentTypeImpl docType = new DocumentTypeImpl(name, parent, docTypeSchemas, facetNames, prefetch);
+        docType.setSubtypes(subtypes);
+        docType.setForbiddenSubtypes(forbidden);
         registerDocumentType(docType);
 
         return docType;
@@ -630,6 +673,12 @@ public class SchemaManagerImpl implements SchemaManager {
         }
         Set<String> subTypes = getDocumentTypeNamesExtending(superType);
         return subTypes != null && subTypes.contains(docType);
+    }
+
+    @Override
+    public Set<String> getAllowedSubTypes(String typeName) {
+        DocumentType dt = getDocumentType(typeName);
+        return dt == null ? null : dt.getAllowedSubtypes();
     }
 
     /*
@@ -767,6 +816,89 @@ public class SchemaManagerImpl implements SchemaManager {
 
     public void flushPendingsRegistration() {
         checkDirty();
+    }
+
+    /*
+     * ===== Recompute Callbacks =====
+     */
+
+    /**
+     * @since 8.10
+     */
+    public void registerRecomputeCallback(Runnable callback) {
+        recomputeCallbacks.add(callback);
+    }
+
+    /**
+     * @since 8.10
+     */
+    public void unregisterRecomputeCallback(Runnable callback) {
+        recomputeCallbacks.remove(callback);
+    }
+
+    /**
+     * @since 8.10
+     */
+    protected void executeRecomputeCallbacks() {
+        recomputeCallbacks.forEach(Runnable::run);
+    }
+
+    /*
+     * ===== Deprecation API =====
+     */
+
+    /**
+     * @since 9.2
+     */
+    public synchronized void registerPropertyDeprecation(PropertyDeprecationDescriptor descriptor) {
+        Map<String, Map<String, String>> properties = descriptor.isDeprecated() ? deprecatedProperties
+                : removedProperties;
+        properties.computeIfAbsent(descriptor.getSchema(), key -> new HashMap<>()).put(descriptor.getName(),
+                descriptor.getFallback());
+        log.info("Registered property deprecation: " + descriptor);
+    }
+
+    /**
+     * @since 9.2
+     */
+    public synchronized void unregisterPropertyDeprecation(PropertyDeprecationDescriptor descriptor) {
+        Map<String, Map<String, String>> properties = descriptor.isDeprecated() ? deprecatedProperties
+                : removedProperties;
+        boolean removed = false;
+        Map<String, String> schemaProperties = properties.get(descriptor.getSchema());
+        if (schemaProperties != null) {
+            removed = schemaProperties.remove(descriptor.getName(), descriptor.getFallback());
+            if (schemaProperties.isEmpty()) {
+                properties.remove(descriptor.getSchema());
+            }
+        }
+        if (removed) {
+            log.info("Unregistered property deprecation: " + descriptor);
+        } else {
+            log.error("Unregistering unknown property deprecation: " + descriptor);
+
+        }
+    }
+
+    /**
+     * @since 9.2
+     */
+    @Override
+    public PropertyDeprecationHandler getDeprecatedProperties() {
+        return new PropertyDeprecationHandler(deprecatedProperties);
+    }
+
+    /**
+     * @since 9.2
+     */
+    @Override
+    public PropertyDeprecationHandler getRemovedProperties() {
+        return new PropertyDeprecationHandler(removedProperties);
+    }
+
+    @Override
+    public boolean getClearComplexPropertyBeforeSet() {
+        return clearComplexPropertyBeforeSet;
     }
 
 }

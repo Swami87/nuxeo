@@ -40,6 +40,7 @@ import org.nuxeo.ecm.automation.core.annotations.OperationMethod;
 import org.nuxeo.ecm.automation.core.annotations.Param;
 import org.nuxeo.ecm.automation.core.operations.services.DocumentPageProviderOperation;
 import org.nuxeo.ecm.automation.core.util.StringList;
+import org.nuxeo.ecm.automation.features.SuggestConstants;
 import org.nuxeo.ecm.collections.api.CollectionConstants;
 import org.nuxeo.ecm.collections.api.CollectionManager;
 import org.nuxeo.ecm.core.api.Blob;
@@ -47,7 +48,6 @@ import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.platform.query.nxql.CoreQueryDocumentPageProvider;
-import org.nuxeo.ecm.platform.ui.select2.common.Select2Common;
 
 /**
  * @since 5.9.3
@@ -89,32 +89,32 @@ public class SuggestCollectionEntry {
         Map<String, Serializable> props = new HashMap<String, Serializable>();
         props.put(CoreQueryDocumentPageProvider.CORE_SESSION_PROPERTY, (Serializable) session);
 
-        Map<String, Object> vars = ctx.getVars();
-
-        StringList sl = new StringList();
-        sl.add(searchTerm + (searchTerm.endsWith("%") ? "" : "%"));
-        sl.add(DocumentPageProviderOperation.CURRENT_USERID_PATTERN);
-        vars.put("queryParams", sl);
-        vars.put("providerName", CollectionConstants.COLLECTION_PAGE_PROVIDER);
-        OperationContext subctx = new OperationContext(ctx.getCoreSession(), vars);
+        Map<String, Object> vars = new HashMap<>();
+        {
+            StringList sl = new StringList();
+            sl.add(searchTerm + (searchTerm.endsWith("%") ? "" : "%"));
+            sl.add(DocumentPageProviderOperation.CURRENT_USERID_PATTERN);
+            vars.put("queryParams", sl);
+            vars.put("providerName", CollectionConstants.COLLECTION_PAGE_PROVIDER);
+        }
         OperationChain chain = new OperationChain("operation");
         OperationParameters oparams = new OperationParameters(DocumentPageProviderOperation.ID, vars);
         chain.add(oparams);
         @SuppressWarnings("unchecked")
-        List<DocumentModel> docs = (List<DocumentModel>) service.run(subctx, chain);
+        List<DocumentModel> docs = (List<DocumentModel>) service.run(ctx, chain);
 
         boolean found = false;
         for (DocumentModel doc : docs) {
             JSONObject obj = new JSONObject();
             if (collectionManager.canAddToCollection(doc, session)) {
-                obj.element(Select2Common.ID, doc.getId());
+                obj.element(SuggestConstants.ID, doc.getId());
             }
             if (doc.getTitle().equals(searchTerm)) {
                 found = true;
             }
-            obj.element(Select2Common.LABEL, doc.getTitle());
+            obj.element(SuggestConstants.LABEL, doc.getTitle());
             if (StringUtils.isNotBlank((String) doc.getProperty("common", "icon"))) {
-                obj.element(Select2Common.ICON, doc.getProperty("common", "icon"));
+                obj.element(SuggestConstants.ICON, doc.getProperty("common", "icon"));
             }
             obj.element(PATH, doc.getPath().toString());
             result.add(obj);
@@ -122,12 +122,12 @@ public class SuggestCollectionEntry {
 
         if (!found && StringUtils.isNotBlank(searchTerm)) {
             JSONObject obj = new JSONObject();
-            obj.element(Select2Common.LABEL, searchTerm);
-            obj.element(Select2Common.ID, CollectionConstants.MAGIC_PREFIX_ID + searchTerm);
+            obj.element(SuggestConstants.LABEL, searchTerm);
+            obj.element(SuggestConstants.ID, CollectionConstants.MAGIC_PREFIX_ID + searchTerm);
             result.add(0, obj);
         }
 
-        return Blobs.createBlob(result.toString(), "application/json");
+        return Blobs.createJSONBlob(result.toString());
     }
 
     protected Locale getLocale() {
@@ -138,7 +138,7 @@ public class SuggestCollectionEntry {
         if (lang == null) {
             lang = (String) ctx.get("lang");
             if (lang == null) {
-                lang = Select2Common.DEFAULT_LANG;
+                lang = SuggestConstants.DEFAULT_LANG;
             }
         }
         return lang;

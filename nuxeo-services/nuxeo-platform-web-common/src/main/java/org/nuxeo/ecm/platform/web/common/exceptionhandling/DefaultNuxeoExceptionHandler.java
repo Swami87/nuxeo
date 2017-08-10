@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2008 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,27 +19,41 @@
 package org.nuxeo.ecm.platform.web.common.exceptionhandling;
 
 import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.DISABLE_REDIRECT_REQUEST_KEY;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.FORCE_ANONYMOUS_LOGIN;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.LOGINCONTEXT_KEY;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.LOGOUT_PAGE;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.REQUESTED_URL;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.SECURITY_ERROR;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.security.Principal;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
-import javax.faces.context.FacesContext;
+import javax.security.auth.Subject;
+import javax.security.auth.login.LoginContext;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.common.utils.URIUtils;
 import org.nuxeo.common.utils.i18n.I18NUtils;
 import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.WrappedException;
+import org.nuxeo.ecm.platform.ui.web.auth.CachableUserIdentificationInfo;
+import org.nuxeo.ecm.platform.ui.web.auth.NuxeoAuthenticationFilter;
+import org.nuxeo.ecm.platform.ui.web.auth.service.PluggableAuthenticationService;
 import org.nuxeo.ecm.platform.web.common.exceptionhandling.descriptor.ErrorHandler;
-
-
 import org.nuxeo.runtime.api.Framework;
 
 /**
@@ -51,6 +65,7 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
 
     protected NuxeoExceptionHandlerParameters parameters;
 
+    @Override
     public void setParameters(NuxeoExceptionHandlerParameters parameters) {
         this.parameters = parameters;
     }
@@ -78,8 +93,26 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
         }
     }
 
+    @Override
     public void handleException(HttpServletRequest request, HttpServletResponse response, Throwable t)
             throws IOException, ServletException {
+
+        Throwable unwrappedException = ExceptionHelper.unwrapException(t);
+
+        // check for Anonymous case
+        if (ExceptionHelper.isSecurityError(unwrappedException)) {
+            Principal principal = getPrincipal(request);
+            if (principal instanceof NuxeoPrincipal) {
+                NuxeoPrincipal nuxeoPrincipal = (NuxeoPrincipal) principal;
+                if (nuxeoPrincipal.isAnonymous()) {
+                    // redirect to login than to requested page
+                    if (handleAnonymousException(request, response)) {
+                        return;
+                    }
+                }
+            }
+        }
+
         startHandlingException(request, response, t);
         try {
             ErrorHandler handler = getHandler(t);
@@ -87,7 +120,6 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
             int status = code == null ? HttpServletResponse.SC_INTERNAL_SERVER_ERROR : code.intValue();
             parameters.getListener().startHandling(t, request, response);
 
-            Throwable unwrappedException = unwrapException(t);
             StringWriter swriter = new StringWriter();
             PrintWriter pwriter = new PrintWriter(swriter);
             t.printStackTrace(pwriter);
@@ -117,6 +149,9 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
 
             parameters.getListener().beforeForwardToErrorPage(unwrappedException, request, response);
             if (!response.isCommitted()) {
+                // The JSP error page needs the response Writer but somebody may already have retrieved
+                // the OutputStream and usage of these two can't be mixed. So we reset the response.
+                response.reset();
                 response.setStatus(status);
                 String errorPage = handler.getPage();
                 errorPage = (errorPage == null) ? parameters.getDefaultErrorPage() : errorPage;
@@ -124,15 +159,10 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
                 if (requestDispatcher != null) {
                     requestDispatcher.forward(request, response);
                 } else {
-                    log.error("Cannot forward to error page, " + "no RequestDispatcher found for errorPage="
-                            + errorPage + " handler=" + handler);
+                    log.error("Cannot forward to error page, " + "no RequestDispatcher found for errorPage=" + errorPage
+                            + " handler=" + handler);
                 }
-                FacesContext fContext = FacesContext.getCurrentInstance();
-                if (fContext != null) {
-                    fContext.responseComplete();
-                } else {
-                    log.error("Cannot set response complete: faces context is null");
-                }
+                parameters.getListener().responseComplete();
             } else {
                 // do not throw an error, just log it: afterDispatch needs to
                 // be called, and sometimes the initial error is a
@@ -147,8 +177,49 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
         }
     }
 
+    @Override
+    public boolean handleAnonymousException(HttpServletRequest request, HttpServletResponse response)
+            throws IOException, ServletException {
+        PluggableAuthenticationService authService = (PluggableAuthenticationService) Framework.getRuntime()
+                                                                                               .getComponent(
+                                                                                                       PluggableAuthenticationService.NAME);
+        if (authService == null) {
+            return false;
+        }
+        authService.invalidateSession(request);
+        String loginURL = getLoginURL(request);
+        if (loginURL == null) {
+            return false;
+        }
+        if (!response.isCommitted()) {
+            request.setAttribute(DISABLE_REDIRECT_REQUEST_KEY, true);
+            response.sendRedirect(loginURL);
+            parameters.getListener().responseComplete();
+        } else {
+            log.error("Cannot redirect to login page: response is already committed");
+        }
+        return true;
+    }
+
+    @Override
+    public String getLoginURL(HttpServletRequest request) {
+        PluggableAuthenticationService authService = (PluggableAuthenticationService) Framework.getRuntime()
+                                                                                               .getComponent(
+                                                                                                       PluggableAuthenticationService.NAME);
+        Map<String, String> urlParameters = new HashMap<>();
+        urlParameters.put(SECURITY_ERROR, "true");
+        urlParameters.put(FORCE_ANONYMOUS_LOGIN, "true");
+        if (request.getAttribute(REQUESTED_URL) != null) {
+            urlParameters.put(REQUESTED_URL, (String) request.getAttribute(REQUESTED_URL));
+        } else {
+            urlParameters.put(REQUESTED_URL, NuxeoAuthenticationFilter.getRequestedUrl(request));
+        }
+        String baseURL = authService.getBaseURL(request) + LOGOUT_PAGE;
+        return URIUtils.addParametersToURIQuery(baseURL, urlParameters);
+    }
+
     protected ErrorHandler getHandler(Throwable t) {
-        Throwable throwable = unwrapException(t);
+        Throwable throwable = ExceptionHelper.unwrapException(t);
         String className = null;
         if (throwable instanceof WrappedException) {
             WrappedException wrappedException = (WrappedException) throwable;
@@ -168,12 +239,17 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
         return I18NUtils.getMessageString(parameters.getBundleName(), messageKey, null, locale);
     }
 
-    /**
-     * @deprecated use {@link ExceptionHelper#unwrapException(Throwable)}
-     */
-    @Deprecated
-    public static Throwable unwrapException(Throwable t) {
-        return ExceptionHelper.unwrapException(t);
+    protected Principal getPrincipal(HttpServletRequest request) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            LoginContext loginContext = (LoginContext) request.getAttribute(LOGINCONTEXT_KEY);
+            principal = Optional.ofNullable(loginContext)
+                                .map(LoginContext::getSubject)
+                                .map(Subject::getPrincipals)
+                                .flatMap(principals -> principals.stream().findFirst())
+                                .orElse(null);
+        }
+        return principal;
     }
 
 }

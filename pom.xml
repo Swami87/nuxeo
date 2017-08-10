@@ -2,14 +2,14 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.nuxeo</groupId>
   <artifactId>nuxeo-ecm</artifactId>
-  <version>8.3-SNAPSHOT</version>
+  <version>9.3-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Nuxeo ECM Projects</name>
   <description>Nuxeo ECM Platform and related components.</description>
 
   <url>http://www.nuxeo.com/en/products</url>
   <organization>
-    <name>Nuxeo SA</name>
+    <name>Nuxeo</name>
     <url>http://www.nuxeo.com</url>
   </organization>
   <licenses>
@@ -111,26 +111,28 @@
     <!-- <license.useMissingFile>true</license.useMissingFile> -->
     <!-- <license.missingFile>src/main/license/THIRD-PARTY.properties</license.missingFile> -->
 
-    <nuxeo.common.version>8.3-SNAPSHOT</nuxeo.common.version>
-    <nuxeo.runtime.version>8.3-SNAPSHOT</nuxeo.runtime.version>
-    <nuxeo.core.version>8.3-SNAPSHOT</nuxeo.core.version>
-    <nuxeo.services.version>8.3-SNAPSHOT</nuxeo.services.version>
-    <nuxeo.theme.version>8.3-SNAPSHOT</nuxeo.theme.version>
-    <nuxeo.jsf.version>8.3-SNAPSHOT</nuxeo.jsf.version>
-    <nuxeo.dm.version>8.3-SNAPSHOT</nuxeo.dm.version>
-    <nuxeo.webengine.version>8.3-SNAPSHOT</nuxeo.webengine.version>
-    <nuxeo.features.version>8.3-SNAPSHOT</nuxeo.features.version>
+    <nuxeo.common.version>9.3-SNAPSHOT</nuxeo.common.version>
+    <nuxeo.runtime.version>9.3-SNAPSHOT</nuxeo.runtime.version>
+    <nuxeo.core.version>9.3-SNAPSHOT</nuxeo.core.version>
+    <nuxeo.services.version>9.3-SNAPSHOT</nuxeo.services.version>
+    <nuxeo.theme.version>9.3-SNAPSHOT</nuxeo.theme.version>
+    <nuxeo.jsf.version>9.3-SNAPSHOT</nuxeo.jsf.version>
+    <nuxeo.dm.version>9.3-SNAPSHOT</nuxeo.dm.version>
+    <nuxeo.webengine.version>9.3-SNAPSHOT</nuxeo.webengine.version>
+    <nuxeo.features.version>9.3-SNAPSHOT</nuxeo.features.version>
+    <nuxeo.addons.core.version>9.3-SNAPSHOT</nuxeo.addons.core.version>
 
-    <nuxeo.connect.client.version>1.4.24</nuxeo.connect.client.version>
+    <nuxeo.connect.client.version>1.5.1</nuxeo.connect.client.version>
     <!-- nuxeo-distribution-tools is still used as a dependency -->
     <nuxeo.distribution.tools.version>1.15</nuxeo.distribution.tools.version>
     <!-- ant-assembly-maven-plugin is only used as a plugin -->
-    <ant.assembly.version>2.0.5</ant.assembly.version>
-    <nuxeo.ftest.version>1.7.23</nuxeo.ftest.version>
+    <ant.assembly.version>2.0.6</ant.assembly.version>
+    <nuxeo.ftest.version>1.8.2</nuxeo.ftest.version>
+    <nuxeo.java.client.version>2.2</nuxeo.java.client.version>
 
     <jsf.version>2.2.6</jsf.version>
     <nxjsf.version>2.2.6-NX01</nxjsf.version>
-    <richfaces.version>4.5.0.Alpha3</richfaces.version>
+    <richfaces.version>4.5.12.Final</richfaces.version>
     <seam.version>2.3.1.Final</seam.version>
     <nxseam.version>2.3.1.Final.NX02</nxseam.version>
 
@@ -138,9 +140,10 @@
     <jaxb.version>2.2.11</jaxb.version>
     <jaxws-api.version>2.2.9</jaxws-api.version>
     <jaxws.version>2.2.8</jaxws.version>
-    <tomcat.version>7.0.64</tomcat.version>
-    <lucene.version>4.10.4</lucene.version>
-    <elasticsearch.version>1.5.2</elasticsearch.version>
+    <tomcat.version>7.0.69</tomcat.version>
+    <lucene.version>5.5.0</lucene.version>
+    <elasticsearch.version>2.3.5-nx1</elasticsearch.version>
+    <elasticsearch.shield.version>2.3.5</elasticsearch.shield.version>
     <apacheds.version>1.5.1</apacheds.version>
     <apachedshared.version>0.9.7</apachedshared.version>
     <gwt.version>2.7.0-NX1</gwt.version>
@@ -149,31 +152,33 @@
     <jetty.mortbay.version>6.1.26</jetty.mortbay.version>
     <shindig.version>1.1-BETA5-incubating-nx2</shindig.version>
     <apache.axiom.version>1.2.5</apache.axiom.version>
-    <chemistry.opencmis.version>0.13.0-NX1</chemistry.opencmis.version>
+    <chemistry.opencmis.version>1.0.0</chemistry.opencmis.version>
     <textcat.version>1.0.1</textcat.version>
-    <apache.httpcomponents.version>4.3.3</apache.httpcomponents.version>
+    <apache.httpcore.version>4.4.4</apache.httpcore.version>
+    <apache.httpcomponents.version>4.5.2</apache.httpcomponents.version>
     <apache.poi.version>3.10-FINAL</apache.poi.version>
     <jodreport.version>2.4.0</jodreport.version>
     <jxls.version>1.0</jxls.version>
-    <xdocreport.version>1.0.0</xdocreport.version>
+    <xdocreport.version>1.0.5</xdocreport.version>
     <itext.version>2.1.7</itext.version>
-    <jclouds.version>1.8.1</jclouds.version>
+    <jclouds.version>1.9.2</jclouds.version>
     <guava.version>18.0</guava.version>
     <google.http.client.version>1.19.0</google.http.client.version>
     <google.oauth.client.version>1.20.0</google.oauth.client.version>
     <google.api.client.version>1.19.1</google.api.client.version>
     <google.api.drive.version>v2-rev161-1.19.1</google.api.drive.version>
-    <dropbox.api.version>1.7.7</dropbox.api.version>
+    <dropbox.api.version>2.1.2</dropbox.api.version>
     <box.api.version>1.1.0</box.api.version>
     <onedrive.api.version>1.0</onedrive.api.version>
-    <selenium.version>2.45.0</selenium.version>
+    <selenium.version>2.53.0</selenium.version>
     <cxf.version>3.1.3</cxf.version>
     <cxf.nx.version>3.1.3-NX2</cxf.nx.version>
     <pdfbox.version>1.8.9</pdfbox.version>
-    <aws.version>1.10.22</aws.version>
+    <aws.version>1.11.93</aws.version>
     <azure.version>3.1.0</azure.version>
     <jackson1.version>1.8.1</jackson1.version>
     <jackson.version>2.7.4</jackson.version>
+    <imageio.version>1.6.5</imageio.version>
 
     <!-- JBoss properties -->
     <version.org.jboss.deployers>2.0.7.GA</version.org.jboss.deployers>
@@ -188,14 +193,15 @@
     <!-- deprecated property since removal of maven-nuxeo-plugin execution -->
     <eclipseVersion>${project.version}</eclipseVersion>
     <!-- Convenient property; prefer use of the right property (runtime/core/...) -->
-    <nuxeo.platform.version>8.3-SNAPSHOT</nuxeo.platform.version>
+    <nuxeo.platform.version>9.3-SNAPSHOT</nuxeo.platform.version>
     <org.ops4j.pax.version>4.4.0</org.ops4j.pax.version>
-    <org.slf4j.version>1.7.7</org.slf4j.version>
+    <org.slf4j.version>1.7.21</org.slf4j.version>
     <ch.qos.logback.version>1.0.11</ch.qos.logback.version>
     <gatling.version>2.1.7</gatling.version>
     <scala.version>2.11.7</scala.version>
     <scala-logging.version>3.1.0</scala-logging.version>
     <scala-maven-plugin.version>3.2.2</scala-maven-plugin.version>
+    <jgiven.version>0.14.1</jgiven.version>
 
     <!-- Tests properties -->
     <!-- for use integration/vcstests.xml and org.nuxeo:nuxeo-ftest -->
@@ -212,14 +218,27 @@
     <it.failsafe.argLine></it.failsafe.argLine>
 
     <!-- Sonar & JaCoCo (related profile: sonar)-->
-    <sonar.host.url>https://sonar.nuxeo.org/</sonar.host.url>
+    <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+    <sonar.organization>nuxeo</sonar.organization>
     <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
-    <it.jacoco.destFile>${java.io.tmpdir}/jacoco-it.dump</it.jacoco.destFile>
-    <sonar.jacoco.itReportPath>${it.jacoco.destFile}</sonar.jacoco.itReportPath>
+    <it.jacoco.destFile>${session.executionRootDirectory}/target/jacoco-it.dump</it.jacoco.destFile>
+    <sonar.jacoco.reportPaths>${it.jacoco.destFile}</sonar.jacoco.reportPaths>
+
+    <!-- MongoDB -->
+    <mongo.java.driver.version>3.3.0</mongo.java.driver.version>
+    <quartz.mongodb.version>2.0.0-NX2</quartz.mongodb.version>
+
+    <kafka.version>0.11.0.0</kafka.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>com.github.olivergondza</groupId>
+        <artifactId>maven-jdk-tools-wrapper</artifactId>
+        <version>0.1</version>
+        <type>pom</type>
+      </dependency>
       <dependency>
         <groupId>org.nuxeo</groupId>
         <artifactId>nuxeo-ecm</artifactId>
@@ -362,6 +381,13 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-api</artifactId>
+        <version>${nuxeo.core.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
         <artifactId>nuxeo-core-convert</artifactId>
         <version>${nuxeo.core.version}</version>
       </dependency>
@@ -416,6 +442,13 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-management-jtajca</artifactId>
+        <version>${nuxeo.core.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
         <artifactId>nuxeo-core-management-test</artifactId>
         <version>${nuxeo.core.version}</version>
         <scope>test</scope>
@@ -447,8 +480,22 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-storage</artifactId>
+        <type>test-jar</type>
+        <scope>test</scope>
+        <version>${nuxeo.core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
         <artifactId>nuxeo-core-storage-dbs</artifactId>
         <version>${nuxeo.core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-storage-dbs</artifactId>
+        <version>${nuxeo.core.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
@@ -489,6 +536,13 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-test</artifactId>
+        <version>${nuxeo.core.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
         <artifactId>nuxeo-core-redis</artifactId>
         <version>${nuxeo.core.version}</version>
       </dependency>
@@ -509,6 +563,11 @@
         <artifactId>nuxeo-core-cache</artifactId>
         <type>test-jar</type>
         <scope>test</scope>
+        <version>${nuxeo.core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-el</artifactId>
         <version>${nuxeo.core.version}</version>
       </dependency>
 
@@ -578,7 +637,24 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-directory-test</artifactId>
+        <version>${nuxeo.services.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-directory-test</artifactId>
+        <version>${nuxeo.services.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-platform-directory-multi</artifactId>
+        <version>${nuxeo.services.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-directory-mongodb</artifactId>
         <version>${nuxeo.services.version}</version>
       </dependency>
       <dependency>
@@ -589,11 +665,6 @@
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-platform-dublincore</artifactId>
-        <version>${nuxeo.services.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-el</artifactId>
         <version>${nuxeo.services.version}</version>
       </dependency>
       <dependency>
@@ -690,6 +761,11 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-login-shibboleth-jsf</artifactId>
+        <version>${nuxeo.services.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-platform-login-token</artifactId>
         <version>${nuxeo.services.version}</version>
       </dependency>
@@ -699,6 +775,16 @@
         <version>${nuxeo.services.version}</version>
         <type>test-jar</type>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-login-token-jsf</artifactId>
+        <version>${nuxeo.services.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-platform-login-token-rest</artifactId>
+        <version>${nuxeo.services.version}</version>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
@@ -714,6 +800,12 @@
         <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-usermapper</artifactId>
         <version>${nuxeo.services.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-usermapper</artifactId>
+        <version>${nuxeo.services.version}</version>
+        <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
@@ -948,6 +1040,11 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.webengine</groupId>
+        <artifactId>nuxeo-webengine-base</artifactId>
+        <version>${nuxeo.webengine.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.webengine</groupId>
         <artifactId>nuxeo-webengine-gwt</artifactId>
         <version>${nuxeo.webengine.version}</version>
       </dependency>
@@ -975,7 +1072,12 @@
       <!-- Nuxeo Features -->
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-admin-center</artifactId>
+        <artifactId>nuxeo-admin-center-core</artifactId>
+        <version>${nuxeo.features.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-admin-center-jsf</artifactId>
         <version>${nuxeo.features.version}</version>
       </dependency>
       <dependency>
@@ -1176,26 +1278,6 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-forum</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-forum-api</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-forum-core</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-forum-workflow</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-platform-imaging-api</artifactId>
         <version>${nuxeo.features.version}</version>
       </dependency>
@@ -1297,7 +1379,12 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
-        <artifactId>nuxeo-platform-preview</artifactId>
+        <artifactId>nuxeo-preview-core</artifactId>
+        <version>${nuxeo.features.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-preview-jsf</artifactId>
         <version>${nuxeo.features.version}</version>
       </dependency>
       <dependency>
@@ -1452,31 +1539,6 @@
         <version>${nuxeo.features.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.nuxeo.ecm.webengine</groupId>
-        <artifactId>nuxeo-webengine-admin</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.webengine</groupId>
-        <artifactId>nuxeo-webengine-base</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.webengine</groupId>
-        <artifactId>nuxeo-webengine-management</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.webengine</groupId>
-        <artifactId>nuxeo-webengine-samples-base</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.webengine</groupId>
-        <artifactId>nuxeo-webengine-samples-extended</artifactId>
-        <version>${nuxeo.features.version}</version>
-      </dependency>
-      <dependency>
         <groupId>org.nuxeo.elasticsearch</groupId>
         <artifactId>nuxeo-elasticsearch-core</artifactId>
         <version>${nuxeo.features.version}</version>
@@ -1549,6 +1611,16 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-search-core</artifactId>
+        <version>${nuxeo.features.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-search-rest-api</artifactId>
+        <version>${nuxeo.features.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-platform-rendition-api</artifactId>
         <version>${nuxeo.features.version}</version>
       </dependency>
@@ -1595,6 +1667,11 @@
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-user-profile</artifactId>
+        <version>${nuxeo.features.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.platform</groupId>
+        <artifactId>nuxeo-user-profile-jsf</artifactId>
         <version>${nuxeo.features.version}</version>
       </dependency>
 
@@ -1704,11 +1781,6 @@
         <groupId>org.jvnet.staxex</groupId>
         <artifactId>stax-ex</artifactId>
         <version>1.6</version>
-      </dependency>
-      <dependency>
-        <groupId>javax.ejb</groupId>
-        <artifactId>ejb-api</artifactId>
-        <version>3.0</version>
       </dependency>
       <dependency>
         <groupId>javax.annotation</groupId>
@@ -1858,7 +1930,7 @@
       <dependency>
         <groupId>commons-codec</groupId>
         <artifactId>commons-codec</artifactId>
-        <version>1.9</version>
+        <version>1.10</version>
       </dependency>
       <dependency>
         <groupId>commons-dbcp</groupId>
@@ -1937,7 +2009,7 @@
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpcore</artifactId>
-        <version>${apache.httpcomponents.version}</version>
+        <version>${apache.httpcore.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
@@ -1949,6 +2021,11 @@
         <groupId>org.elasticsearch</groupId>
         <artifactId>elasticsearch</artifactId>
         <version>${elasticsearch.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.elasticsearch.plugin</groupId>
+        <artifactId>shield</artifactId>
+        <version>${elasticsearch.shield.version}</version>
       </dependency>
 
       <!-- apache -->
@@ -2022,25 +2099,21 @@
         <groupId>org.apache.poi</groupId>
         <artifactId>poi</artifactId>
         <version>${apache.poi.version}</version>
-        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.poi</groupId>
         <artifactId>poi-scratchpad</artifactId>
         <version>${apache.poi.version}</version>
-        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.poi</groupId>
         <artifactId>poi-ooxml</artifactId>
         <version>${apache.poi.version}</version>
-        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.poi</groupId>
         <artifactId>poi-ooxml-schemas</artifactId>
         <version>${apache.poi.version}</version>
-        <scope>runtime</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.xmlbeans</groupId>
@@ -2283,6 +2356,12 @@
         <groupId>org.jboss.seam</groupId>
         <artifactId>jboss-seam-remoting</artifactId>
         <version>${nxseam.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.jboss.seam</groupId>
@@ -2343,7 +2422,7 @@
       <dependency>
         <groupId>net.sourceforge.jexcelapi</groupId>
         <artifactId>jxl</artifactId>
-        <version>2.6.12</version>
+        <version>2.6.12-NX1</version>
       </dependency>
       <dependency>
         <groupId>org.jboss.seam</groupId>
@@ -2724,8 +2803,30 @@
       <dependency>
         <groupId>org.assertj</groupId>
         <artifactId>assertj-core</artifactId>
-        <version>1.6.1</version>
+        <version>3.6.2</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.jgiven</groupId>
+        <artifactId>jgiven-core</artifactId>
+        <version>${jgiven.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.jgiven</groupId>
+        <artifactId>jgiven-junit</artifactId>
+        <version>${jgiven.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.java</groupId>
+        <artifactId>junit-dataprovider</artifactId>
+        <version>1.12.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.fusesource.jansi</groupId>
+        <artifactId>jansi</artifactId>
+        <version>1.13</version>
       </dependency>
       <dependency>
         <groupId>org.hamcrest</groupId>
@@ -2749,7 +2850,19 @@
       <dependency>
         <groupId>org.quartz-scheduler</groupId>
         <artifactId>quartz</artifactId>
-        <version>2.2.2</version>
+        <version>2.2.3</version>
+      </dependency>
+      <dependency>
+        <groupId>com.novemberain</groupId>
+        <artifactId>quartz-mongodb</artifactId>
+        <version>${quartz.mongodb.version}</version>
+        <exclusions>
+          <!-- exclude unneeded Clojure -->
+          <exclusion>
+            <groupId>org.clojure</groupId>
+            <artifactId>clojure</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
@@ -2875,12 +2988,17 @@
       <dependency>
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
-        <version>9.4.1208</version>
+        <version>42.1.1</version>
       </dependency>
       <dependency>
         <groupId>mysql</groupId>
         <artifactId>mysql-connector-java</artifactId>
-        <version>5.1.18</version>
+        <version>5.1.39</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mariadb.jdbc</groupId>
+        <artifactId>mariadb-java-client</artifactId>
+        <version>1.5.5</version>
       </dependency>
       <dependency>
         <groupId>net.sourceforge.jtds</groupId>
@@ -2904,6 +3022,12 @@
         <groupId>com.oracle</groupId>
         <artifactId>ojdbc7</artifactId>
         <version>12.1.0.1</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.microsoft.sqlserver</groupId>
+        <artifactId>sqljdbc</artifactId>
+        <version>4.2.6420</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
@@ -2950,7 +3074,7 @@
       <dependency>
         <groupId>com.thoughtworks.xstream</groupId>
         <artifactId>xstream</artifactId>
-        <version>1.4.6</version>
+        <version>1.4.9</version>
         <exclusions>
           <exclusion>
             <groupId>xpp3</groupId>
@@ -3064,17 +3188,29 @@
         <version>1.1.2_01</version>
       </dependency>
 
-      <!-- DEPRECATED - kept until resteasy adapter is removed -->
+      <!-- MockServer -->
       <dependency>
-        <groupId>org.jboss.resteasy</groupId>
-        <artifactId>resteasy-jaxrs</artifactId>
-        <version>1.0.2.GA-nx</version>
+        <groupId>org.mock-server</groupId>
+        <artifactId>mockserver-netty</artifactId>
+        <version>3.10.4</version>
+        <scope>test</scope>
+        <exclusions>
+          <exclusion>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
         <!-- note that this contains all of javax.ws.rs:jsr311-api -->
         <groupId>com.sun.jersey</groupId>
         <artifactId>jersey-core</artifactId>
+        <version>${jersey.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sun.jersey</groupId>
+        <artifactId>jersey-json</artifactId>
         <version>${jersey.version}</version>
       </dependency>
       <dependency>
@@ -3434,30 +3570,13 @@
       <dependency>
         <groupId>net.sourceforge.nekohtml</groupId>
         <artifactId>nekohtml</artifactId>
-        <version>1.9.12</version>
+        <version>1.9.22</version>
         <exclusions>
           <exclusion>
             <groupId>xerces</groupId>
             <artifactId>xerces</artifactId>
           </exclusion>
         </exclusions>
-      </dependency>
-      <dependency>
-        <groupId>net.sourceforge.htmlunit</groupId>
-        <artifactId>htmlunit</artifactId>
-        <version>2.8</version>
-        <exclusions>
-          <exclusion>
-            <groupId>xml-apis</groupId>
-            <artifactId>xml-apis</artifactId>
-          </exclusion>
-        </exclusions>
-      </dependency>
-      <dependency>
-        <!-- needed by htmlunit -->
-        <groupId>org.apache.james</groupId>
-        <artifactId>apache-mime4j</artifactId>
-        <version>0.6</version>
       </dependency>
       <dependency>
         <groupId>org.jsecurity</groupId>
@@ -3654,8 +3773,8 @@
       </dependency>
       <dependency>
         <groupId>org.seleniumhq.selenium</groupId>
-        <artifactId>selenium-htmlunit-driver</artifactId>
-        <version>${selenium.version}</version>
+        <artifactId>htmlunit-driver</artifactId>
+        <version>2.20</version>
       </dependency>
       <dependency>
         <groupId>org.seleniumhq.selenium</groupId>
@@ -3869,7 +3988,11 @@
           </exclusion>
         </exclusions>
       </dependency>
-
+      <dependency>
+        <groupId>org.opensaml</groupId>
+        <artifactId>openws</artifactId>
+        <version>1.5.1</version>
+      </dependency>
       <!-- SCIM -->
       <dependency>
         <artifactId>scim-sdk</artifactId>
@@ -3905,8 +4028,7 @@
       <dependency>
         <groupId>commons-validator</groupId>
         <artifactId>commons-validator</artifactId>
-        <version>1.4.0</version>
-        <scope>test</scope>
+        <version>1.5.1</version>
       </dependency>
       <dependency>
         <groupId>org.apache.commons</groupId>
@@ -4448,7 +4570,7 @@
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpcore-osgi</artifactId>
-        <version>${apache.httpcomponents.version}</version>
+        <version>${apache.httpcore.version}</version>
       </dependency>
       <dependency>
         <groupId>ch.qos.logback</groupId>
@@ -4497,6 +4619,12 @@
         <artifactId>cors-filter</artifactId>
         <version>2.4</version>
       </dependency>
+      <dependency>
+        <groupId>io.github.lukehutch</groupId>
+        <artifactId>fast-classpath-scanner</artifactId>
+        <version>2.0.4</version>
+      </dependency>
+
       <!-- dmk adaptor -->
       <dependency>
         <groupId>com.sun.jdmk</groupId>
@@ -4507,27 +4635,8 @@
       <dependency>
         <groupId>redis.clients</groupId>
         <artifactId>jedis</artifactId>
-        <version>2.7.0</version>
+        <version>2.9.0</version>
       </dependency>
-      <dependency>
-        <groupId>org.jooq</groupId>
-        <artifactId>joor</artifactId>
-        <version>0.9.3</version>
-      </dependency>
-
-      <dependency>
-        <groupId>com.lordofthejars</groupId>
-        <artifactId>nosqlunit-redis</artifactId>
-        <version>0.9.0</version>
-        <scope>test</scope>
-      </dependency>
-
-      <dependency>
-        <groupId>org.luaj</groupId>
-        <artifactId>luaj-jse</artifactId>
-        <version>3.0</version>
-      </dependency>
-
 
       <dependency>
         <groupId>org.apache.cxf</groupId>
@@ -4597,7 +4706,13 @@
       <dependency>
         <groupId>org.mongodb</groupId>
         <artifactId>mongo-java-driver</artifactId>
-        <version>3.2.2</version>
+        <version>${mongo.java.driver.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.marklogic</groupId>
+        <artifactId>marklogic-xcc</artifactId>
+        <version>8.0.5</version>
       </dependency>
 
       <dependency>
@@ -4615,7 +4730,7 @@
       <dependency>
         <groupId>com.github.segmentio</groupId>
         <artifactId>analytics</artifactId>
-        <version>0.4.2</version>
+        <version>1.0.7</version>
       </dependency>
 
       <dependency>
@@ -4674,6 +4789,101 @@
         <artifactId>scala-logging_2.11</artifactId>
         <version>${scala-logging.version}</version>
       </dependency>
+      <dependency>
+        <groupId>com.squareup.okhttp3</groupId>
+        <artifactId>okhttp</artifactId>
+        <version>3.1.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jolokia</groupId>
+        <artifactId>jolokia-core</artifactId>
+       <version>1.3.3</version>
+      </dependency>
+      <dependency>
+        <groupId>org.glassfish</groupId>
+        <artifactId>javax.json</artifactId>
+        <version>1.0.4</version>
+      </dependency>
+      <dependency>
+        <groupId>org.codehaus.jettison</groupId>
+        <artifactId>jettison</artifactId>
+        <version>1.3.7</version>
+      </dependency>
+      <!-- NXP-20847: to be removed to avoid build dependency cycle -->
+      <dependency>
+        <groupId>org.nuxeo.client</groupId>
+        <artifactId>nuxeo-java-client</artifactId>
+        <version>${nuxeo.java.client.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.levigo.jbig2</groupId>
+        <artifactId>levigo-jbig2-imageio</artifactId>
+        <version>${imageio.version}</version>
+      </dependency>
+
+      <!-- Kafka -->
+      <dependency>
+        <groupId>com.101tec</groupId>
+        <artifactId>zkclient</artifactId>
+        <version>0.10</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>${kafka.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>${kafka.version}</version>
+        <classifier>test</classifier>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka_2.11</artifactId>
+        <version>${kafka.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka_2.11</artifactId>
+        <version>${kafka.version}</version>
+        <classifier>test</classifier>
+        <scope>test</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>net.openhft</groupId>
+        <artifactId>chronicle-queue</artifactId>
+        <version>4.6.10</version>
+      </dependency>
+      <dependency>
+        <groupId>net.openhft</groupId>
+        <artifactId>chronicle-core</artifactId>
+        <version>1.9.0</version>
+      </dependency>
+      <dependency>
+        <groupId>net.openhft</groupId>
+        <artifactId>chronicle-wire</artifactId>
+        <version>1.9.4</version>
+      </dependency>
+      <dependency>
+        <groupId>net.openhft</groupId>
+        <artifactId>chronicle-bytes</artifactId>
+        <version>1.9.3</version>
+      </dependency>
+      <dependency>
+        <groupId>net.jodah</groupId>
+        <artifactId>failsafe</artifactId>
+        <version>1.0.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jgrapht</groupId>
+        <artifactId>jgrapht-core</artifactId>
+        <version>1.0.1</version>
+      </dependency>
+
     </dependencies>
   </dependencyManagement>
 
@@ -4750,12 +4960,16 @@
             <nuxeo.test.vcs.database>${nuxeo.test.vcs.database}</nuxeo.test.vcs.database>
             <nuxeo.test.vcs.user>${nuxeo.test.vcs.user}</nuxeo.test.vcs.user>
             <nuxeo.test.vcs.password>${nuxeo.test.vcs.password}</nuxeo.test.vcs.password>
-            <nuxeo.test.vcs.singleds>${nuxeo.test.vcs.singleds}</nuxeo.test.vcs.singleds>
             <!-- Used by org.nuxeo.ecm.core.test.StorageConfiguration -->
             <!-- (and org.nuxeo.ecm.core.storage.mongodb.TestGridFSBinaryManager) -->
             <nuxeo.test.core>${nuxeo.test.core}</nuxeo.test.core>
             <nuxeo.test.mongodb.server>${nuxeo.test.mongodb.server}</nuxeo.test.mongodb.server>
             <nuxeo.test.mongodb.dbname>${nuxeo.test.mongodb.dbname}</nuxeo.test.mongodb.dbname>
+            <nuxeo.test.marklogic.host>${nuxeo.test.marklogic.host}</nuxeo.test.marklogic.host>
+            <nuxeo.test.marklogic.port>${nuxeo.test.marklogic.port}</nuxeo.test.marklogic.port>
+            <nuxeo.test.marklogic.dbname>${nuxeo.test.marklogic.dbname}</nuxeo.test.marklogic.dbname>
+            <nuxeo.test.marklogic.user>${nuxeo.test.marklogic.user}</nuxeo.test.marklogic.user>
+            <nuxeo.test.marklogic.password>${nuxeo.test.marklogic.password}</nuxeo.test.marklogic.password>
           </systemPropertyVariables>
           <includes>
             <include>**/Test*.java</include>
@@ -5080,7 +5294,7 @@
         <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>
-          <version>0.6.4.201312101107</version>
+          <version>0.7.9</version>
           <configuration>
             <propertyName>it.failsafe.argLine</propertyName>
             <destFile>${it.jacoco.destFile}</destFile>
@@ -5088,6 +5302,7 @@
           </configuration>
           <executions>
             <execution>
+              <id>prepare-agent</id>
               <goals>
                 <goal>prepare-agent</goal>
               </goals>
@@ -5381,9 +5596,9 @@
           </configuration>
         </plugin>
         <plugin>
-          <groupId>org.codehaus.mojo</groupId>
+          <groupId>org.sonarsource.scanner.maven</groupId>
           <artifactId>sonar-maven-plugin</artifactId>
-          <version>2.4</version>
+          <version>3.2</version>
         </plugin>
         <plugin>
           <groupId>org.codehaus.sonar-plugins</groupId>
@@ -5410,57 +5625,145 @@
             <!-- </includedLicenses> -->
             <licenseMerges>
               <!-- WARN: be careful with formatters, there must be no line return within a license name -->
-              <licenseMerge>AL 1.0|Apache License, Version 1.0|apache-1.0</licenseMerge>
+              <licenseMerge>AL 1.0
+                |Apache License, Version 1.0
+                |apache-1.0</licenseMerge>
               <licenseMerge>AL 1.1
                 |Apache License, Version 1.1
                 |Apache Software License, version 1.1</licenseMerge>
               <licenseMerge>AL 2.0
-                |Apache License, Version 2.0|Apache 2.0 License|Apache 2
-                |Apache License|Apache License V2.0|ASF 2.0
-                |Apache License Version 2.0|Apache Public License 2.0
+                |ALv2
+                |ASF 2.0
+                |ASL, version 2
+                |Apache 2
+                |Apache 2.0
+                |Apache 2.0 License
+                |Apache License
+                |Apache License 2
+                |Apache License 2.0
+                |Apache License v2
+                |Apache License V2.0
+                |Apache License Version 2.0
+                |Apache License Version 2.0, January 2004
+                |Apache License, version 2.0
+                |Apache License, Version 2.0
+                |Apache Public License 2.0
+                |Apache Software License 2.0
+                |Apache Software License, version 2.0
                 |Apache Software License - Version 2.0
-                |Google Web Toolkit Terms
-                |The Apache Software License, Version 2.0</licenseMerge>
+                |The Apache License, Version 2.0
+                |The Apache Software License, Version 2.0
+                |GWT Terms
+                |Google Web Toolkit Terms</licenseMerge>
+              <licenseMerge>BSD 2
+                |BSD-2-Clause</licenseMerge>
               <licenseMerge>BSD 3
-                |BSD|BSD License
-                |The BSD License</licenseMerge>
+                |The BSD 3-Clause License
+                |BSD 3-clause
+                |BSD 3-Clause
+                |New BSD License
+                |BSD
+                |BSD License
+                |BSD license
+                |BSD licence
+                |BSD style
+                |BSD-style license
+                |The BSD License
+                |http://jaxen.codehaus.org/license.html</licenseMerge>
+              <licenseMerge>BSD 4
+                |Indiana University Extreme! Lab Software License, vesion 1.1.1</licenseMerge>
               <licenseMerge>CDDL 1.0
+                |CDDL
                 |CDDL license
                 |Common Development and Distribution License (CDDL) v1.0
                 |COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.0</licenseMerge>
+              <licenseMerge>CDDL 1.0 + GPL 2
+                |CDDL+GPL
+                |CDDL+GPL License
+                |COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) plus GPL</licenseMerge>
+              <licenseMerge>CDDL 1.0 + GPL 2 CPE
+                |Dual License: CDDL 1.0 and GPL V2 with Classpath Exception
+                |CDDL + GPLv2 with classpath exception</licenseMerge>
+              <licenseMerge>CDDL 1.1 + GPL 2
+                |CDDL v1.1 / GPL v2 dual license
+                |Dual license consisting of the CDDL v1.1 and GPL v2</licenseMerge>
               <licenseMerge>CPL 1.0
+                |CPL
                 |Common Public License (CPL), Version 1.0
                 |Common Public License - v 1.0
                 |Common Public License Version 1.0</licenseMerge>
+              <licenseMerge>CC0
+                |CC0 1.0 Universal
+                |Public Domain, per Creative Commons CC0</licenseMerge>
               <licenseMerge>EPL 1.0
-                |Eclipse Public License 1.0|Eclipse Public License (EPL)
-                |Eclipse Public License - v 1.0</licenseMerge>
+                |Eclipse Public License 1.0
+                |Eclipse Public License (EPL)
+                |Eclipse Public License (EPL) 1.0
+                |Eclipse Public License - v 1.0
+                |Eclipse Public License, Version 1.0
+                |Eclipse Public License - Version 1.0</licenseMerge>
+              <licenseMerge>EPL 1.0 + MPL 2.0
+                |The H2 License, Version 1.0</licenseMerge>
               <licenseMerge>LGPL 2.1
+                |GNU Lesser General Public License, 2.1
                 |GNU Lesser General Public License v2.1
                 |GNU Lesser General Public License Version 2.1
+                |GNU Lesser General Public License, Version 2.1
+                |GNU Lesser General Public License, version 2.1
                 |GNU LESSER GENERAL PUBLIC LICENSE, Version 2.1
-                |GNU Lesser General Public License, 2.1
-                |GNU Lesser GPL 2.1|LGPL, version 2.1</licenseMerge>
-              <licenseMerge>LGPL 3
-                |GNU Lesser General Public License, Version 3
-                |GNU Lesser General Public License, Version 3 or later</licenseMerge>
-              <licenseMerge>LGPL Unknown Version
-                |GNU Lesser General Public License (LGPL)|lgpl|LGPL
+                |GNU Lesser General Public License Version 2.1, February 1999
+                |GNU Lesser General Public License (LGPL), Version 2.1
+                |GNU Lesser General Public License version 2.1 (LGPLv2.1)
+                |GNU Lesser GPL 2.1
+                |The GNU Lesser General Public License, Version 2.1
+                |LGPL, version 2.1
+                |LGPL-2.1
+                |GNU Lesser General Public License (LGPL)
+                |lgpl
+                |LGPL
                 |GNU LESSER GENERAL PUBLIC LICENSE
                 |GNU Lesser General Public License
                 |Gnu Lesser Public License</licenseMerge>
+              <licenseMerge>LGPL 3
+                |Lesser General Public License, version 3 or greater
+                |GNU General Lesser Public License (LGPL) version 3.0
+                |GNU Lesser General Public License, Version 3
+                |GNU Lesser General Public License, Version 3 or later</licenseMerge>
               <licenseMerge>GPL 2
+                |GPL license
                 |GNU General Public License v2
                 |GNU General Public License Version 2
+                |GNU General Public License version 2 (GPLv2)
                 |The GNU General Public License, Version 2</licenseMerge>
+              <licenseMerge>GPL 2 CPE
+                |GPLv2+CE
+                |GPL2 w/ CPE</licenseMerge>
+              <licenseMerge>GPL 3
+                |GPL v3</licenseMerge>
               <licenseMerge>MIT
-                |MIT License|The MIT License</licenseMerge>
+                |MIT License
+                |MIT license
+                |The MIT License
+                |The MIT License (MIT)
+                |Bouncy Castle License
+                |Bouncy Castle Licence
+                |JSON License</licenseMerge>
               <licenseMerge>MPL 1.1
                 |Mozilla Public License version 1.1</licenseMerge>
               <licenseMerge>MPL 2.0
-                |Mozilla Public License</licenseMerge>
+                |Mozilla Public License
+                |Mozilla Public License version 2.0
+                |Mozilla Public License, Version 2.0</licenseMerge>
+              <licenseMerge>Public Domain
+                |Public domain
+                |Public domain, Sun Microsoystems
+                |The SAX License</licenseMerge>
+              <licenseMerge>Unicode
+                |ICU License</licenseMerge>
               <licenseMerge>W3C
-                |The W3C Software License</licenseMerge>
+                |The W3C Software License
+                |The W3C License
+                |W3C Software Copyright Notice and License</licenseMerge>
             </licenseMerges>
           </configuration>
         </plugin>
@@ -5474,6 +5777,9 @@
           <groupId>io.gatling</groupId>
           <artifactId>gatling-maven-plugin</artifactId>
           <version>${gatling.version}</version>
+          <configuration>
+            <skip>${skipITs}</skip>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>net.alchim31.maven</groupId>
@@ -5501,6 +5807,21 @@
             <projectId>51cb732266ec030002008e55</projectId>
             <licenseCheckBreakByUnknown>false</licenseCheckBreakByUnknown>
           </configuration>
+        </plugin>
+        <plugin>
+          <groupId>com.tngtech.jgiven</groupId>
+          <artifactId>jgiven-maven-plugin</artifactId>
+          <version>${jgiven.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>com.github.eirslett</groupId>
+          <artifactId>frontend-maven-plugin</artifactId>
+          <version>1.3</version>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>1.5.0</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -5593,6 +5914,47 @@
                 <version>0.23.0</version>
               </dependency>
             </dependencies>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>patch</id>
+      <activation>
+        <file>
+          <exists>.nuxeo-patch</exists>
+        </file>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <inherited>true</inherited>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>patch</id>
+                <!-- must run before the compile phase -->
+                <phase>process-sources</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${session.executionRootDirectory}/nuxeo-patches/patch-sources</executable>
+                </configuration>
+              </execution>
+              <execution>
+                <id>unpatch</id>
+                <!-- must run after the compile phase and before the package phase (used by maven-sources-plugin source:jar) -->
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${session.executionRootDirectory}/nuxeo-patches/unpatch-sources</executable>
+                </configuration>
+              </execution>
+            </executions>
           </plugin>
         </plugins>
       </build>
@@ -5969,7 +6331,7 @@
         <repository>
           <id>releases</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/releases
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/releases
           </url>
           <releases>
             <enabled>true</enabled>
@@ -5981,7 +6343,7 @@
         <repository>
           <id>snapshots</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/snapshots
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/snapshots
           </url>
           <releases>
             <enabled>false</enabled>
@@ -6025,13 +6387,13 @@
         <repository>
           <id>releases</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/releases
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/releases
           </url>
         </repository>
         <snapshotRepository>
           <id>snapshots</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/snapshots
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/snapshots
           </url>
           <uniqueVersion>true</uniqueVersion>
         </snapshotRepository>
@@ -6194,10 +6556,31 @@
       </properties>
     </profile>
     <profile>
+      <id>mariadb</id>
+      <properties>
+        <nuxeo.test.vcs.db>MySQL</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>3306</nuxeo.db.port.default>
+      </properties>
+    </profile>
+    <profile>
+      <id>dbsmem</id>
+       <properties>
+        <nuxeo.test.core>mem</nuxeo.test.core>
+      </properties>
+    </profile>
+    <profile>
       <id>mongodb</id>
        <properties>
         <nuxeo.test.core>mongodb</nuxeo.test.core>
         <nuxeo.mongodb.server.default>localhost:27017</nuxeo.mongodb.server.default>
+      </properties>
+    </profile>
+    <profile>
+      <id>marklogic</id>
+       <properties>
+        <nuxeo.test.core>marklogic</nuxeo.test.core>
+        <nuxeo.marklogic.host.default>localhost</nuxeo.marklogic.host.default>
+        <nuxeo.marklogic.port.default>8010</nuxeo.marklogic.port.default>
       </properties>
     </profile>
 
@@ -6205,6 +6588,7 @@
     <profile>
       <id>addons</id>
       <modules>
+        <module>addons-core</module>
         <module>addons</module>
       </modules>
     </profile>
@@ -6217,11 +6601,22 @@
 
     <profile>
       <id>sonar</id>
+      <properties>
+        <failIfNoTests>false</failIfNoTests>
+        <maven.test.failure.ignore>true</maven.test.failure.ignore>
+      </properties>
       <build>
         <plugins>
           <plugin>
             <groupId>org.jacoco</groupId>
             <artifactId>jacoco-maven-plugin</artifactId>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <argLine>-Xmx1g -Dfile.encoding=UTF-8 @{it.failsafe.argLine}</argLine>
+            </configuration>
           </plugin>
         </plugins>
       </build>

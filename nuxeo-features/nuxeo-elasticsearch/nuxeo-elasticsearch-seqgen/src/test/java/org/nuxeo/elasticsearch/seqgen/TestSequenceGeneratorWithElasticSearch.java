@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.uidgen.UIDGeneratorService;
@@ -77,6 +78,7 @@ public class TestSequenceGeneratorWithElasticSearch {
     }
 
     @Test
+    @Ignore("NXP-20582: timeout waiting termination")
     public void testConcurrency() throws Exception {
         final String seqName = "mt";
         int nbCalls = 5000;

@@ -27,7 +27,6 @@ import java.io.Serializable;
 import java.security.Principal;
 
 import javax.faces.context.FacesContext;
-import javax.servlet.http.HttpServletRequest;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -38,7 +37,6 @@ import org.jboss.seam.annotations.Name;
 import org.jboss.seam.annotations.Scope;
 import org.jboss.seam.contexts.Context;
 import org.jboss.seam.core.Events;
-import org.jboss.seam.international.LocaleSelector;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
@@ -59,9 +57,9 @@ import org.nuxeo.ecm.webapp.dashboard.DashboardNavigationHelper;
 @Install(precedence = Install.FRAMEWORK)
 public class StartupHelper implements Serializable {
 
-    protected static final String SERVERS_VIEW = "view_servers";
+    public static final String SERVERS_VIEW = "view_servers";
 
-    protected static final String DOMAINS_VIEW = "view_domains";
+    public static final String DOMAINS_VIEW = "view_domains";
 
     protected static final String DOMAIN_TYPE = "Domain";
 
@@ -92,14 +90,6 @@ public class StartupHelper implements Serializable {
 
     @In(create = true, required = false)
     protected transient CoreSession documentManager;
-
-    /**
-     * @deprecated since 5.6: use {@link RestHelper#setLocaleString(String)} instead of
-     *             {@link LocaleSelector#setLocaleString(String)}
-     */
-    @In(create = true)
-    @Deprecated
-    protected transient LocaleSelector localeSelector;
 
     @In(create = true)
     protected transient RestHelper restHelper;
@@ -164,8 +154,6 @@ public class StartupHelper implements Serializable {
         try {
             // delegate server initialized to the default helper
             String result = initServerAndFindStartupPage();
-
-            HttpServletRequest request = (HttpServletRequest) FacesContext.getCurrentInstance().getExternalContext().getRequest();
 
             // more than one repo
             if (SERVERS_VIEW.equals(result)) {

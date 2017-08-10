@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,21 +22,14 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 
 import org.junit.Test;
 import org.nuxeo.ecm.core.api.model.Property;
-import org.nuxeo.ecm.core.schema.Namespace;
-import org.nuxeo.ecm.core.schema.types.ComplexTypeImpl;
-import org.nuxeo.ecm.core.schema.types.FieldImpl;
-import org.nuxeo.ecm.core.schema.types.ListTypeImpl;
-import org.nuxeo.ecm.core.schema.types.QName;
-import org.nuxeo.ecm.core.schema.types.SchemaImpl;
-import org.nuxeo.ecm.core.schema.types.constraints.Constraint;
-import org.nuxeo.ecm.core.schema.types.primitives.StringType;
+import org.nuxeo.ecm.core.schema.SchemaManager;
+import org.nuxeo.runtime.api.Framework;
 
-public class TestDirtyProperty {
+public class TestDirtyProperty extends AbstractTestProperty {
 
     @Test
     public void testScalarPropertyInitNotDirty() {
@@ -113,7 +106,7 @@ public class TestDirtyProperty {
     @Test
     public void testComplexPropertyUpdatedDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
@@ -125,7 +118,7 @@ public class TestDirtyProperty {
     @Test
     public void testComplexPropertyNewNotDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
@@ -138,12 +131,12 @@ public class TestDirtyProperty {
     @Test
     public void testComplexPropertyChangedDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
         property.clearDirtyFlags();
-        Map<String, String> value2 = new HashMap<String, String>();
+        Map<String, String> value2 = new HashMap<>();
         value2.put("test1", "test12");
         value2.put("test2", "test22");
         property.setValue(value2);
@@ -155,7 +148,7 @@ public class TestDirtyProperty {
     @Test
     public void testComplexPropertyNullDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
@@ -178,7 +171,7 @@ public class TestDirtyProperty {
     @Test
     public void testComplexPropertyRemoveDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
@@ -188,76 +181,101 @@ public class TestDirtyProperty {
     }
 
     @Test
-    public void testComplexPropertyChangedWithSameValueNotDirty() {
+    public void testComplexPropertyChangedWithSameValueStillDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
         property.clearDirtyFlags();
-        Map<String, String> value2 = new HashMap<String, String>();
+        Map<String, String> value2 = new HashMap<>();
         value2.put("test1", "test1");
         value2.put("test2", "test2");
         property.setValue(value2);
-        assertFalse(property.isDirty());
-        assertFalse(property.get("test1").isDirty());
-        assertFalse(property.get("test2").isDirty());
+        SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            // still dirty because we rewrite everything on setValue
+            assertTrue(property.isDirty());
+            assertTrue(property.get("test1").isDirty());
+            assertTrue(property.get("test2").isDirty());
+        } else {
+            assertFalse(property.isDirty());
+            assertFalse(property.get("test1").isDirty());
+            assertFalse(property.get("test2").isDirty());
+        }
     }
 
     @Test
-    public void testComplexPropertyPartialChangedPartialDirty() {
+    public void testComplexPropertyPartialChangedStillDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
         property.clearDirtyFlags();
-        Map<String, String> value2 = new HashMap<String, String>();
+        Map<String, String> value2 = new HashMap<>();
         value2.put("test1", "test12");
         value2.put("test2", "test2");
         property.setValue(value2);
         assertTrue(property.isDirty());
         assertTrue(property.get("test1").isDirty());
-        assertFalse(property.get("test2").isDirty());
+        SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            assertTrue(property.get("test2").isDirty());
+        } else {
+            assertFalse(property.get("test2").isDirty());
+        }
     }
 
     @Test
-    public void testComplexPropertyAddChildPartialDirty() {
+    public void testComplexPropertyAddChildStillDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         property.setValue(value);
         property.clearDirtyFlags();
-        Map<String, String> value2 = new HashMap<String, String>();
+        Map<String, String> value2 = new HashMap<>();
         value2.put("test1", "test1");
         value2.put("test2", "test2");
         property.setValue(value2);
         assertTrue(property.isDirty());
-        assertFalse(property.get("test1").isDirty());
-        assertTrue(property.get("test2").isDirty());
+        SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            assertTrue(property.get("test1").isDirty());
+            assertTrue(property.get("test2").isDirty());
+        } else {
+            assertFalse(property.get("test1").isDirty());
+            assertTrue(property.get("test2").isDirty());
+        }
     }
 
     @Test
-    public void testComplexPropertySetNullChildPartialDirty() {
+    public void testComplexPropertySetNullChildStillDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
         property.clearDirtyFlags();
-        Map<String, String> value2 = new HashMap<String, String>();
+        Map<String, String> value2 = new HashMap<>();
         value2.put("test1", "test1");
         value2.put("test2", null);
         property.setValue(value2);
         assertTrue(property.isDirty());
-        assertFalse(property.get("test1").isDirty());
-        assertTrue(property.get("test2").isDirty());
+        SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            assertTrue(property.get("test1").isDirty());
+            assertFalse(property.get("test2").isDirty()); // not dirty because null...
+        } else {
+            assertFalse(property.get("test1").isDirty());
+            assertTrue(property.get("test2").isDirty());
+        }
     }
 
     @Test
     public void testComplexPropertyRemoveChildPartialDirty() {
         ComplexProperty property = getComplexProperty();
-        Map<String, String> value = new HashMap<String, String>();
+        Map<String, String> value = new HashMap<>();
         value.put("test1", "test1");
         value.put("test2", "test2");
         property.setValue(value);
@@ -498,41 +516,6 @@ public class TestDirtyProperty {
         assertFalse(property.isDirty(0));
         assertTrue(property.isDirty(1));
         assertFalse(property.isDirty(2));
-    }
-
-    private ScalarProperty getScalarProperty() {
-        SchemaImpl schema = getSchema();
-        DocumentPartImpl part = new DocumentPartImpl(schema);
-        return new ScalarProperty(part, new FieldImpl(new QName("scalar"), getSchema(), StringType.INSTANCE));
-    }
-
-    private ComplexProperty getComplexProperty() {
-        SchemaImpl schema = getSchema();
-        DocumentPartImpl part = new DocumentPartImpl(schema);
-        ComplexTypeImpl type = new ComplexTypeImpl(schema, "test", "complex");
-        type.addField("test1", StringType.INSTANCE, null, 0, new HashSet<Constraint>());
-        type.addField("test2", StringType.INSTANCE, null, 0, new HashSet<Constraint>());
-        return new MapProperty(part, new FieldImpl(new QName("test:complex"), schema, type));
-    }
-
-    private ListProperty getListProperty() {
-        SchemaImpl schema = getSchema();
-        DocumentPartImpl part = new DocumentPartImpl(schema);
-        ListTypeImpl type = new ListTypeImpl("test", "list", StringType.INSTANCE, "listItem", null, 0,
-                new HashSet<Constraint>(), 0, -1);
-        return new ListProperty(part, new FieldImpl(new QName("test:list"), null, type));
-    }
-
-    private ArrayProperty getArrayProperty() {
-        SchemaImpl schema = getSchema();
-        DocumentPartImpl part = new DocumentPartImpl(schema);
-        ListTypeImpl type = new ListTypeImpl("test", "list", StringType.INSTANCE, null, null, 0,
-                new HashSet<Constraint>(), 0, -1);
-        return new ArrayProperty(part, new FieldImpl(new QName("test:list"), null, type), 0);
-    }
-
-    private SchemaImpl getSchema() {
-        return new SchemaImpl("test", new Namespace("test.com", "http"));
     }
 
 }

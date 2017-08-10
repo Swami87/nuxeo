@@ -66,7 +66,7 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
 @Features(CoreFeature.class)
 @RepositoryConfig(cleanup = Granularity.METHOD)
 @LocalDeploy("org.nuxeo.ecm.core.test.tests:OSGI-INF/test-repo-core-types-contrib.xml")
-@Deploy("org.nuxeo.ecm.core.tests:OSGI-INF/test-default-blob-provider.xml")
+@Deploy("org.nuxeo.ecm.core.api.tests:OSGI-INF/test-default-blob-provider.xml")
 public class TestSQLRepositoryDirectBlob {
 
     @Inject
@@ -114,10 +114,11 @@ public class TestSQLRepositoryDirectBlob {
         Binary binary = binaryManager.getBinary(digest);
         assertNotNull("Missing file for digest: " + digest, binary);
         String filename = "doc.txt";
-        Blob blob = new BinaryBlob(binary, digest, filename, "text/plain", "utf-8", digest, binary.getLength());
+        long length = binary.getFile().length();
+        Blob blob = new BinaryBlob(binary, digest, filename, "text/plain", "utf-8", digest, length);
+        blob.setFilename(filename);
         assertEquals("MD5", blob.getDigestAlgorithm());
         assertEquals(digest, blob.getDigest());
-        file.setProperty("file", "filename", filename);
         file.setProperty("file", "content", blob);
         session.saveDocument(file);
         session.save();
@@ -163,7 +164,6 @@ public class TestSQLRepositoryDirectBlob {
         String expected = "this is a file";
         byte[] observedContent = new byte[expected.length()];
         assertEquals(digest, binary.getDigest());
-        assertEquals(expected.length(), binary.getLength());
         assertEquals(expected.length(), binary.getStream().read(observedContent));
         assertEquals(expected, new String(observedContent));
 
@@ -181,7 +181,6 @@ public class TestSQLRepositoryDirectBlob {
 
         observedContent = new byte[expected.length()];
         assertEquals(digest, binaryCopy.getDigest());
-        assertEquals(expected.length(), binaryCopy.getLength());
         assertEquals(expected.length(), binaryCopy.getStream().read(observedContent));
         assertEquals(expected, new String(observedContent));
 

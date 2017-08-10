@@ -23,7 +23,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import org.nuxeo.common.utils.FileUtils;
+import org.apache.commons.io.FileUtils;
 import org.nuxeo.connect.update.LocalPackage;
 import org.nuxeo.connect.update.PackageException;
 import org.nuxeo.connect.update.PackageState;
@@ -53,7 +53,12 @@ public class LiveInstallTask extends InstallTask {
 
     @Override
     protected void taskDone() throws PackageException {
-        Framework.getService(ReloadService.class).reload();
+        try {
+            Framework.getService(ReloadService.class).reload();
+        } catch (InterruptedException cause) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while reloading runtime", cause);
+        }
         if (isRestartRequired()) {
             service.setPackageState(pkg, PackageState.INSTALLED);
         } else {

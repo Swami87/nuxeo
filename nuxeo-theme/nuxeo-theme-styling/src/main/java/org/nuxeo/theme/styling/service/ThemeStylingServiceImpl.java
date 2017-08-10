@@ -27,10 +27,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.web.resources.api.Resource;
 import org.nuxeo.ecm.web.resources.api.ResourceType;
 import org.nuxeo.ecm.web.resources.api.service.WebResourceManager;
@@ -57,7 +57,6 @@ import org.nuxeo.theme.styling.service.palettes.PaletteParser;
 import org.nuxeo.theme.styling.service.registries.FlavorRegistry;
 import org.nuxeo.theme.styling.service.registries.NegotiationRegistry;
 import org.nuxeo.theme.styling.service.registries.PageRegistry;
-import org.nuxeo.theme.styling.service.registries.StyleRegistry;
 
 /**
  * Default implementation for the {@link ThemeStylingService}
@@ -74,8 +73,6 @@ public class ThemeStylingServiceImpl extends DefaultComponent implements ThemeSt
 
     protected FlavorRegistry flavorReg;
 
-    protected StyleRegistry styleReg;
-
     protected NegotiationRegistry negReg;
 
     // Runtime Component API
@@ -85,7 +82,6 @@ public class ThemeStylingServiceImpl extends DefaultComponent implements ThemeSt
         super.activate(context);
         pageReg = new PageRegistry();
         flavorReg = new FlavorRegistry();
-        styleReg = new StyleRegistry();
         negReg = new NegotiationRegistry();
     }
 
@@ -186,7 +182,7 @@ public class ThemeStylingServiceImpl extends DefaultComponent implements ThemeSt
                 } else {
                     String content;
                     try {
-                        content = new String(FileUtils.readBytes(url));
+                        content = new String(IOUtils.toByteArray(url));
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -206,7 +202,7 @@ public class ThemeStylingServiceImpl extends DefaultComponent implements ThemeSt
                 } else {
                     String content;
                     try {
-                        content = new String(FileUtils.readBytes(url));
+                        content = new String(IOUtils.toByteArray(url));
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }

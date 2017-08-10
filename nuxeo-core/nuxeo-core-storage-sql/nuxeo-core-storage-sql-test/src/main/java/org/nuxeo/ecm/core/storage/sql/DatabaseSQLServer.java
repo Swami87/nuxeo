@@ -24,8 +24,6 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.nuxeo.runtime.api.Framework;
 
@@ -54,13 +52,10 @@ public class DatabaseSQLServer extends DatabaseHelper {
 
     // true for the Microsoft JDBC driver
     // false for the jTDS JDBC driver (open source)
-    private static final boolean MSFT = false;
+    private static final boolean MSFT = true;
 
     private static final String DRIVER = MSFT ? "com.microsoft.sqlserver.jdbc.SQLServerDriver"
             : "net.sourceforge.jtds.jdbc.Driver";
-
-    private static final String XA_DATASOURCE = MSFT ? "com.microsoft.sqlserver.jdbc.SQLServerXADataSource"
-            : "net.sourceforge.jtds.jdbcx.JtdsDataSource";
 
     private void setProperties() {
         setProperty(SERVER_PROPERTY, DEF_SERVER);
@@ -68,18 +63,17 @@ public class DatabaseSQLServer extends DatabaseHelper {
         setProperty(DATABASE_PROPERTY, DEF_DATABASE);
         setProperty(USER_PROPERTY, DEF_USER);
         setProperty(PASSWORD_PROPERTY, DEF_PASSWORD);
-        setProperty(XA_DATASOURCE_PROPERTY, XA_DATASOURCE);
         // for sql directory tests
         setProperty(DRIVER_PROPERTY, DRIVER);
         String url;
         if (DRIVER.startsWith("com.microsoft")) {
-            url = String.format("jdbc:sqlserver://%s:%s;databaseName=%s;user=%s;password=%s",
+            url = String.format("jdbc:sqlserver://%s:%s;databaseName=%s;user=%s;password=%s;selectMethod=cursor",
                     Framework.getProperty(SERVER_PROPERTY), Framework.getProperty(PORT_PROPERTY),
                     Framework.getProperty(DATABASE_PROPERTY), Framework.getProperty(USER_PROPERTY),
                     Framework.getProperty(PASSWORD_PROPERTY));
 
         } else {
-            url = String.format("jdbc:jtds:sqlserver://%s:%s;databaseName=%s;user=%s;password=%s",
+            url = String.format("jdbc:jtds:sqlserver://%s:%s;databaseName=%s;user=%s;password=%s;useCursors=true",
                     Framework.getProperty(SERVER_PROPERTY), Framework.getProperty(PORT_PROPERTY),
                     Framework.getProperty(DATABASE_PROPERTY), Framework.getProperty(USER_PROPERTY),
                     Framework.getProperty(PASSWORD_PROPERTY));
@@ -121,15 +115,6 @@ public class DatabaseSQLServer extends DatabaseHelper {
     @Override
     public RepositoryDescriptor getRepositoryDescriptor() {
         RepositoryDescriptor descriptor = new RepositoryDescriptor();
-        descriptor.xaDataSourceName = XA_DATASOURCE;
-        Map<String, String> properties = new HashMap<String, String>();
-        properties.put("ServerName", Framework.getProperty(SERVER_PROPERTY));
-        properties.put("PortNumber", Framework.getProperty(PORT_PROPERTY));
-        properties.put("DatabaseName", Framework.getProperty(DATABASE_PROPERTY));
-        properties.put("User", Framework.getProperty(USER_PROPERTY));
-        properties.put("Password", Framework.getProperty(PASSWORD_PROPERTY));
-        properties.put("UseCursors", "true");
-        descriptor.properties = properties;
         descriptor.setFulltextAnalyzer("French");
         descriptor.setFulltextCatalog("nuxeo");
         descriptor.idType = Framework.getProperty(ID_TYPE_PROPERTY);
@@ -148,7 +133,7 @@ public class DatabaseSQLServer extends DatabaseHelper {
     protected void checkSupports(Connection connection) throws SQLException {
         Statement st = connection.createStatement();
         try {
-            ResultSet rs = st.executeQuery("SELECT SERVERPROPERTY('ProductVersion'), CONVERT(NVARCHAR(100), SERVERPROPERTY('EngineEdition'))");
+            ResultSet rs = st.executeQuery("SELECT CONVERT(NVARCHAR(100),SERVERPROPERTY('ProductVersion')), CONVERT(NVARCHAR(100), SERVERPROPERTY('EngineEdition'))");
             rs.next();
             String productVersion = rs.getString(1);
             /** 9 = SQL Server 2005, 10 = SQL Server 2008, 11 = SQL Server 2012 / Azure */

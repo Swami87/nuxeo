@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,12 @@
  * Contributors:
  *     Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.ecm.platform.computedgroups.test;
 
-import static org.junit.Assert.assertEquals;
+import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertNotNull;
+import static junit.framework.TestCase.assertNull;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.Serializable;
@@ -36,6 +35,7 @@ import javax.inject.Inject;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.nuxeo.directory.test.DirectoryFeature;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
@@ -51,28 +51,20 @@ import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
-import org.nuxeo.runtime.test.runner.RuntimeHarness;
 
 @RunWith(FeaturesRunner.class)
-@Features(CoreFeature.class) // to init properties for SQL datasources
+@Features({ CoreFeature.class, DirectoryFeature.class })
 @Deploy({ "org.nuxeo.ecm.core.schema", //
         "org.nuxeo.ecm.core.api", //
         "org.nuxeo.ecm.core", //
         "org.nuxeo.ecm.core.event", //
         "org.nuxeo.ecm.platform.usermanager.api", //
         "org.nuxeo.ecm.platform.usermanager", //
-        "org.nuxeo.ecm.directory.api", //
-        "org.nuxeo.ecm.directory.types.contrib", //
-        "org.nuxeo.ecm.directory", //
-        "org.nuxeo.ecm.directory.sql", //
 })
 @LocalDeploy({ "org.nuxeo.ecm.platform.usermanager.tests:computedgroups-contrib.xml", //
         "org.nuxeo.ecm.platform.usermanager.tests:test-usermanagerimpl/directory-config.xml", //
-        })
+})
 public class TestComputedGroupService {
-
-    @Inject
-    protected RuntimeHarness harness;
 
     @Inject
     protected ComputedGroupsService cgs;
@@ -132,7 +124,7 @@ public class TestComputedGroupService {
         DocumentModel groupModel = um.getBareGroupModel();
         groupModel.setProperty("group", "groupname", "StaticGroup");
         um.createGroup(groupModel);
-        List<String> staticGroups = new ArrayList<String>();
+        List<String> staticGroups = new ArrayList<>();
         staticGroups.add("StaticGroup");
         userModel = um.getUserModel("User1");
         userModel.setProperty("user", "groups", staticGroups);
@@ -164,22 +156,25 @@ public class TestComputedGroupService {
 
         group = um.getGroup("Grp2");
         assertEquals(2, group.getMemberUsers().size());
+
     }
 
     @Test
+    public void testResolveMembersInVirtualGroup() throws Exception {
+        List<String> users = um.getUsersInGroupAndSubGroups("Grp1");
+        assertEquals(2, users.size());
+    }
+
+    @Test
+    @Deploy("org.nuxeo.ecm.platform.usermanager.tests:companycomputedgroups-contrib.xml")
     public void testCompanyComputer() throws Exception {
-        harness.deployContrib("org.nuxeo.ecm.platform.usermanager.tests", "companycomputedgroups-contrib.xml");
-        try {
-            dotTestCompanyComputer();
-        } finally {
-            harness.undeployContrib("org.nuxeo.ecm.platform.usermanager.tests", "companycomputedgroups-contrib.xml");
-        }
+        dotTestCompanyComputer();
     }
 
     public void dotTestCompanyComputer() throws Exception {
 
-        Map<String, Serializable> filter = new HashMap<String, Serializable>();
-        HashSet<String> fulltext = new HashSet<String>();
+        Map<String, Serializable> filter = new HashMap<>();
+        HashSet<String> fulltext = new HashSet<>();
         filter.put(um.getGroupIdField(), "Nux");
 
         DocumentModelList nxGroups = um.searchGroups(filter, fulltext);

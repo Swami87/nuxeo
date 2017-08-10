@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.storage.sql.jdbc.dialect;
 
 import java.io.Serializable;
@@ -78,7 +77,7 @@ public abstract class Dialect {
      * Property used to disable NULLS LAST usage when sorting DESC. This increase performance for some dialects because
      * they can use an index for sorting when there are no NULL value.
      *
-     * @Since 5.9
+     * @since 5.9
      */
     public static final String NULLS_LAST_ON_DESC_PROP = "nuxeo.vcs.use-nulls-last-on-desc";
 
@@ -98,7 +97,8 @@ public abstract class Dialect {
      */
     public static final String DIALECT_CLASS = "nuxeo.vcs.dialect";
 
-    public static final Map<String, Class<? extends Dialect>> DIALECTS = new HashMap<String, Class<? extends Dialect>>();
+    public static final Map<String, Class<? extends Dialect>> DIALECTS = new HashMap<>();
+
     static {
         DIALECTS.put("H2", DialectH2.class);
         DIALECTS.put("MySQL", DialectMySQL.class);
@@ -108,6 +108,15 @@ public abstract class Dialect {
         DIALECTS.put("HSQL Database Engine", DialectHSQLDB.class);
         DIALECTS.put("Apache Derby", DialectDerby.class);
         DIALECTS.put("DB2", DialectDB2.class);
+    }
+
+    /**
+     * Does the dialect support an scroll API
+     *
+     * @since 8.4
+     */
+    public boolean supportsScroll() {
+        return true;
     }
 
     public static final class JDBCInfo {
@@ -153,9 +162,10 @@ public abstract class Dialect {
         return new JDBCInfo(string, jdbcType, jdbcBaseTypeString, jdbcBaseType);
     }
 
-    public static JDBCInfo jdbcInfo(String string, int length, int jdbcType, String jdbcBaseTypeString, int jdbcBaseType) {
-        return new JDBCInfo(String.format(string, Integer.valueOf(length)), jdbcType, String.format(jdbcBaseTypeString,
-                Integer.valueOf(length)), jdbcBaseType);
+    public static JDBCInfo jdbcInfo(String string, int length, int jdbcType, String jdbcBaseTypeString,
+            int jdbcBaseType) {
+        return new JDBCInfo(String.format(string, Integer.valueOf(length)), jdbcType,
+                String.format(jdbcBaseTypeString, Integer.valueOf(length)), jdbcBaseType);
     }
 
     protected final boolean storesUpperCaseIdentifiers;
@@ -363,13 +373,14 @@ public abstract class Dialect {
 
     public void setToPreparedStatementTimestamp(PreparedStatement ps, int index, Serializable value, Column column)
             throws SQLException {
-        Calendar cal = (Calendar) value;
-        Timestamp ts = cal == null ? null : new Timestamp(cal.getTimeInMillis());
-        ps.setTimestamp(index, ts, cal); // cal passed for timezone
+        Timestamp ts = getTimestampFromCalendar((Calendar) value);
+        // NOTE we don't pass the Calendar as third parameter to setTimestamp(), because
+        // this causes h2, Oracle and SQL Server to write incorrect dates
+        ps.setTimestamp(index, ts); // default timezone
     }
 
     public Timestamp getTimestampFromCalendar(Calendar value) {
-        return new Timestamp(value.getTimeInMillis());
+        return value == null ? null : new Timestamp(value.getTimeInMillis());
     }
 
     public Timestamp[] getTimestampFromCalendar(Serializable[] value) {
@@ -387,7 +398,7 @@ public abstract class Dialect {
         if (value == null) {
             return null;
         }
-        Calendar cal = new GregorianCalendar(); // XXX timezone
+        Calendar cal = new GregorianCalendar(); // default timezone
         cal.setTimeInMillis(value.getTime());
         return cal;
     }
@@ -426,14 +437,7 @@ public abstract class Dialect {
     }
 
     protected Serializable getFromResultSetTimestamp(ResultSet rs, int index, Column column) throws SQLException {
-        Timestamp ts = rs.getTimestamp(index);
-        if (ts == null) {
-            return null;
-        } else {
-            Serializable cal = new GregorianCalendar(); // XXX timezone
-            ((Calendar) cal).setTimeInMillis(ts.getTime());
-            return cal;
-        }
+        return getCalendarFromTimestamp(rs.getTimestamp(index));
     }
 
     public boolean storesUpperCaseIdentifiers() {
@@ -534,7 +538,7 @@ public abstract class Dialect {
     }
 
     public String getIndexName(String tableName, List<String> columnNames) {
-        return makeName(qualifyIndexName() ? tableName + '_' : "", StringUtils.join(columnNames, '_'), "_IDX",
+        return makeName(qualifyIndexName() ? tableName + '_' : "", String.join("_", columnNames), "_IDX",
                 getMaxIndexNameSize());
     }
 
@@ -549,8 +553,8 @@ public abstract class Dialect {
      */
     public String getCreateIndexSql(String indexName, Table.IndexType indexType, Table table, List<Column> columns,
             Model model) {
-        List<String> qcols = new ArrayList<String>(columns.size());
-        List<String> pcols = new ArrayList<String>(columns.size());
+        List<String> qcols = new ArrayList<>(columns.size());
+        List<String> pcols = new ArrayList<>(columns.size());
         for (Column col : columns) {
             qcols.add(col.getQuotedName());
             pcols.add(col.getPhysicalName());
@@ -560,7 +564,7 @@ public abstract class Dialect {
             return getCreateFulltextIndexSql(indexName, quotedIndexName, table, columns, model);
         } else {
             return String.format("CREATE INDEX %s ON %s (%s)", quotedIndexName, table.getQuotedName(),
-                    StringUtils.join(qcols, ", "));
+                    String.join(", ", qcols));
         }
     }
 
@@ -700,9 +704,9 @@ public abstract class Dialect {
     public String getAddForeignKeyConstraintString(String constraintName, String[] foreignKeys, String referencedTable,
             String[] primaryKeys, boolean referencesPrimaryKey) {
         String sql = String.format(" ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s", constraintName,
-                StringUtils.join(foreignKeys, ", "), referencedTable);
+                String.join(", ", foreignKeys), referencedTable);
         if (!referencesPrimaryKey) {
-            sql += " (" + StringUtils.join(primaryKeys, ", ") + ')';
+            sql += " (" + String.join(", ", primaryKeys) + ')';
         }
         return sql;
     }
@@ -849,7 +853,8 @@ public abstract class Dialect {
     }
 
     /**
-     * Checks whether {@link #getInTreeSQL} is optimized for fast results (using an ancestors or descendants table).
+     * Checks whether {@link #getInTreeSql(String, String)} is optimized for fast results (using an ancestors or
+     * descendants table).
      *
      * @since 7.10, 6.0-HF21
      */
@@ -1125,8 +1130,6 @@ public abstract class Dialect {
     /**
      * Let the dialect processes additional statements after tables creation and conditional statements. Can be used for
      * specific upgrade procedure.
-     *
-     * @param connection
      */
     public void performAdditionalStatements(Connection connection) throws SQLException {
     }
@@ -1254,11 +1257,10 @@ public abstract class Dialect {
     /**
      * Return the SQL to get the columns fulltext fields
      *
-     * @param columns
      * @since 5.9.3
      */
     public String getBinaryFulltextSql(List<String> columns) {
-        return "SELECT " + StringUtils.join(columns, ", ") + " FROM fulltext WHERE id=?";
+        return "SELECT " + String.join(", ", columns) + " FROM fulltext WHERE id=?";
     }
 
     /**
@@ -1315,6 +1317,15 @@ public abstract class Dialect {
      */
     public String getSQLForDump(String sql) {
         return sql + ";";
+    }
+
+    /**
+     * Does the dialect report accurate update counts for batch updates.
+     *
+     * @since 9.2
+     */
+    public boolean supportsBatchUpdateCount() {
+        return true;
     }
 
 }

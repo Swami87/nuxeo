@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,9 @@ import org.nuxeo.common.xmap.annotation.XObject;
 
 /**
  * @since 5.7
+ * @deprecated since 9.1 automatic versioning mechanism has been moved to versioning service
  */
-
+@Deprecated
 @XObject("versioning")
 public class VersioningDescriptor implements Serializable {
 

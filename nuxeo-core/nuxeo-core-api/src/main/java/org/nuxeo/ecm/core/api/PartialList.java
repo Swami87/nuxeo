@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.api;
 
+import java.util.Iterator;
 import java.util.List;
 
 /**
  * The bundling of a list and a total size.
  */
-public class PartialList<E> {
+public class PartialList<E> implements Iterable<E> {
 
     public final List<E> list;
 
@@ -39,6 +39,11 @@ public class PartialList<E> {
     public PartialList(List<E> list, long totalSize) {
         this.list = list;
         this.totalSize = totalSize;
+    }
+
+    @Override
+    public Iterator<E> iterator() {
+        return list.iterator();
     }
 
 }

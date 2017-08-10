@@ -61,7 +61,7 @@ public class HTMLBlobUploader implements JSFBlobUploader {
     }
 
     @Override
-    public void encodeBeginUpload(UIInput parent, FacesContext context, String onClick) throws IOException {
+    public void encodeBeginUpload(UIInput parent, FacesContext context, String onChange) throws IOException {
         UIComponent facet = parent.getFacet(UPLOAD_FACET_NAME);
         if (!(facet instanceof HtmlInputFile)) {
             return;
@@ -118,7 +118,7 @@ public class HTMLBlobUploader implements JSFBlobUploader {
         }
 
         // encode upload component
-        inputFile.setOnclick(onClick);
+        inputFile.setOnchange(onChange);
         // TODO: add size limit info
         ComponentUtils.encodeComponent(context, inputFile);
     }
@@ -137,7 +137,7 @@ public class HTMLBlobUploader implements JSFBlobUploader {
         Blob sblob = (Blob) submittedFile;
         if (sblob.getLength() == 0) {
             String message = context.getPartialViewContext().isAjaxRequest() ? InputFileInfo.INVALID_WITH_AJAX_MESSAGE
-                    : InputFileInfo.INVALID_FILE_MESSAGE;
+                    : InputFileInfo.EMPTY_FILE_MESSAGE;
             ComponentUtils.addErrorMessage(context, parent, message);
             parent.setValid(false);
             return;

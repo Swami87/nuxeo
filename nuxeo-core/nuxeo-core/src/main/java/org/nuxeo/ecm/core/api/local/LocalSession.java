@@ -25,12 +25,14 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+import javax.transaction.Status;
 import javax.transaction.Synchronization;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.AbstractSession;
 import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.model.Session;
 import org.nuxeo.ecm.core.repository.RepositoryService;
@@ -65,19 +67,12 @@ public class LocalSession extends AbstractSession implements Synchronization {
      */
     private final Set<SessionInfo> allSessions = Collections.newSetFromMap(new ConcurrentHashMap<SessionInfo, Boolean>());
 
-    public static CoreSession createInstance() {
-        return new LocalSession();
-    }
-
-    @Override
-    public String getRepositoryName() {
-        return repositoryName;
-    }
-
-    @Override
-    public void connect(String repositoryName, NuxeoPrincipal principal) {
-        if (sessionId != null) {
-            throw new LocalException("CoreSession already connected");
+    public LocalSession(String repositoryName, NuxeoPrincipal principal) {
+        if (TransactionHelper.isTransactionMarkedRollback()) {
+            throw new NuxeoException("Cannot create a CoreSession when transaction is marked rollback-only");
+        }
+        if (!TransactionHelper.isTransactionActive()) {
+            throw new NuxeoException("Cannot create a CoreSession outside a transaction");
         }
         this.repositoryName = repositoryName;
         this.principal = principal;
@@ -87,6 +82,11 @@ public class LocalSession extends AbstractSession implements Synchronization {
             log.debug("Creating CoreSession: " + sessionId);
         }
         createSession(); // create first session for current thread
+    }
+
+    @Override
+    public String getRepositoryName() {
+        return repositoryName;
     }
 
     protected static String newSessionId(String repositoryName, NuxeoPrincipal principal) {
@@ -100,15 +100,19 @@ public class LocalSession extends AbstractSession implements Synchronization {
 
     @Override
     public Session getSession() {
+        if (!TransactionHelper.isTransactionActiveOrMarkedRollback()) {
+            throw new NuxeoException("Cannot use a CoreSession outside a transaction");
+        }
+        TransactionHelper.checkTransactionTimeout();
         SessionInfo si = sessionHolder.get();
         if (si == null || !si.session.isLive()) {
             // close old one, previously completed
             closeInThisThread();
-            if (!TransactionHelper.isTransactionActive()) {
-                throw new LocalException("No transaction active, cannot reconnect: " + sessionId);
-            }
             if (log.isDebugEnabled()) {
                 log.debug("Reconnecting CoreSession: " + sessionId);
+            }
+            if (TransactionHelper.isTransactionMarkedRollback()) {
+                throw new NuxeoException("Cannot reconnect a CoreSession when transaction is marked rollback-only");
             }
             si = createSession();
         }
@@ -152,6 +156,10 @@ public class LocalSession extends AbstractSession implements Synchronization {
 
     @Override
     public void afterCompletion(int status) {
+        if (status == Status.STATUS_ROLLEDBACK) {
+            // insure the connection is closed on roll-back also
+            closeInThisThread();
+        }
     }
 
     protected void closeInThisThread() {
@@ -186,7 +194,8 @@ public class LocalSession extends AbstractSession implements Synchronization {
 
     @Override
     public boolean isStateSharedByAllThreadSessions() {
-        return getSession().isStateSharedByAllThreadSessions();
+        // by design we always share state when in the same thread (through the sessionHolder ThreadLocal)
+        return true;
     }
 
 }

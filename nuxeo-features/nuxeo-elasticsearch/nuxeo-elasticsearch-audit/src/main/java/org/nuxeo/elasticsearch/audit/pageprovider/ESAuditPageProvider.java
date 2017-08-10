@@ -25,6 +25,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.search.SearchHit;
@@ -40,9 +41,16 @@ import org.nuxeo.ecm.platform.audit.service.NXAuditEventsService;
 import org.nuxeo.ecm.platform.query.api.AbstractPageProvider;
 import org.nuxeo.ecm.platform.query.api.PageProvider;
 import org.nuxeo.ecm.platform.query.api.PageProviderDefinition;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
+import org.nuxeo.ecm.platform.query.api.WhereClauseDefinition;
+import org.nuxeo.ecm.platform.query.nxql.NXQLQueryBuilder;
 import org.nuxeo.elasticsearch.audit.ESAuditBackend;
 import org.nuxeo.elasticsearch.audit.io.AuditEntryJSONReader;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
+
+import static org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider.DEFAULT_ES_MAX_RESULT_WINDOW_VALUE;
+import static org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider.ES_MAX_RESULT_WINDOW_PROPERTY;
 
 public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implements PageProvider<LogEntry> {
 
@@ -55,6 +63,8 @@ public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implemen
     public static final String UICOMMENTS_PROPERTY = "generateUIComments";
 
     protected static String emptyQuery = "{ \"match_all\" : { }\n }";
+
+    protected Long maxResultWindow;
 
     @Override
     public String toString() {
@@ -92,8 +102,8 @@ public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implemen
         searchBuilder.setSize((int) getMinMaxPageSize());
 
         for (SortInfo sortInfo : getSortInfos()) {
-            searchBuilder.addSort(sortInfo.getSortColumn(), sortInfo.getSortAscending() ? SortOrder.ASC
-                    : SortOrder.DESC);
+            searchBuilder.addSort(sortInfo.getSortColumn(),
+                    sortInfo.getSortAscending() ? SortOrder.ASC : SortOrder.DESC);
         }
 
         SearchResponse searchResponse = searchBuilder.execute().actionGet();
@@ -162,8 +172,8 @@ public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implemen
     }
 
     protected ESAuditBackend getESBackend() {
-        NXAuditEventsService audit = (NXAuditEventsService) Framework.getRuntime().getComponent(
-                NXAuditEventsService.NAME);
+        NXAuditEventsService audit = (NXAuditEventsService) Framework.getRuntime()
+                                                                     .getComponent(NXAuditEventsService.NAME);
         AuditBackend backend = audit.getBackend();
         if (backend instanceof ESAuditBackend) {
             return (ESAuditBackend) backend;
@@ -175,19 +185,47 @@ public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implemen
     protected void buildAuditQuery(boolean includeSort) {
         PageProviderDefinition def = getDefinition();
         Object[] params = getParameters();
+        List<QuickFilter> quickFilters = getQuickFilters();
+        String quickFiltersClause = "";
 
-        if (def.getWhereClause() == null) {
+        if (quickFilters != null && !quickFilters.isEmpty()) {
+            for (QuickFilter quickFilter : quickFilters) {
+                String clause = quickFilter.getClause();
+                if (!quickFiltersClause.isEmpty() && clause != null) {
+                    quickFiltersClause = NXQLQueryBuilder.appendClause(quickFiltersClause, clause);
+                } else {
+                    quickFiltersClause = clause != null ? clause : "";
+                }
+            }
+        }
+
+        WhereClauseDefinition whereClause = def.getWhereClause();
+        if (whereClause == null) {
             // Simple Pattern
 
             if (!allowSimplePattern()) {
                 throw new UnsupportedOperationException("This page provider requires a explicit Where Clause");
             }
-            String baseQuery = getESBackend().expandQueryVariables(def.getPattern(), params);
+            String originalPattern = def.getPattern();
+            String pattern = quickFiltersClause.isEmpty() ? originalPattern
+                    : StringUtils.containsIgnoreCase(originalPattern, " WHERE ")
+                    ? NXQLQueryBuilder.appendClause(originalPattern, quickFiltersClause)
+                    : originalPattern + " WHERE " + quickFiltersClause;
+
+            String baseQuery = getESBackend().expandQueryVariables(pattern, params);
             searchBuilder = getESBackend().buildQuery(baseQuery, null);
         } else {
+
+            // Add the quick filters clauses to the fixed part
+            String fixedPart = getFixedPart();
+            if (!StringUtils.isBlank(quickFiltersClause)) {
+                fixedPart = (!StringUtils.isBlank(fixedPart))
+                        ? NXQLQueryBuilder.appendClause(fixedPart, quickFiltersClause) : quickFiltersClause;
+            }
+
             // Where clause based on DocumentModel
-            String baseQuery = getESBackend().expandQueryVariables(getFixedPart(), params);
-            searchBuilder = getESBackend().buildSearchQuery(baseQuery, def.getWhereClause().getPredicates(),
+            String baseQuery = getESBackend().expandQueryVariables(fixedPart, params);
+            searchBuilder = getESBackend().buildSearchQuery(baseQuery, whereClause.getPredicates(),
                     getSearchDocumentModel());
         }
     }
@@ -215,6 +253,59 @@ public class ESAuditPageProvider extends AbstractPageProvider<LogEntry> implemen
             }
         }
         return sortInfos;
+    }
+
+    @Override
+    public boolean isLastPageAvailable() {
+        if ((getResultsCount() + getPageSize()) <= getMaxResultWindow()) {
+            return super.isNextPageAvailable();
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isNextPageAvailable() {
+        if ((getCurrentPageOffset() + 2 * getPageSize()) <= getMaxResultWindow()) {
+            return super.isNextPageAvailable();
+        }
+        return false;
+    }
+
+    @Override
+    public long getPageLimit() {
+        return getMaxResultWindow() / getPageSize();
+    }
+
+    /**
+     * Returns the max result window where the PP can navigate without raising Elasticsearch
+     * QueryPhaseExecutionException. {@code from + size} must be less than or equal to this value.
+     *
+     * @since 9.2
+     */
+    public long getMaxResultWindow() {
+        if (maxResultWindow == null) {
+            ConfigurationService cs = Framework.getService(ConfigurationService.class);
+            String maxResultWindowStr = cs.getProperty(ES_MAX_RESULT_WINDOW_PROPERTY,
+                    DEFAULT_ES_MAX_RESULT_WINDOW_VALUE);
+            try {
+                maxResultWindow = Long.valueOf(maxResultWindowStr);
+            } catch (NumberFormatException e) {
+                log.warn(String.format(
+                    "Invalid maxResultWindow property value: %s for page provider: %s, fallback to default.",
+                            maxResultWindowStr, getName()));
+                maxResultWindow = Long.valueOf(DEFAULT_ES_MAX_RESULT_WINDOW_VALUE);
+            }
+        }
+        return maxResultWindow;
+    }
+
+    /**
+     * Set the max result window where the PP can navigate, for testing purpose.
+     *
+     * @since 9.2
+     */
+    public void setMaxResultWindow(long maxResultWindow) {
+        this.maxResultWindow = maxResultWindow;
     }
 
 }

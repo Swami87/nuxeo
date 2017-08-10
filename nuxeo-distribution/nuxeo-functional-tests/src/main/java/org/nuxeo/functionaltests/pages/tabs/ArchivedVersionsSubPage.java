@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,15 @@
  *
  * Contributors:
  *     Antoine Taillefer
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.pages.tabs;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import org.nuxeo.functionaltests.AbstractTest;
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.pages.DocumentBasePage;
 import org.openqa.selenium.Alert;
@@ -37,6 +36,9 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Clock;
 import org.openqa.selenium.support.ui.SystemClock;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * Representation of a Archived versions sub tab page.
@@ -92,13 +94,13 @@ public class ArchivedVersionsSubPage extends DocumentBasePage {
      */
     public ArchivedVersionsSubPage selectVersion(String versionLabel) {
 
-        List<WebElement> trElements = documentVersionsForm.findElement(By.tagName("tbody")).findElements(
-                By.tagName("tr"));
+        List<WebElement> trElements = documentVersionsForm.findElement(By.tagName("tbody"))
+                                                          .findElements(By.tagName("tr"));
         for (WebElement trItem : trElements) {
             try {
                 trItem.findElement(By.xpath("td[text()=\"" + versionLabel + "\"]"));
                 WebElement checkBox = trItem.findElement(By.xpath("td/input[@type=\"checkbox\"]"));
-                checkBox.click();
+                Locator.waitUntilEnabledAndClick(checkBox);
                 break;
             } catch (NoSuchElementException e) {
                 // Go to next line
@@ -184,8 +186,8 @@ public class ArchivedVersionsSubPage extends DocumentBasePage {
      */
     public <T> T executeActionOnSelectedVersions(String actionId, boolean isConfirm, Class<T> pageClass,
             int findElementTimeout, int waitUntilEnabledTimeout) {
-        findElementWaitUntilEnabledAndClick(By.xpath("//span[@id=\"" + actionId + "\"]/input"), findElementTimeout,
-                waitUntilEnabledTimeout);
+        Locator.findElementWaitUntilEnabledAndClick(null, By.xpath("//span[@id=\"" + actionId + "\"]/input"),
+                findElementTimeout, waitUntilEnabledTimeout);
         if (isConfirm) {
             Alert alert = driver.switchTo().alert();
             assertEquals("Delete selected document(s)?", alert.getText());
@@ -223,18 +225,25 @@ public class ArchivedVersionsSubPage extends DocumentBasePage {
      */
     public DocumentBasePage executeActionOnVersion(String versionLabel, String actionId) {
 
-        List<WebElement> trElements = documentVersionsForm.findElement(By.tagName("tbody")).findElements(
-                By.tagName("tr"));
+        List<WebElement> trElements = documentVersionsForm.findElement(By.tagName("tbody"))
+                                                          .findElements(By.tagName("tr"));
         for (WebElement trItem : trElements) {
             try {
                 trItem.findElement(By.xpath("td[text()=\"" + versionLabel + "\"]"));
                 WebElement actionButton = trItem.findElement(By.xpath("td/span[@id=\"" + actionId + "\"]/input"));
-                actionButton.click();
+                Locator.waitUntilEnabledAndClick(actionButton);
                 break;
             } catch (NoSuchElementException e) {
                 // Go to next line
             }
         }
         return asPage(DocumentBasePage.class);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public String getDocumentVersionsText() {
+        return documentVersions.getText();
     }
 }

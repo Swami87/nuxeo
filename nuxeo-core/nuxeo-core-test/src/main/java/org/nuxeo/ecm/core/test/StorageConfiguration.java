@@ -18,21 +18,20 @@
  */
 package org.nuxeo.ecm.core.test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.sql.SQLException;
-import java.util.Calendar;
-import java.util.function.BiConsumer;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
+import com.mongodb.client.MongoDatabase;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.core.storage.dbs.DBSHelper;
 import org.nuxeo.ecm.core.storage.mongodb.MongoDBRepository;
 import org.nuxeo.ecm.core.storage.mongodb.MongoDBRepositoryDescriptor;
 import org.nuxeo.ecm.core.storage.sql.DatabaseDB2;
@@ -70,15 +69,21 @@ public class StorageConfiguration {
 
     public static final String CORE_MONGODB = "mongodb";
 
+    public static final String CORE_MARKLOGIC = "marklogic";
+
     public static final String DEFAULT_CORE = CORE_VCS;
 
     private static final String MONGODB_SERVER_PROPERTY = "nuxeo.test.mongodb.server";
 
     private static final String MONGODB_DBNAME_PROPERTY = "nuxeo.test.mongodb.dbname";
 
-    private static final String DEFAULT_MONGODB_SERVER = "localhost:27017";
+    public static final String DEFAULT_MONGODB_SERVER = "localhost:27017";
 
-    private static final String DEFAULT_MONGODB_DBNAME = "unittests";
+    public static final String DEFAULT_MONGODB_DBNAME = "unittests";
+
+    private static final String CHANGE_TOKEN_ENABLED_PROPERTY = "nuxeo.test.changetoken.enabled";
+
+    private static final String CHANGE_TOKEN_ENABLED_DEFAULT = "true";
 
     private String coreType;
 
@@ -88,14 +93,22 @@ public class StorageConfiguration {
 
     private DatabaseHelper databaseHelper;
 
+    private DBSHelper dbsHelper;
+
     final CoreFeature feature;
+
+    private boolean changeTokenEnabled;
+
+    protected String mongoDBServer;
+
+    protected String mongoDBDbName;
 
     public StorageConfiguration(CoreFeature feature) {
         coreType = defaultSystemProperty(CORE_PROPERTY, DEFAULT_CORE);
         this.feature = feature;
     }
 
-    protected static String defaultSystemProperty(String name, String def) {
+    public static String defaultSystemProperty(String name, String def) {
         String value = System.getProperty(name);
         if (value == null || value.equals("") || value.equals("${" + name + "}")) {
             System.setProperty(name, value = def);
@@ -113,6 +126,8 @@ public class StorageConfiguration {
     }
 
     protected void init() {
+        changeTokenEnabled = Boolean.parseBoolean(
+                defaultProperty(CHANGE_TOKEN_ENABLED_PROPERTY, CHANGE_TOKEN_ENABLED_DEFAULT));
         initJDBC();
         switch (coreType) {
         case CORE_VCS:
@@ -126,11 +141,12 @@ public class StorageConfiguration {
             initMongoDB();
             break;
         default:
-            throw new ExceptionInInitializerError("Unknown test core mode: " + coreType);
+            isDBS = true;
+            initExternal();
         }
     }
 
-    protected void initJDBC() {
+    public void initJDBC() {
         databaseHelper = DatabaseHelper.DATABASE;
 
         String msg = "Deploying JDBC using " + databaseHelper.getClass().getSimpleName();
@@ -149,12 +165,12 @@ public class StorageConfiguration {
     }
 
     protected void initMongoDB() {
-        String server = defaultProperty(MONGODB_SERVER_PROPERTY, DEFAULT_MONGODB_SERVER);
-        String dbname = defaultProperty(MONGODB_DBNAME_PROPERTY, DEFAULT_MONGODB_DBNAME);
+        mongoDBServer = defaultProperty(MONGODB_SERVER_PROPERTY, DEFAULT_MONGODB_SERVER);
+        mongoDBDbName = defaultProperty(MONGODB_DBNAME_PROPERTY, DEFAULT_MONGODB_DBNAME);
         MongoDBRepositoryDescriptor descriptor = new MongoDBRepositoryDescriptor();
         descriptor.name = getRepositoryName();
-        descriptor.server = server;
-        descriptor.dbname = dbname;
+        descriptor.server = mongoDBServer;
+        descriptor.dbname = mongoDBDbName;
         try {
             clearMongoDB(descriptor);
         } catch (UnknownHostException e) {
@@ -165,14 +181,21 @@ public class StorageConfiguration {
     protected void clearMongoDB(MongoDBRepositoryDescriptor descriptor) throws UnknownHostException {
         MongoClient mongoClient = MongoDBRepository.newMongoClient(descriptor);
         try {
-            DBCollection coll = MongoDBRepository.getCollection(descriptor, mongoClient);
-            coll.dropIndexes();
-            coll.remove(new BasicDBObject());
-            coll = MongoDBRepository.getCountersCollection(descriptor, mongoClient);
-            coll.dropIndexes();
-            coll.remove(new BasicDBObject());
+            MongoDatabase database = mongoClient.getDatabase(descriptor.dbname);
+            database.drop();
         } finally {
             mongoClient.close();
+        }
+    }
+
+    protected void initExternal() {
+        // Get DBSHelper by reflection
+        String className = String.format("org.nuxeo.ecm.core.storage.%s.DBSHelperImpl", coreType);
+        try {
+            dbsHelper = (DBSHelper) Class.forName(className).newInstance();
+            dbsHelper.init();
+        } catch (ReflectiveOperationException e) {
+            throw new NuxeoException("DBSHelperImpl not found: " + className, e);
         }
     }
 
@@ -220,6 +243,14 @@ public class StorageConfiguration {
         return isDBS && CORE_MONGODB.equals(coreType);
     }
 
+    public boolean isDBSExternal() {
+        return dbsHelper != null;
+    }
+
+    public boolean isDBSMarkLogic() {
+        return isDBS && CORE_MARKLOGIC.equals(coreType);
+    }
+
     public String getRepositoryName() {
         return "test";
     }
@@ -236,31 +267,14 @@ public class StorageConfiguration {
     }
 
     /**
-     * For databases that don't have sub-second resolution, sleep a bit to get to the next second.
+     * Sleep a bit to get to the next millisecond, to have different timestamps.
      */
     public void maybeSleepToNextSecond() {
-        if (isVCS()) {
-            databaseHelper.maybeSleepToNextSecond();
-        } else {
-            // DBS
-        }
-        // sleep 1 ms nevertheless to have different timestamps
         try {
-            Thread.sleep(1);
+            Thread.sleep(1); // 1 millisecond
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // restore interrupted status
             throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * Checks if the database has sub-second resolution.
-     */
-    public boolean hasSubSecondResolution() {
-        if (isVCS()) {
-            return databaseHelper.hasSubSecondResolution();
-        } else {
-            return true; // DBS
         }
     }
 
@@ -282,6 +296,14 @@ public class StorageConfiguration {
         } else {
             return false; // DBS
         }
+    }
+
+    public List<String> getExternalBundles() {
+        if (isDBSExternal()) {
+            return Arrays.asList(String.format("org.nuxeo.ecm.core.storage.%s", coreType),
+                    String.format("org.nuxeo.ecm.core.storage.%s.test", coreType));
+        }
+        return Collections.emptyList();
     }
 
     public URL getBlobManagerContrib(FeaturesRunner runner) {
@@ -318,6 +340,9 @@ public class StorageConfiguration {
                 contribPath = "OSGI-INF/test-storage-repo-mem-contrib.xml";
             } else if (isDBSMongoDB()) {
                 contribPath = "OSGI-INF/test-storage-repo-mongodb-contrib.xml";
+            } else if (isDBSExternal()) {
+                bundleName = String.format("org.nuxeo.ecm.core.storage.%s.test", coreType);
+                contribPath = "OSGI-INF/test-storage-repo-contrib.xml";
             } else {
                 throw new NuxeoException("Unkown DBS test configuration (not mem/mongodb)");
             }
@@ -329,73 +354,29 @@ public class StorageConfiguration {
         return contribURL;
     }
 
-    public void assertEqualsTimestamp(Calendar expected, Calendar actual) {
-        assertEquals(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
-    }
-
-    public void assertNotEqualsTimestamp(Calendar expected, Calendar actual) {
-        assertNotEquals(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
+    public boolean isChangeTokenEnabled() {
+        return changeTokenEnabled;
     }
 
     /**
-     * Due to some DB restriction this method could fire a false negative. For example 1001ms is before 1002ms but it's
-     * not the case for MySQL (they're equals).
+     * @since 9.2
      */
-    public void assertBeforeTimestamp(Calendar expected, Calendar actual) {
-        BiConsumer<Calendar, Calendar> assertTrue = (exp, act) -> assertTrue(
-                String.format("expected=%s is not before actual=%s", exp, act), exp.before(act));
-        assertTrue.accept(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
-    }
-
-    public void assertNotBeforeTimestamp(Calendar expected, Calendar actual) {
-        BiConsumer<Calendar, Calendar> assertFalse = (exp, act) -> assertFalse(
-                String.format("expected=%s is before actual=%s", exp, act), exp.before(act));
-        assertFalse.accept(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
+    public String getCoreType() {
+        return coreType;
     }
 
     /**
-     * Due to some DB restriction this method could fire a false negative. For example 1002ms is after 1001ms but it's
-     * not the case for MySQL (they're equals).
+     * @since 9.2
      */
-    public void assertAfterTimestamp(Calendar expected, Calendar actual) {
-        BiConsumer<Calendar, Calendar> assertTrue = (exp, act) -> assertTrue(
-                String.format("expected=%s is not after actual=%s", exp, act), exp.after(act));
-        assertTrue.accept(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
+    public String getMongoDBServer() {
+        return mongoDBServer;
     }
 
-    public void assertNotAfterTimestamp(Calendar expected, Calendar actual) {
-        BiConsumer<Calendar, Calendar> assertFalse = (exp, act) -> assertFalse(
-                String.format("expected=%s is after actual=%s", exp, act), exp.after(act));
-        assertFalse.accept(convertToStoredCalendar(expected), convertToStoredCalendar(actual));
-    }
-
-    private Calendar convertToStoredCalendar(Calendar calendar) {
-        if (isVCSMySQL() || isVCSSQLServer()) {
-            Calendar result = (Calendar) calendar.clone();
-            result.setTimeInMillis(convertToStoredTimestamp(result.getTimeInMillis()));
-            return result;
-        }
-        return calendar;
-    }
-
-    private long convertToStoredTimestamp(long timestamp) {
-        if (isVCSMySQL()) {
-            return timestamp / 1000 * 1000;
-        } else if (isVCSSQLServer()) {
-            // as datetime in SQL Server are rounded to increments of .000, .003, or .007 seconds
-            // see https://msdn.microsoft.com/en-us/library/aa258277(SQL.80).aspx
-            long milliseconds = timestamp % 10;
-            long newTimestamp = timestamp - milliseconds;
-            if (milliseconds == 9) {
-                newTimestamp += 10;
-            } else if (milliseconds >= 5) {
-                newTimestamp += 7;
-            } else if (milliseconds >= 2) {
-                newTimestamp += 3;
-            }
-            return newTimestamp;
-        }
-        return timestamp;
+    /**
+     * @since 9.2
+     */
+    public String getMongoDBDbName() {
+        return mongoDBDbName;
     }
 
 }

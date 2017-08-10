@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2008 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.picture.api.adapters;
 
 import static org.nuxeo.ecm.platform.picture.api.ImagingConvertConstants.OPERATION_CROP;
@@ -71,7 +68,6 @@ import static org.nuxeo.ecm.platform.picture.api.MetadataConstants.META_WHITEBAL
 import static org.nuxeo.ecm.platform.picture.api.MetadataConstants.META_WIDTH;
 import static org.nuxeo.ecm.platform.picture.api.MetadataConstants.META_WRITER;
 
-import java.awt.Point;
 import java.awt.color.ICC_Profile;
 import java.io.IOException;
 import java.io.Serializable;
@@ -83,8 +79,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -100,8 +94,6 @@ import org.nuxeo.ecm.platform.picture.api.PictureView;
 import org.nuxeo.runtime.api.Framework;
 
 public abstract class AbstractPictureAdapter implements PictureResourceAdapter {
-
-    private static final Log log = LogFactory.getLog(PictureResourceAdapter.class);
 
     public static final String VIEWS_PROPERTY = "picture:views";
 
@@ -300,7 +292,8 @@ public abstract class AbstractPictureAdapter implements PictureResourceAdapter {
                         (String) view.get("title"), maxsize, filename, width, height, depth, fileContent);
             }
         } else {
-            List<PictureView> pictureViews = getImagingService().computeViewsFor(doc, fileContent, getImageInfo(), true);
+            List<PictureView> pictureViews = getImagingService().computeViewsFor(doc, fileContent, getImageInfo(),
+                    true);
             addPictureViews(pictureViews, true);
         }
     }
@@ -384,41 +377,6 @@ public abstract class AbstractPictureAdapter implements PictureResourceAdapter {
         return imageInfo;
     }
 
-    /**
-     * @deprecated since 5.7
-     */
-    @Deprecated
-    protected static Point getSize(Point current, int max) {
-        int x = current.x;
-        int y = current.y;
-        int newx;
-        int newy;
-        if (x > y) { // landscape
-            newy = (y * max) / x;
-            newx = max;
-        } else { // portrait
-            newx = (x * max) / y;
-            newy = max;
-        }
-        if (newx > x || newy > y) {
-            return current;
-        }
-        return new Point(newx, newy);
-    }
-
-    /**
-     * @deprecated since 5.7
-     */
-    @Deprecated
-    protected String computeViewFilename(String filename, String format) {
-        int index = filename.lastIndexOf(".");
-        if (index == -1) {
-            return filename + "." + format;
-        } else {
-            return filename.substring(0, index + 1) + format;
-        }
-    }
-
     protected Blob getContentFromViews(Integer i) {
         return (Blob) doc.getPropertyValue(String.format(CONTENT_XPATH, i));
     }
@@ -428,13 +386,13 @@ public abstract class AbstractPictureAdapter implements PictureResourceAdapter {
             BlobHolder bh = new SimpleBlobHolder(blob);
             String type = blob.getMimeType();
 
-            Map<String, Serializable> options = new HashMap<String, Serializable>();
+            Map<String, Serializable> options = new HashMap<>();
             options.put(OPTION_CROP_X, coords.get("x"));
             options.put(OPTION_CROP_Y, coords.get("y"));
             options.put(OPTION_RESIZE_HEIGHT, coords.get("h"));
             options.put(OPTION_RESIZE_WIDTH, coords.get("w"));
 
-            if (type != "image/png") {
+            if (!"image/png".equals(type)) {
                 bh = getConversionService().convert(OPERATION_CROP, bh, options);
                 return Blobs.createBlob(bh.getBlob().getStream(), type);
             }

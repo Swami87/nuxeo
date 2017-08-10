@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- *
- * $Id: Registry.java 2531 2006-09-04 23:01:57Z janguenot $
  */
-
 package org.nuxeo.ecm.platform.filemanager.service;
 
 import java.io.IOException;
@@ -59,10 +55,10 @@ import org.nuxeo.ecm.platform.filemanager.service.extension.FolderImporterDescri
 import org.nuxeo.ecm.platform.filemanager.service.extension.UnicityExtension;
 import org.nuxeo.ecm.platform.filemanager.service.extension.VersioningDescriptor;
 import org.nuxeo.ecm.platform.filemanager.utils.FileManagerUtils;
-import org.nuxeo.ecm.platform.mimetype.MimetypeDetectionException;
 import org.nuxeo.ecm.platform.mimetype.interfaces.MimetypeRegistry;
 import org.nuxeo.ecm.platform.types.TypeManager;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.logging.DeprecationLogger;
 import org.nuxeo.runtime.model.ComponentName;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.model.Extension;
@@ -95,7 +91,7 @@ public class FileManagerService extends DefaultComponent implements FileManager 
 
     private final List<CreationContainerListProvider> creationContainerListProviders;
 
-    private List<String> fieldsXPath = new ArrayList<String>();
+    private List<String> fieldsXPath = new ArrayList<>();
 
     private MimetypeRegistry mimeService;
 
@@ -111,20 +107,26 @@ public class FileManagerService extends DefaultComponent implements FileManager 
 
     /**
      * @since 5.7
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     *             behaviors from importers
      */
+    @Deprecated
     private VersioningOption defaultVersioningOption = DEF_VERSIONING_OPTION;
 
     /**
      * @since 5.7
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     *             behaviors from importers
      */
+    @Deprecated
     private boolean versioningAfterAdd = DEF_VERSIONING_AFTER_ADD;
 
     private TypeManager typeService;
 
     public FileManagerService() {
-        fileImporters = new HashMap<String, FileImporter>();
-        folderImporters = new LinkedList<FolderImporter>();
-        creationContainerListProviders = new LinkedList<CreationContainerListProvider>();
+        fileImporters = new HashMap<>();
+        folderImporters = new LinkedList<>();
+        creationContainerListProviders = new LinkedList<>();
     }
 
     private MimetypeRegistry getMimeService() {
@@ -142,87 +144,121 @@ public class FileManagerService extends DefaultComponent implements FileManager 
     }
 
     private Blob checkMimeType(Blob blob, String fullname) {
-        final String mimeType = blob.getMimeType();
-        if (mimeType != null && !mimeType.isEmpty() && !mimeType.equals("application/octet-stream")
-                && !mimeType.equals("application/octetstream")) {
-            return blob;
-        }
         String filename = FileManagerUtils.fetchFileName(fullname);
-        blob = getMimeService().updateMimetype(blob, filename);
+        blob = getMimeService().updateMimetype(blob, filename, true);
         return blob;
     }
 
-    public DocumentModel createFolder(CoreSession documentManager, String fullname, String path)
+    @Override
+    public DocumentModel createFolder(CoreSession documentManager, String fullname, String path, boolean overwrite)
             throws IOException {
 
         if (folderImporters.isEmpty()) {
-            return defaultCreateFolder(documentManager, fullname, path);
+            return defaultCreateFolder(documentManager, fullname, path, overwrite);
         } else {
             // use the last registered folder importer
             FolderImporter folderImporter = folderImporters.get(folderImporters.size() - 1);
-            return folderImporter.create(documentManager, fullname, path, true, getTypeService());
+            return folderImporter.create(documentManager, fullname, path, overwrite, getTypeService());
         }
     }
 
-    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path)
-            {
-        return defaultCreateFolder(documentManager, fullname, path, DEFAULT_FOLDER_TYPE_NAME, true);
+    /**
+     * @deprecated since 9.1, use {@link #defaultCreateFolder(CoreSession, String, String, boolean)} instead
+     */
+    @Deprecated
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path) {
+        return defaultCreateFolder(documentManager, fullname, path, true);
     }
 
+    /**
+     * @since 9.1
+     */
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
+            boolean overwrite) {
+        return defaultCreateFolder(documentManager, fullname, path, DEFAULT_FOLDER_TYPE_NAME, true, overwrite);
+    }
+
+    /**
+     * @deprecated since 9.1, use {@link #defaultCreateFolder(CoreSession, String, String, String, boolean, boolean)}
+     *             instead
+     */
+    @Deprecated
     public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
             String containerTypeName, boolean checkAllowedSubTypes) {
+        return defaultCreateFolder(documentManager, fullname, path, containerTypeName, checkAllowedSubTypes, true);
+    }
+
+    /**
+     * @since 9.1
+     */
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
+            String containerTypeName, boolean checkAllowedSubTypes, boolean overwrite) {
 
         // Fetching filename
         String title = FileManagerUtils.fetchFileName(fullname);
 
-        // Looking if an existing Folder with the same filename exists.
-        DocumentModel docModel = FileManagerUtils.getExistingDocByTitle(documentManager, path, title);
-
-        if (docModel == null) {
-            // check permissions
-            PathRef containerRef = new PathRef(path);
-            if (!documentManager.hasPermission(containerRef, SecurityConstants.READ_PROPERTIES)
-                    || !documentManager.hasPermission(containerRef, SecurityConstants.ADD_CHILDREN)) {
-                throw new DocumentSecurityException("Not enough rights to create folder");
+        if (overwrite) {
+            // Looking if an existing Folder with the same filename exists.
+            DocumentModel docModel = FileManagerUtils.getExistingDocByTitle(documentManager, path, title);
+            if (docModel != null) {
+                return docModel;
             }
-
-            // check allowed sub types
-            DocumentModel container = documentManager.getDocument(containerRef);
-            if (checkAllowedSubTypes
-                    && !getTypeService().isAllowedSubType(containerTypeName, container.getType(), container)) {
-                // cannot create document file here
-                // TODO: we should better raise a dedicated exception to be
-                // catched by the FileManageActionsBean instead of returning
-                // null
-                return null;
-            }
-
-            PathSegmentService pss = Framework.getService(PathSegmentService.class);
-            docModel = documentManager.createDocumentModel(containerTypeName);
-            docModel.setProperty("dublincore", "title", title);
-
-            // writing changes
-            docModel.setPathInfo(path, pss.generatePathSegment(docModel));
-            docModel = documentManager.createDocument(docModel);
-            documentManager.save();
-
-            log.debug("Created container: " + docModel.getName() + " with type " + containerTypeName);
         }
+
+        // check permissions
+        PathRef containerRef = new PathRef(path);
+        if (!documentManager.hasPermission(containerRef, SecurityConstants.READ_PROPERTIES)
+                || !documentManager.hasPermission(containerRef, SecurityConstants.ADD_CHILDREN)) {
+            throw new DocumentSecurityException("Not enough rights to create folder");
+        }
+
+        // check allowed sub types
+        DocumentModel container = documentManager.getDocument(containerRef);
+        if (checkAllowedSubTypes
+                && !getTypeService().isAllowedSubType(containerTypeName, container.getType(), container)) {
+            // cannot create document file here
+            // TODO: we should better raise a dedicated exception to be
+            // catched by the FileManageActionsBean instead of returning
+            // null
+            return null;
+        }
+
+        PathSegmentService pss = Framework.getService(PathSegmentService.class);
+        DocumentModel docModel = documentManager.createDocumentModel(containerTypeName);
+        docModel.setProperty("dublincore", "title", title);
+
+        // writing changes
+        docModel.setPathInfo(path, pss.generatePathSegment(docModel));
+        docModel = documentManager.createDocument(docModel);
+        documentManager.save();
+
+        log.debug("Created container: " + docModel.getName() + " with type " + containerTypeName);
         return docModel;
     }
 
-    public DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path,
-            boolean overwrite, String fullName) throws IOException {
+    @Override
+    public DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path, boolean overwrite,
+            String fullName) throws IOException {
+        return createDocumentFromBlob(documentManager, input, path, overwrite, fullName, false);
+    }
+
+    @Override
+    public DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path, boolean overwrite,
+            String fullName, boolean noMimeTypeCheck) throws IOException {
 
         // check mime type to be able to select the best importer plugin
-        input = checkMimeType(input, fullName);
+        if (!noMimeTypeCheck) {
+            input = checkMimeType(input, fullName);
+        }
 
-        List<FileImporter> importers = new ArrayList<FileImporter>(fileImporters.values());
+        List<FileImporter> importers = new ArrayList<>(fileImporters.values());
         Collections.sort(importers);
         String normalizedMimeType = getMimeService().getMimetypeEntryByMimeType(input.getMimeType()).getNormalized();
         for (FileImporter importer : importers) {
-            if (importer.isEnabled() && (importer.matches(normalizedMimeType) || importer.matches(input.getMimeType()))) {
-                DocumentModel doc = importer.create(documentManager, input, path, overwrite, fullName, getTypeService());
+            if (importer.isEnabled()
+                    && (importer.matches(normalizedMimeType) || importer.matches(input.getMimeType()))) {
+                DocumentModel doc = importer.create(documentManager, input, path, overwrite, fullName,
+                        getTypeService());
                 if (doc != null) {
                     return doc;
                 }
@@ -231,8 +267,8 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return null;
     }
 
-    public DocumentModel updateDocumentFromBlob(CoreSession documentManager, Blob input, String path, String fullName)
-            {
+    @Override
+    public DocumentModel updateDocumentFromBlob(CoreSession documentManager, Blob input, String path, String fullName) {
         String filename = FileManagerUtils.fetchFileName(fullName);
         DocumentModel doc = FileManagerUtils.getExistingDocByFileName(documentManager, path, filename);
         if (doc != null) {
@@ -271,6 +307,10 @@ public class FileManagerService extends DefaultComponent implements FileManager 
                 }
             }
         } else if (extension.getExtensionPoint().equals("versioning")) {
+            String message = "Extension point 'versioning' has been deprecated and corresponding behavior removed from "
+                    + "Nuxeo Platform. Please use versioning policy instead.";
+            DeprecationLogger.log(message, "9.1");
+            Framework.getRuntime().getWarnings().add(message);
             Object[] contribs = extension.getContributions();
             for (Object contrib : contribs) {
                 if (contrib instanceof VersioningDescriptor) {
@@ -374,11 +414,13 @@ public class FileManagerService extends DefaultComponent implements FileManager 
             fileImporters.put(name, plugin);
             log.info("Registered file importer " + name);
         } else {
-            log.info("Unable to register file importer " + name + ", className is null or plugin is not yet registered");
+            log.info(
+                    "Unable to register file importer " + name + ", className is null or plugin is not yet registered");
         }
     }
 
-    private FileImporter mergeFileImporters(FileImporter oldPlugin, FileImporter newPlugin, FileImporterDescriptor desc) {
+    private FileImporter mergeFileImporters(FileImporter oldPlugin, FileImporter newPlugin,
+            FileImporterDescriptor desc) {
         List<String> filters = desc.getFilters();
         if (filters != null && !filters.isEmpty()) {
             List<String> oldFilters = oldPlugin.getFilters();
@@ -449,8 +491,8 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         log.info("unregistered folder importer: " + name);
     }
 
-    private void registerCreationContainerListProvider(
-            CreationContainerListProviderDescriptor ccListProviderDescriptor, Extension extension) {
+    private void registerCreationContainerListProvider(CreationContainerListProviderDescriptor ccListProviderDescriptor,
+            Extension extension) {
 
         String name = ccListProviderDescriptor.getName();
         String[] docTypes = ccListProviderDescriptor.getDocTypes();
@@ -489,29 +531,34 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         log.info("unregistered creationContaineterList provider: " + name);
     }
 
+    @Override
     public List<DocumentLocation> findExistingDocumentWithFile(CoreSession documentManager, String path, String digest,
             Principal principal) {
         String nxql = String.format(QUERY, digest);
         DocumentModelList documentModelList = documentManager.query(nxql, MAX);
-        List<DocumentLocation> docLocationList = new ArrayList<DocumentLocation>(documentModelList.size());
+        List<DocumentLocation> docLocationList = new ArrayList<>(documentModelList.size());
         for (DocumentModel documentModel : documentModelList) {
             docLocationList.add(new DocumentLocationImpl(documentModel));
         }
         return docLocationList;
     }
 
+    @Override
     public boolean isUnicityEnabled() {
         return unicityEnabled;
     }
 
+    @Override
     public boolean isDigestComputingEnabled() {
         return computeDigest;
     }
 
+    @Override
     public List<String> getFields() {
         return fieldsXPath;
     }
 
+    @Override
     public DocumentModelList getCreationContainers(Principal principal, String docType) {
         DocumentModelList containers = new DocumentModelListImpl();
         RepositoryManager repositoryManager = Framework.getLocalService(RepositoryManager.class);
@@ -523,6 +570,7 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return containers;
     }
 
+    @Override
     public DocumentModelList getCreationContainers(CoreSession documentManager, String docType) {
         for (CreationContainerListProvider provider : creationContainerListProviders) {
             if (provider.accept(docType)) {
@@ -532,16 +580,27 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return new DocumentModelListImpl();
     }
 
+    @Override
     public String getDigestAlgorithm() {
         return digestAlgorithm;
     }
 
+    /**
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     *             behaviors from importers
+     */
     @Override
+    @Deprecated
     public VersioningOption getVersioningOption() {
         return defaultVersioningOption;
     }
 
+    /**
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     *             behaviors from importers
+     */
     @Override
+    @Deprecated
     public boolean doVersioningAfterAdd() {
         return versioningAfterAdd;
     }

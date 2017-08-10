@@ -3,7 +3,7 @@
   <parent>
     <artifactId>nuxeo-features-parent</artifactId>
     <groupId>org.nuxeo.ecm.platform</groupId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
 
   <groupId>org.nuxeo.ecm.platform</groupId>
@@ -20,23 +20,5 @@
     <module>nuxeo-platform-imaging-convert</module>
     <module>nuxeo-platform-imaging-jsf</module>
   </modules>
-
-  <developers>
-    <developer>
-      <name>Laurent Doguin</name>
-      <email>ldoguin@nuxeo.com</email>
-      <organization>Nuxeo SA</organization>
-    </developer>
-    <developer>
-      <name>Bogdan Stefanescu</name>
-      <email>bs@nuxeo.com</email>
-      <organization>Nuxeo SA</organization>
-    </developer>
-    <developer>
-      <name>Max Stepanov</name>
-      <email>mstepanov@nuxeo.com</email>
-      <organization>Nuxeo SA</organization>
-    </developer>
-  </developers>
 
 </project>

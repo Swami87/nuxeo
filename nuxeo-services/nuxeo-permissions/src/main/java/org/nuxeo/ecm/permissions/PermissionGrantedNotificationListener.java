@@ -56,7 +56,6 @@ import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
 import org.nuxeo.ecm.platform.ec.notification.service.NotificationService;
 import org.nuxeo.ecm.platform.ec.notification.service.NotificationServiceHelper;
-import org.nuxeo.ecm.platform.ui.web.tag.fn.Functions;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.ecm.tokenauth.service.TokenAuthenticationService;
 import org.nuxeo.runtime.api.Framework;
@@ -116,29 +115,32 @@ public class PermissionGrantedNotificationListener implements PostCommitFilterin
                 I18NUtils.getMessageString("messages", LABEL_SUBJECT_NEW_PERMISSION, new Object[] { doc.getTitle() },
                         Locale.ENGLISH));
 
-        DirectoryService directoryService = Framework.getService(DirectoryService.class);
-        try (Session session = directoryService.open(ACE_INFO_DIRECTORY)) {
-            String id = PermissionHelper.computeDirectoryId(doc, aclName, ace.getId());
-            DocumentModel entry = session.getEntry(id);
-
-            OperationContext ctx = new OperationContext(coreSession);
+        try (OperationContext ctx = new OperationContext(coreSession)) {
             ctx.setInput(doc);
             ctx.put("ace", ace);
-            if (entry != null) {
-                String comment = (String) entry.getPropertyValue(ACE_INFO_COMMENT);
-                if (comment != null) {
-                    comment = StringEscapeUtils.escapeHtml(comment);
-                    comment = comment.replaceAll("\n", "<br/>");
-                    ctx.put("comment", comment);
+
+            Framework.doPrivileged(() -> {
+                DirectoryService directoryService = Framework.getService(DirectoryService.class);
+                try (Session session = directoryService.open(ACE_INFO_DIRECTORY)) {
+                    String id = PermissionHelper.computeDirectoryId(doc, aclName, ace.getId());
+                    DocumentModel entry = session.getEntry(id);
+                    if (entry != null) {
+                        String comment = (String) entry.getPropertyValue(ACE_INFO_COMMENT);
+                        if (comment != null) {
+                            comment = StringEscapeUtils.escapeHtml(comment);
+                            comment = comment.replaceAll("\n", "<br/>");
+                            ctx.put("comment", comment);
+                        }
+                    }
                 }
-            }
+            });
+
             String aceCreator = ace.getCreator();
             if (aceCreator != null) {
                 UserManager userManager = Framework.getService(UserManager.class);
                 NuxeoPrincipal creator = userManager.getPrincipal(aceCreator);
                 if (creator != null) {
-                    ctx.put("aceCreator",
-                            String.format("%s (%s)", Functions.principalFullName(creator), creator.getName()));
+                    ctx.put("aceCreator", String.format("%s (%s)", principalFullName(creator), creator.getName()));
                 }
             }
 
@@ -158,6 +160,29 @@ public class PermissionGrantedNotificationListener implements PostCommitFilterin
         } catch (OperationException e) {
             log.warn("Unable to notify user", e);
             log.debug(e, e);
+        }
+    }
+
+    // copied from org.nuxeo.ecm.platform.ui.web.tag.fn.Functions which lives in nuxeo-platform-ui-web
+    public static String principalFullName(NuxeoPrincipal principal) {
+        String first = principal.getFirstName();
+        String last = principal.getLastName();
+        return userDisplayName(principal.getName(), first, last);
+    }
+
+    public static String userDisplayName(String id, String first, String last) {
+        if (first == null || first.length() == 0) {
+            if (last == null || last.length() == 0) {
+                return id;
+            } else {
+                return last;
+            }
+        } else {
+            if (last == null || last.length() == 0) {
+                return first;
+            } else {
+                return first + ' ' + last;
+            }
         }
     }
 

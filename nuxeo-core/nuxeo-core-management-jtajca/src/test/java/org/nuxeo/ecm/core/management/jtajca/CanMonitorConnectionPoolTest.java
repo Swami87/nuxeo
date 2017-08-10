@@ -29,6 +29,8 @@ import javax.inject.Named;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.test.CoreFeature;
+import org.nuxeo.ecm.core.test.IgnoreNonPooledCondition;
+import org.nuxeo.runtime.test.runner.ConditionalIgnoreRule;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 
@@ -36,16 +38,13 @@ import org.nuxeo.runtime.test.runner.FeaturesRunner;
  * @author matic
  */
 @RunWith(FeaturesRunner.class)
-@Features(JtajcaManagementFeature.class)
+@Features({ JtajcaManagementFeature.class, CoreFeature.class })
+@ConditionalIgnoreRule.Ignore(condition = IgnoreNonPooledCondition.class)
 public class CanMonitorConnectionPoolTest {
 
     @Inject
     @Named("repository/test")
     protected ConnectionPoolMonitor repo;
-
-    @Inject
-    @Named("jdbc/repository_test")
-    protected ConnectionPoolMonitor db;
 
     @Inject
     protected FeaturesRunner featuresRunner;
@@ -55,12 +54,16 @@ public class CanMonitorConnectionPoolTest {
 
     @Test
     public void areMonitorsInstalled() {
+        ConnectionPoolMonitor db = JtajcaManagementFeature.getInstanceNamedWithPrefix(ConnectionPoolMonitor.class,
+                "jdbc/");
         isMonitorInstalled(repo);
         isMonitorInstalled(db);
     }
 
     @Test
     public void areConnectionsOpened() {
+        ConnectionPoolMonitor db = JtajcaManagementFeature.getInstanceNamedWithPrefix(ConnectionPoolMonitor.class,
+                "jdbc/");
         isConnectionOpened(repo);
         isConnectionOpened(db);
     }

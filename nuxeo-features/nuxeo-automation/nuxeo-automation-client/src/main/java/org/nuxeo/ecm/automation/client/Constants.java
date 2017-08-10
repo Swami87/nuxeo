@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,9 @@ public class Constants {
                                                                           // blobs
                                                                           // download
 
+    /** @since 8.4 */
+    public static final String CTYPE_MULTIPART_EMPTY = "application/nuxeo-empty-list"; // for empty blobs
+
     public static final String REQUEST_ACCEPT_HEADER = CTYPE_ENTITY + ", */*";
 
     public static final String CTYPE_REQUEST = "application/json+nxrequest; charset=UTF-8";
@@ -68,6 +71,7 @@ public class Constants {
      * operation input). In such situation you should set this header to true.
      */
     public static final String HEADER_NX_VOIDOP = "X-NXVoidOperation";
+
 
     private Constants() {
     }

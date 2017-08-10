@@ -20,6 +20,8 @@
 
 package org.nuxeo.wizard.context;
 
+import static org.apache.commons.lang.StringEscapeUtils.escapeHtml;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -87,9 +89,13 @@ public class ParamCollector {
     }
 
     public String getConfigurationParam(String name) {
+        return getConfigurationParam(name, "");
+    }
+
+    public String getConfigurationParam(String name, String defaultValue) {
         String param = configurationParams.get(name);
         if (param == null) {
-            param = configurationGenerator.getUserConfig().getProperty(name, "");
+            param = configurationGenerator.getUserConfig().getProperty(name, defaultValue);
         }
         return param;
     }
@@ -109,7 +115,7 @@ public class ParamCollector {
             if (name.startsWith("org.nuxeo.") || name.startsWith("nuxeo.") || name.startsWith("mail.")) {
                 String value = req.getParameter(name);
                 if (!value.isEmpty() || (value.isEmpty() && configurationParams.containsKey(name))) {
-                    addConfigurationParam(name, value);
+                    addConfigurationParam(name, escapeHtml(value));
                 }
             }
         }

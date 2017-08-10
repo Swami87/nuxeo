@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2007-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2007-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,9 +32,6 @@ import java.util.Set;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.NuxeoException;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
-import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.model.Extension;
@@ -50,6 +47,7 @@ import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
 import org.quartz.impl.StdSchedulerFactory;
+import org.quartz.impl.jdbcjobstore.LockException;
 import org.quartz.impl.matchers.GroupMatcher;
 
 /**
@@ -58,7 +56,7 @@ import org.quartz.impl.matchers.GroupMatcher;
  * Due the fact that all jobs are removed when service starts on a node it may be a short period with no schedules in
  * quartz table even other node is running.
  */
-public class SchedulerServiceImpl extends DefaultComponent implements SchedulerService, RuntimeServiceListener {
+public class SchedulerServiceImpl extends DefaultComponent implements SchedulerService {
 
     private static final Log log = LogFactory.getLog(SchedulerServiceImpl.class);
 
@@ -71,7 +69,7 @@ public class SchedulerServiceImpl extends DefaultComponent implements SchedulerS
     /**
      * @since 7.10
      */
-    private Map<String, JobKey> jobKeys = new HashMap<String, JobKey>();
+    private Map<String, JobKey> jobKeys = new HashMap<>();
 
     @Override
     public void activate(ComponentContext context) {
@@ -83,11 +81,8 @@ public class SchedulerServiceImpl extends DefaultComponent implements SchedulerS
         StdSchedulerFactory schedulerFactory = new StdSchedulerFactory();
         URL cfg = context.getResource("config/quartz.properties");
         if (cfg != null) {
-            InputStream stream = cfg.openStream();
-            try {
+            try (InputStream stream = cfg.openStream()) {
                 schedulerFactory.initialize(stream);
-            } finally {
-                stream.close();
             }
         } else {
             // use default config (unit tests)
@@ -113,9 +108,13 @@ public class SchedulerServiceImpl extends DefaultComponent implements SchedulerS
         // https://jira.nuxeo.com/browse/NXP-7303
         GroupMatcher<JobKey> matcher = GroupMatcher.jobGroupEquals("nuxeo");
         Set<JobKey> jobs = scheduler.getJobKeys(matcher);
-        scheduler.deleteJobs(new ArrayList<JobKey>(jobs));
-        for (Schedule each : registry.getSchedules()) {
-            registerSchedule(each);
+        try {
+            scheduler.deleteJobs(new ArrayList<>(jobs)); // raise a lock error in case of concurrencies
+            for (Schedule each : registry.getSchedules()) {
+                registerSchedule(each);
+            }
+        } catch (LockException cause) {
+            log.warn("scheduler already re-initializing, another cluster node concurrent startup ?", cause);
         }
         log.info("scheduler started");
     }
@@ -140,12 +139,20 @@ public class SchedulerServiceImpl extends DefaultComponent implements SchedulerS
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
-        Framework.addListener(this);
+    public void start(ComponentContext context) {
         try {
             setupScheduler();
         } catch (IOException | SchedulerException e) {
             throw new NuxeoException(e);
+        }
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        try {
+            scheduler.standby();
+        } catch (SchedulerException cause) {
+            log.error("Cannot put scheduler in stand by mode", cause);
         }
     }
 
@@ -262,15 +269,6 @@ public class SchedulerServiceImpl extends DefaultComponent implements SchedulerS
     @Override
     public boolean unregisterSchedule(Schedule schedule) {
         return unregisterSchedule(schedule.getId());
-    }
-
-    @Override
-    public void handleEvent(RuntimeServiceEvent event) {
-        if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-            return;
-        }
-        Framework.removeListener(this);
-        shutdownScheduler();
     }
 
 }

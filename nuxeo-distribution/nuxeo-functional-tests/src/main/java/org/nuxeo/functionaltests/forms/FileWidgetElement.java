@@ -21,6 +21,7 @@ package org.nuxeo.functionaltests.forms;
 import java.io.IOException;
 
 import org.nuxeo.functionaltests.AbstractTest;
+import org.nuxeo.functionaltests.Locator;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -65,10 +66,20 @@ public class FileWidgetElement extends AbstractWidgetElement {
 
     public void uploadTestFile(String prefix, String suffix, String content) throws IOException {
         String fileToUploadPath = AbstractTest.getTmpFileToUploadPath(prefix, suffix, content);
+        uploadFile(fileToUploadPath);
+    }
+
+    /**
+     * Uploads file with given path.
+     *
+     * @throws IOException
+     * @since 9.1
+     */
+    public void uploadFile(String filePath) throws IOException {
         WebElement upRadioButton = getSubElement("choiceupload");
-        upRadioButton.click();
+        Locator.waitUntilEnabledAndClick(upRadioButton);
         WebElement fileInput = getSubElement("upload");
-        fileInput.sendKeys(fileToUploadPath);
+        fileInput.sendKeys(filePath);
     }
 
     public void removeFile() {

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -151,6 +151,14 @@ public class DocumentService {
         return createDocument(parent, type, name, null);
     }
 
+    /**
+     * THIS METHOD IS PART OF PRIVATE API NOW, DON'T USE IT.
+     *
+     * @deprecated since 9.1 use {@link #createDocument(String, Document)} or
+     *             {@link #createDocument(DocRef, String, String)} instead as instances of {@link PropertyMap} is now
+     *             read-only.
+     */
+    @Deprecated
     public Document createDocument(DocRef parent, String type, String name, PropertyMap properties) throws IOException {
         OperationRequest req = session.newRequest(CreateDocument).setInput(parent).set("type", type).set("name", name);
         if (properties != null && !properties.isEmpty()) {
@@ -229,8 +237,11 @@ public class DocumentService {
 
     public Document setPermission(DocRef doc, String user, String permission, String acl, boolean granted)
             throws IOException {
-        OperationRequest req = session.newRequest(SetPermission).setInput(doc).set("user", user).set("permission",
-                permission).set("grant", granted);
+        OperationRequest req = session.newRequest(SetPermission)
+                                      .setInput(doc)
+                                      .set("user", user)
+                                      .set("permission", permission)
+                                      .set("grant", granted);
         if (acl != null) {
             req.set("acl", acl);
         }
@@ -278,9 +289,16 @@ public class DocumentService {
      * @return the document returned by the server
      */
     public Document update(Document document) throws IOException {
-        return update(new DocRef(document.getId()), document.getDirties());
+        return (Document) session.newRequest(UpdateDocument)
+                                 .setInput(document)
+                                 .set("properties", document.getDirties())
+                                 .execute();
     }
 
+    /**
+     * @deprecated since 9.1 use {@link #update(Document)} instead as instances of {@link PropertyMap} is now read-only.
+     */
+    @Deprecated
     public Document update(DocRef doc, PropertyMap properties) throws IOException {
         return (Document) session.newRequest(UpdateDocument).setInput(doc).set("properties", properties).execute();
     }
@@ -290,13 +308,19 @@ public class DocumentService {
     }
 
     public Document publish(DocRef doc, DocRef section, boolean override) throws IOException {
-        return (Document) session.newRequest(PublishDocument).setInput(doc).set("target", section).set("override",
-                override).execute();
+        return (Document) session.newRequest(PublishDocument)
+                                 .setInput(doc)
+                                 .set("target", section)
+                                 .set("override", override)
+                                 .execute();
     }
 
     public Document createRelation(DocRef subject, String predicate, DocRef object) throws IOException {
-        return (Document) session.newRequest(CreateRelation).setInput(subject).set("object", object).set("predicate",
-                predicate).execute();
+        return (Document) session.newRequest(CreateRelation)
+                                 .setInput(subject)
+                                 .set("object", object)
+                                 .set("predicate", predicate)
+                                 .execute();
     }
 
     public Documents getRelations(DocRef doc, String predicate) throws IOException {
@@ -304,16 +328,23 @@ public class DocumentService {
     }
 
     public Documents getRelations(DocRef doc, String predicate, boolean outgoing) throws IOException {
-        return (Documents) session.newRequest(GetRelations).setInput(doc).set("predicate", predicate).set("outgoing",
-                outgoing).execute();
+        return (Documents) session.newRequest(GetRelations)
+                                  .setInput(doc)
+                                  .set("predicate", predicate)
+                                  .set("outgoing", outgoing)
+                                  .execute();
     }
 
     /**
      * @since 5.5
      */
     public Documents getRelations(DocRef doc, String predicate, boolean outgoing, String graphName) throws IOException {
-        return (Documents) session.newRequest(GetRelations).setInput(doc).set("predicate", predicate).set("outgoing",
-                outgoing).set("graphName", graphName).execute();
+        return (Documents) session.newRequest(GetRelations)
+                                  .setInput(doc)
+                                  .set("predicate", predicate)
+                                  .set("outgoing", outgoing)
+                                  .set("graphName", graphName)
+                                  .execute();
     }
 
     public void setBlob(DocRef doc, Blob blob) throws IOException {

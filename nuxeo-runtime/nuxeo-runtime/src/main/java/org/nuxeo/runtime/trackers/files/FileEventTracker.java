@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import org.apache.commons.io.FileDeleteStrategy;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.xmap.annotation.XObject;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
@@ -55,7 +53,7 @@ public class FileEventTracker extends DefaultComponent {
 
     static class SafeFileDeleteStrategy extends FileDeleteStrategy {
 
-        protected CopyOnWriteArrayList<String> protectedPaths = new CopyOnWriteArrayList<String>();
+        protected CopyOnWriteArrayList<String> protectedPaths = new CopyOnWriteArrayList<>();
 
         protected SafeFileDeleteStrategy() {
             super("DoNotTouchNuxeoBinaries");
@@ -113,7 +111,7 @@ public class FileEventTracker extends DefaultComponent {
 
         protected final Thread owner = Thread.currentThread();
 
-        protected final Set<File> files = new HashSet<File>();
+        protected final Set<File> files = new HashSet<>();
 
         protected ThreadDelegate(boolean isLongRunning) {
             this.isLongRunning = isLongRunning;
@@ -179,24 +177,12 @@ public class FileEventTracker extends DefaultComponent {
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         resetThreadDelegate();
-        Framework.addListener(new RuntimeServiceListener() {
-
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-                    return;
-                }
-                Framework.removeListener(this);
-                setThreadDelegate(false);
-            }
-        });
     }
 
     @Override
     public void deactivate(ComponentContext context) {
-        resetThreadDelegate();
         if (Framework.getService(EventService.class) != null) {
             if (threadsListener.isInstalled()) {
                 threadsListener.uninstall();
@@ -235,7 +221,7 @@ public class FileEventTracker extends DefaultComponent {
     protected void resetThreadDelegate() throws IllegalStateException {
         ThreadDelegate actual = threads.get();
         if (actual == null) {
-            throw new IllegalStateException("Thread delegate not installed");
+            return;
         }
         try {
             for (File file : actual.files) {

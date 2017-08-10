@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,15 @@ package org.nuxeo.ecm.automation.client.jaxrs.spi;
 
 import static org.nuxeo.ecm.automation.client.Constants.CTYPE_AUTOMATION;
 import static org.nuxeo.ecm.automation.client.Constants.CTYPE_ENTITY;
+import static org.nuxeo.ecm.automation.client.Constants.CTYPE_MULTIPART_EMPTY;
 import static org.nuxeo.ecm.automation.client.Constants.CTYPE_MULTIPART_MIXED;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,6 +36,7 @@ import java.util.regex.Pattern;
 import javax.mail.BodyPart;
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMultipart;
+import javax.ws.rs.core.Response;
 
 import org.nuxeo.ecm.automation.client.RemoteException;
 import org.nuxeo.ecm.automation.client.jaxrs.spi.marshallers.ExceptionMarshaller;
@@ -52,6 +56,9 @@ public class Request extends HashMap<String, String> {
     public static final int POST = 1;
 
     private static final long serialVersionUID = 1L;
+
+    protected static Pattern RFC2231_ATTR_PATTERN = Pattern.compile(
+            ";?\\s*filename\\s*\\\\*.*\\*=([^']*)'([^']*)'\\s*([^;]+)\\s*", Pattern.CASE_INSENSITIVE);
 
     protected static Pattern ATTR_PATTERN = Pattern.compile(";?\\s*filename\\s*=\\s*([^;]+)\\s*",
             Pattern.CASE_INSENSITIVE);
@@ -112,13 +119,29 @@ public class Request extends HashMap<String, String> {
      * Must read the object from the server response and return it or throw a {@link RemoteException} if server sent an
      * error.
      */
-    public Object handleResult(int status, String ctype, String disp, InputStream stream) throws RemoteException,
-            IOException {
-        if (status == 204) { // no content
-            return null;
-        } else if (status >= 400) {
+    public Object handleResult(int status, String ctype, String disp, InputStream stream)
+            throws RemoteException, IOException {
+        // Specific http status handling
+        if (status >= Response.Status.BAD_REQUEST.getStatusCode()) {
             handleException(status, ctype, stream);
+        } else if (status == Response.Status.NO_CONTENT.getStatusCode() || stream == null) {
+            if (ctype != null && ctype.toLowerCase().startsWith(CTYPE_MULTIPART_EMPTY)) {
+                // empty entity and content type of nuxeo empty list
+                return new Blobs();
+            }
+            // no content
+            return null;
         }
+        // Check content type
+        if (ctype == null) {
+            if (status != Response.Status.OK.getStatusCode()) {
+                // this may happen when login failed
+                throw new RemoteException(status, "ServerError", "Server Error", "");
+            }
+            // cannot handle responses with no content type
+            return null;
+        }
+        // Handle result
         String lctype = ctype.toLowerCase();
         if (lctype.startsWith(CTYPE_ENTITY)) {
             return JsonMarshalling.readEntity(IOUtils.read(stream));
@@ -140,8 +163,7 @@ public class Request extends HashMap<String, String> {
         Blobs files = new Blobs();
         // save the stream to a temporary file
         File file = IOUtils.copyToTempFile(in);
-        FileInputStream fin = new FileInputStream(file);
-        try {
+        try (FileInputStream fin = new FileInputStream(file)) {
             MimeMultipart mp = new MimeMultipart(new InputStreamDataSource(fin, ctype));
             int size = mp.getCount();
             for (int i = 0; i < size; i++) {
@@ -152,10 +174,6 @@ public class Request extends HashMap<String, String> {
         } catch (MessagingException e) {
             throw new IOException(e);
         } finally {
-            try {
-                fin.close();
-            } catch (IOException e) {
-            }
             file.delete();
         }
         return files;
@@ -172,7 +190,15 @@ public class Request extends HashMap<String, String> {
     }
 
     protected static String getFileName(String ctype) {
-        Matcher m = ATTR_PATTERN.matcher(ctype);
+        Matcher m = RFC2231_ATTR_PATTERN.matcher(ctype);
+        if (m.find()) {
+            try {
+                return URLDecoder.decode(m.group(3), m.group(1));
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        m = ATTR_PATTERN.matcher(ctype);
         if (m.find()) {
             return m.group(1);
         }
@@ -180,9 +206,11 @@ public class Request extends HashMap<String, String> {
     }
 
     protected void handleException(int status, String ctype, InputStream stream) throws RemoteException, IOException {
-        if (CTYPE_ENTITY.equalsIgnoreCase(ctype)) {
+        if (stream == null) {
+            throw new RemoteException(status, "ServerError", "Server Error", "");
+        } else if (CTYPE_ENTITY.equalsIgnoreCase(ctype)) {
             String content = IOUtils.read(stream);
-            RemoteException e = null;
+            RemoteException e;
             try {
                 e = ExceptionMarshaller.readException(content);
             } catch (IOException t) {

@@ -22,6 +22,7 @@ package org.nuxeo.ecm.automation.core.operations.services;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +33,6 @@ import javax.el.ValueExpression;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.jboss.el.lang.FunctionMapperImpl;
-import org.jboss.seam.el.EL;
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.ecm.automation.core.Constants;
@@ -51,12 +50,16 @@ import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.core.api.impl.SimpleDocumentModel;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.query.sql.NXQL;
-import org.nuxeo.ecm.platform.actions.seam.SeamActionContext;
+import org.nuxeo.ecm.platform.actions.ActionContext;
+import org.nuxeo.ecm.platform.actions.ELActionContext;
+import org.nuxeo.ecm.platform.el.ELService;
 import org.nuxeo.ecm.platform.query.api.PageProvider;
 import org.nuxeo.ecm.platform.query.api.PageProviderDefinition;
 import org.nuxeo.ecm.platform.query.api.PageProviderService;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
 import org.nuxeo.ecm.platform.query.core.CoreQueryPageProviderDescriptor;
 import org.nuxeo.ecm.platform.query.nxql.CoreQueryDocumentPageProvider;
+import org.nuxeo.runtime.api.Framework;
 
 /**
  * Operation to execute a query or a named provider with support for Pagination.
@@ -107,6 +110,7 @@ public class DocumentPageProviderOperation {
     @Param(name = "language", required = false, widget = Constants.W_OPTION, values = { NXQL.NXQL })
     protected String lang = NXQL.NXQL;
 
+    /** @deprecated since 6.0 use currentPageIndex instead. */
     @Param(name = "page", required = false)
     @Deprecated
     protected Integer page;
@@ -164,9 +168,21 @@ public class DocumentPageProviderOperation {
     /**
      * @since 6.0
      */
-    @Param(name = "sortOrder", required = false, description = "Sort order, " + "ASC or DESC", widget = Constants.W_OPTION, values = {
-            ASC, DESC })
+    @Param(name = "sortOrder", required = false, description = "Sort order, "
+            + "ASC or DESC", widget = Constants.W_OPTION, values = { ASC, DESC })
     protected String sortOrder;
+
+    /**
+     * @since 8.4
+     */
+    @Param(name = "quickFilters", required = false, description = "Quick filter " + "properties (separated by comma)")
+    protected String quickFilters;
+
+    /**
+     * @since 9.1
+     */
+    @Param(name = "highlights", required = false, description = "Highlight properties (separated by comma)")
+    protected String highlight;
 
     @SuppressWarnings("unchecked")
     @OperationMethod
@@ -196,7 +212,8 @@ public class DocumentPageProviderOperation {
                 }
                 for (int i = 0; i < sorts.length; i++) {
                     String sort = sorts[i];
-                    boolean sortAscending = (orders != null && orders.length > i && "asc".equals(orders[i].toLowerCase()));
+                    boolean sortAscending = (orders != null && orders.length > i
+                            && "asc".equals(orders[i].toLowerCase()));
                     sortInfos.add(new SortInfo(sort, sortAscending));
                 }
             }
@@ -237,6 +254,12 @@ public class DocumentPageProviderOperation {
             targetPageSize = pageSize.longValue();
         }
 
+        List<String> targetHighlights = null;
+        if (highlight != null) {
+            String[] highlights = highlight.split(",");
+            targetHighlights = Arrays.asList(highlights);
+        }
+
         DocumentModel searchDocumentModel = getSearchDocumentModel(session, ppService, providerName, namedParameters);
 
         PaginableDocumentModelListImpl res;
@@ -250,12 +273,30 @@ public class DocumentPageProviderOperation {
                 desc.getProperties().put("maxResults", maxResults);
             }
             PageProvider<DocumentModel> pp = (PageProvider<DocumentModel>) ppService.getPageProvider("", desc,
-                    searchDocumentModel, sortInfos, targetPageSize, targetPage, props, parameters);
+                    searchDocumentModel, sortInfos, targetPageSize, targetPage, props, targetHighlights, null,
+                    parameters);
             res = new PaginableDocumentModelListImpl(pp, documentLinkBuilder);
         } else {
+            PageProviderDefinition pageProviderDefinition = ppService.getPageProviderDefinition(providerName);
+            // Quick filters management
+            List<QuickFilter> quickFilterList = new ArrayList<>();
+            if (quickFilters != null && !quickFilters.isEmpty()) {
+                String[] filters = quickFilters.split(",");
+                List<QuickFilter> ppQuickFilters = pageProviderDefinition.getQuickFilters();
+                for (String filter : filters) {
+                    for (QuickFilter quickFilter : ppQuickFilters) {
+                        if (quickFilter.getName().equals(filter)) {
+                            quickFilterList.add(quickFilter);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            parameters = resolveParameters(parameters);
             PageProvider<DocumentModel> pp = (PageProvider<DocumentModel>) ppService.getPageProvider(providerName,
-                    searchDocumentModel, sortInfos, targetPageSize, targetPage, props,
-                    context.containsKey("seamActionContext") ? getParameters(providerName, parameters) : parameters);
+                    searchDocumentModel, sortInfos, targetPageSize, targetPage, props, targetHighlights,
+                    quickFilterList, parameters);
             res = new PaginableDocumentModelListImpl(pp, documentLinkBuilder);
         }
         if (res.hasError()) {
@@ -267,29 +308,34 @@ public class DocumentPageProviderOperation {
     /**
      * Resolves additional parameters that could have been defined in the contribution.
      *
-     * @param pageProviderName name of the Page Provider
-     * @param givenParameters parameters from the operation
+     * @param parameters parameters from the operation
      * @since 5.8
      */
-    private Object[] getParameters(final String pageProviderName, final Object[] givenParameters) {
+    private Object[] resolveParameters(Object[] parameters) {
+        ActionContext actionContext = (ActionContext) context.get(GetActions.SEAM_ACTION_CONTEXT);
+        if (actionContext == null) {
+            // if no Seam Context has been initialized, don't do evaluation
+            return parameters;
+        }
+
         // resolve additional parameters
-        PageProviderDefinition ppDef = ppService.getPageProviderDefinition(pageProviderName);
+        PageProviderDefinition ppDef = ppService.getPageProviderDefinition(providerName);
         String[] params = ppDef.getQueryParameters();
         if (params == null) {
             params = new String[0];
         }
 
-        Object[] resolvedParams = new Object[params.length + (givenParameters != null ? givenParameters.length : 0)];
+        Object[] resolvedParams = new Object[params.length + (parameters != null ? parameters.length : 0)];
 
-        ELContext elContext = EL.createELContext(SeamActionContext.EL_RESOLVER, new FunctionMapperImpl());
+        ELContext elContext = Framework.getService(ELService.class).createELContext();
 
         int i = 0;
-        if (givenParameters != null) {
-            i = givenParameters.length;
-            System.arraycopy(givenParameters, 0, resolvedParams, 0, i);
+        if (parameters != null) {
+            i = parameters.length;
+            System.arraycopy(parameters, 0, resolvedParams, 0, i);
         }
         for (int j = 0; j < params.length; j++) {
-            ValueExpression ve = SeamActionContext.EXPRESSION_FACTORY.createValueExpression(elContext, params[j],
+            ValueExpression ve = ELActionContext.EXPRESSION_FACTORY.createValueExpression(elContext, params[j],
                     Object.class);
             resolvedParams[i + j] = ve.getValue(elContext);
         }

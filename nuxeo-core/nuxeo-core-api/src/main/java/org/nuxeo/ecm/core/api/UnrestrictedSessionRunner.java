@@ -90,7 +90,7 @@ public abstract class UnrestrictedSessionRunner {
         session = null;
         sessionIsAlreadyUnrestricted = false;
         this.repositoryName = repositoryName;
-        this.originatingUsername = originatingUser;
+        originatingUsername = originatingUser;
     }
 
     public String getOriginatingUsername() {
@@ -126,36 +126,13 @@ public abstract class UnrestrictedSessionRunner {
             }
             try {
                 CoreSession baseSession = session;
-                if (baseSession != null && !baseSession.isStateSharedByAllThreadSessions()) {
-                    // save base session state for unrestricted one
-                    baseSession.save();
-                }
                 session = CoreInstance.openCoreSession(repositoryName);
-                if (loginContext == null && Framework.isTestModeSet()) {
-                    NuxeoPrincipal principal = (NuxeoPrincipal) session.getPrincipal();
-                    if (principal instanceof SystemPrincipal) {
-                        // we are in a test that is not using authentication
-                        // =>
-                        // we're not stacking the originating user in the
-                        // authentication stack
-                        // so we're setting manually now
-                        principal.setOriginatingUser(originatingUsername);
-                    }
-                }
                 try {
                     run();
                 } finally {
                     try {
-                        if (!session.isStateSharedByAllThreadSessions()) {
-                            // save unrestricted state for base session
-                            session.save();
-                        }
                         session.close();
                     } finally {
-                        if (baseSession != null && !baseSession.isStateSharedByAllThreadSessions()) {
-                            // process invalidations from unrestricted session
-                            baseSession.save();
-                        }
                         session = baseSession;
                     }
                 }

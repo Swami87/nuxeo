@@ -19,19 +19,21 @@
  */
 package org.nuxeo.ecm.platform.query.core;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 import org.nuxeo.common.xmap.annotation.XNode;
 import org.nuxeo.common.xmap.annotation.XNodeList;
 import org.nuxeo.common.xmap.annotation.XNodeMap;
 import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.platform.query.api.AggregateDefinition;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
 import org.nuxeo.ecm.platform.query.api.WhereClauseDefinition;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Base class for page provider descriptors.
@@ -93,6 +95,12 @@ public abstract class BasePageProviderDescriptor {
     @XNode("searchDocumentType")
     protected String searchDocumentType;
 
+    /**
+     * @since 8.4
+     */
+    @XNodeList(value = "quickFilters/quickFilter", componentType = QuickFilterDescriptor.class, type = ArrayList.class)
+    protected List<QuickFilterDescriptor> quickFilters;
+
     @XNode("pattern")
     public void setPattern(String pattern) {
         // remove new lines and following spaces
@@ -143,6 +151,13 @@ public abstract class BasePageProviderDescriptor {
     public WhereClauseDefinition getWhereClause() {
         return whereClause;
     }
+
+    /**
+     * @since 8.4
+     */
+    public List<QuickFilter> getQuickFilters() {
+        return (List<QuickFilter>) (List<?>) quickFilters;
+    };
 
     public boolean isSortable() {
         return sortable;
@@ -274,6 +289,12 @@ public abstract class BasePageProviderDescriptor {
         if (whereClause != null) {
             clone.whereClause = whereClause.clone();
         }
+        if (quickFilters != null) {
+            clone.quickFilters = new ArrayList<QuickFilterDescriptor>();
+            for (QuickFilterDescriptor quickFilter : quickFilters) {
+                clone.quickFilters.add(quickFilter.clone());
+            }
+        }
         if (aggregates != null) {
             clone.aggregates = new ArrayList<AggregateDescriptor>();
             for (AggregateDescriptor agg : aggregates) {
@@ -281,11 +302,10 @@ public abstract class BasePageProviderDescriptor {
             }
         }
         clone.searchDocumentType = searchDocumentType;
-        clone.trackUsage=trackUsage;
+        clone.trackUsage = trackUsage;
         return clone;
     }
 
     protected abstract BasePageProviderDescriptor newInstance();
-
 
 }

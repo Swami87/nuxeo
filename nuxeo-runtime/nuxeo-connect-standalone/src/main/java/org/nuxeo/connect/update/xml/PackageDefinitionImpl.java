@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,17 @@
  * limitations under the License.
  *
  * Contributors:
- *     bstefanescu, jcarsique
+ *     bstefanescu
+ *     jcarsique
+ *     Yannis JULIENNE
  */
 package org.nuxeo.connect.update.xml;
 
+import org.apache.commons.lang.mutable.MutableObject;
 import org.nuxeo.common.xmap.annotation.XNode;
 import org.nuxeo.common.xmap.annotation.XNodeList;
 import org.nuxeo.common.xmap.annotation.XObject;
+import org.nuxeo.connect.data.PackageDescriptor;
 import org.nuxeo.connect.update.NuxeoValidationState;
 import org.nuxeo.connect.update.PackageDependency;
 import org.nuxeo.connect.update.PackageState;
@@ -94,7 +98,6 @@ public class PackageDefinitionImpl implements PackageDefinition {
     /**
      * The target platforms where this package may be installed.
      */
-    @XNodeList(value = "platforms/platform", type = String[].class, componentType = String.class)
     protected String[] platforms;
 
     /**
@@ -103,6 +106,13 @@ public class PackageDefinitionImpl implements PackageDefinition {
      */
     @XNodeList(value = "dependencies/package", type = PackageDependency[].class, componentType = PackageDependency.class)
     protected PackageDependency[] dependencies;
+
+    /**
+     * The optional dependencies are defined for ordering purpose, to make sure that if they are being installed along
+     * with the current package, they will be ordered first.
+     */
+    @XNodeList(value = "optional-dependencies/package", type = PackageDependency[].class, componentType = PackageDependency.class)
+    protected PackageDependency[] optionalDependencies;
 
     /**
      * The conflict value format is: <code>package_name[:package_min_version[:package_max_version]]</code> if no min and
@@ -169,6 +179,7 @@ public class PackageDefinitionImpl implements PackageDefinition {
     @Override
     public void setName(String name) {
         this.name = name;
+        dependencies = PackageDescriptor.fixDependencies(name, dependencies);
     }
 
     @Override
@@ -280,9 +291,12 @@ public class PackageDefinitionImpl implements PackageDefinition {
         setTargetPlatforms(platforms);
     }
 
+    @XNodeList(value = "platforms/platform", type = String[].class, componentType = String.class)
     @Override
     public void setTargetPlatforms(String[] platforms) {
-        this.platforms = platforms;
+        MutableObject packageDependencies = new MutableObject();
+        this.platforms = PackageDescriptor.fixTargetPlatforms(name, platforms, packageDependencies);
+        setDependencies((PackageDependency[]) packageDependencies.getValue());
     }
 
     @Override
@@ -291,8 +305,13 @@ public class PackageDefinitionImpl implements PackageDefinition {
     }
 
     @Override
+    public PackageDependency[] getOptionalDependencies() {
+        return optionalDependencies;
+    }
+
+    @Override
     public void setDependencies(PackageDependency[] dependencies) {
-        this.dependencies = dependencies;
+        this.dependencies = PackageDescriptor.addPackageDependencies(this.dependencies, dependencies);
     }
 
     @Override

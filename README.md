@@ -1,10 +1,9 @@
 
 | Nuxeo QA Job | Status | 
 |-----|--------|
-| Build & Unit tests | [![Build Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=nuxeo-master)](http://qa.nuxeo.org/jenkins/job/nuxeo-master)|
-| Selenium functional testing | [![Test Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=FT-nuxeo-master-selenium-cap-tomcat)](http://qa.nuxeo.org/jenkins/job/FT-nuxeo-master-selenium-cap-tomcat)
-| WebDrive functional testing | [![Test Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=FT-nuxeo-master-webdriver-cap-tomcat)](http://qa.nuxeo.org/jenkins/job/FT-nuxeo-master-webdriver-cap-tomcat)
-|Funkload tests with multi-DB |[![Test Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=FT-nuxeo-master-funkload-cap-tomcat-multidb)](http://qa.nuxeo.org/jenkins/job/FT-nuxeo-master-funkload-cap-tomcat-multidb)
+| Build & Unit tests | [![Build Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=master/nuxeo-master)](https://qa.nuxeo.org/jenkins/job/master/job/nuxeo-master)|
+| WebDriver functional testing | [![Test Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=master/FT-nuxeo-master-webdriver-cap-tomcat)](https://qa.nuxeo.org/jenkins/job/master/job/FT-nuxeo-master-webdriver-cap-tomcat)
+|Funkload tests with multi-DB |[![Test Status](https://qa.nuxeo.org/jenkins/buildStatus/icon?job=master/FT-nuxeo-master-funkload-cap-tomcat-multidb)](https://qa.nuxeo.org/jenkins/job/master/job/FT-nuxeo-master-funkload-cap-tomcat-multidb)
 
 
 # About the Nuxeo Platform
@@ -31,7 +30,7 @@ Services related to the theme and theme rendering
 * **nuxeo-jsf**:
 JSF related services
 * **nuxeo-webengine**:
-Services and framework related to WebEngine, the Nuxeo lighweight rendering engine
+Services and framework related to WebEngine, the Nuxeo lightweight rendering engine
 * **nuxeo-features**:
 Advanced high-level services, such as audit, imaging, publisher, thumbnails, search
 * **nuxeo-dm**:
@@ -40,6 +39,9 @@ The default Nuxeo Platform application, mostly configuration and UI elements
 This module builds, packages and tests the Nuxeo products.
 
 # Building
+
+Open Nuxeo in [Eclipse Che](https://www.eclipse.org/che/):  
+[![Open in Eclipse Che](http://beta.codenvy.com/factory/resources/codenvy-contribute.svg)](https://beta.codenvy.com/f?id=r3pbh9wv7tjvbws7)
 
 ## Requirements
 
@@ -56,7 +58,7 @@ Building the Nuxeo Platform requires the following tools:
 
 # QA
 
-Each module includes unit and integration tests. Functional tests are available in nuxeo-distribution and for each addon Marketplace module.
+Each module includes unit and integration tests. Functional tests are available in nuxeo-distribution and for each addon package module.
 
 We also provide some tooling for tests:
 
@@ -90,6 +92,10 @@ The documentation for the Nuxeo Platform is available in our [Documentation Cent
 * User documentation: [http://doc.nuxeo.com/x/6ICo](http://doc.nuxeo.com/x/6ICo)
 * Core Developer Guide: [http://doc.nuxeo.com/x/B4BH](http://doc.nuxeo.com/x/B4BH)
 
+## Benchmarks
+
+The Nuxeo Platform is [benchmarked continuously](https://benchmarks.nuxeo.com/) to test its massive scalability on several databases.
+
 ## QA results
 
 Follow the status of the Nuxeo Platform continuous integration build on our QA platform: [https://qa.nuxeo.org/jenkins](https://qa.nuxeo.org/jenkins)
@@ -102,12 +108,12 @@ You can report issues on [answers.nuxeo.com](http://answers.nuxeo.com).
 
 # Licensing
 
-Most of the source code in the Nuxeo Platform is copyright Nuxeo SA and
-contributors, and licensed under the GNU Lesser General Public License v2.1.
+Most of the source code in the Nuxeo Platform is copyright Nuxeo and
+contributors, and licensed under the Apache License, Version 2.0.
 
 See [/licenses](/licenses) and the documentation page [Licenses](http://doc.nuxeo.com/x/gIK7) for details.
 
 # About Nuxeo
 
-Nuxeo dramatically improves how content-based applications are built, managed and deployed, making customers more agile, innovative and successful. Nuxeo provides a next generation, enterprise ready platform for building traditional and cutting-edge content oriented applications. Combining a powerful application development environment with SaaS-based tools and a modular architecture, the Nuxeo Platform and Products provide clear business value to some of the most recognizable brands including Verizon, Electronic Arts, Netflix, Sharp, FICO, the U.S. Navy, and Boeing. Nuxeo is headquartered in New York and Paris. More information is available at [www.nuxeo.com](http://www.nuxeo.com).
+Nuxeo dramatically improves how content-based applications are built, managed and deployed, making customers more agile, innovative and successful. Nuxeo provides a next generation, enterprise ready platform for building traditional and cutting-edge content oriented applications. Combining a powerful application development environment with SaaS-based tools and a modular architecture, the Nuxeo Platform and Products provide clear business value to some of the most recognizable brands including Verizon, Electronic Arts, Sharp, FICO, the U.S. Navy, and Boeing. Nuxeo is headquartered in New York and Paris. More information is available at [www.nuxeo.com](http://www.nuxeo.com).
 

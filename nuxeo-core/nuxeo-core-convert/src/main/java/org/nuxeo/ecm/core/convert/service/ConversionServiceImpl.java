@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,36 @@
  * limitations under the License.
  *
  * Contributors:
+ *     Tiry
  *     Florent Guillaume
+ *     Estelle Giuly <egiuly@nuxeo.com>
  */
-
 package org.nuxeo.ecm.core.convert.service;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.Serializable;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.ws.rs.core.MediaType;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
+import org.nuxeo.ecm.core.api.blobholder.SimpleBlobHolder;
+import org.nuxeo.ecm.core.api.impl.blob.StringBlob;
 import org.nuxeo.ecm.core.convert.api.ConversionException;
 import org.nuxeo.ecm.core.convert.api.ConversionService;
 import org.nuxeo.ecm.core.convert.api.ConversionStatus;
@@ -45,6 +58,7 @@ import org.nuxeo.ecm.core.convert.extension.Converter;
 import org.nuxeo.ecm.core.convert.extension.ConverterDescriptor;
 import org.nuxeo.ecm.core.convert.extension.ExternalConverter;
 import org.nuxeo.ecm.core.convert.extension.GlobalConfigDescriptor;
+import org.nuxeo.ecm.core.io.download.DownloadService;
 import org.nuxeo.ecm.core.transientstore.work.TransientStoreWork;
 import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkManager;
@@ -57,8 +71,6 @@ import org.nuxeo.runtime.model.DefaultComponent;
 
 /**
  * Runtime Component that also provides the POJO implementation of the {@link ConversionService}.
- *
- * @author tiry
  */
 public class ConversionServiceImpl extends DefaultComponent implements ConversionService {
 
@@ -78,11 +90,14 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
 
     protected Thread gcThread;
 
+    protected GCTask gcTask;
+
     @Override
     public void activate(ComponentContext context) {
         converterDescriptors.clear();
         translationHelper.clear();
         self = this;
+        config.clearCachingDirectory();
     }
 
     @Override
@@ -107,6 +122,7 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
         } else if (CONFIG_EP.equals(extensionPoint)) {
             GlobalConfigDescriptor desc = (GlobalConfigDescriptor) contribution;
             config.update(desc);
+            config.clearCachingDirectory();
         } else {
             log.error("Unable to handle unknown extensionPoint " + extensionPoint);
         }
@@ -176,12 +192,113 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
     }
 
     @Override
+    @Deprecated
+    public Blob convertBlobToPDF(Blob blob) throws IOException {
+        return convertThroughHTML(new SimpleBlobHolder(blob), MimetypeRegistry.PDF_MIMETYPE).getBlob();
+    }
+
+    protected BlobHolder convertThroughHTML(BlobHolder blobHolder, String destMimeType) {
+        Blob blob = blobHolder.getBlob();
+        String mimetype = blob.getMimeType();
+        String filename = blob.getFilename();
+        if (destMimeType.equals(mimetype)) {
+            return blobHolder;
+        }
+
+        Path tempDirectory = null;
+        // Convert the blob to HTML
+        if (!MediaType.TEXT_HTML.equals(mimetype)) {
+            blobHolder = convertBlobToMimeType(blobHolder, MediaType.TEXT_HTML);
+        }
+        try {
+            tempDirectory = Framework.createTempDirectory("blobs");
+            // Replace the image URLs by absolute paths
+            DownloadService downloadService = Framework.getService(DownloadService.class);
+            blobHolder.setBlob(
+                    replaceURLsByAbsolutePaths(blob, tempDirectory, downloadService::resolveBlobFromDownloadUrl));
+            // Convert the blob to the destination mimetype
+            blobHolder = convertBlobToMimeType(blobHolder, destMimeType);
+            adjustBlobName(filename, blobHolder, destMimeType);
+        } catch (IOException e) {
+            throw new ConversionException(e);
+        } finally {
+            if (tempDirectory != null) {
+                org.apache.commons.io.FileUtils.deleteQuietly(tempDirectory.toFile());
+            }
+        }
+        return blobHolder;
+    }
+
+    protected BlobHolder convertBlobToMimeType(BlobHolder bh, String destinationMimeType) {
+        return convertToMimeType(destinationMimeType, bh, Collections.emptyMap());
+    }
+
+    protected void adjustBlobName(String filename, BlobHolder blobHolder, String mimeType) {
+        Blob blob = blobHolder.getBlob();
+        adjustBlobName(filename, blob, mimeType);
+        blobHolder.setBlob(blob);
+    }
+
+    protected void adjustBlobName(String filename, Blob blob, String mimeType) {
+        if (StringUtils.isBlank(filename)) {
+            filename = "file_" + System.currentTimeMillis();
+        } else {
+            filename = FilenameUtils.removeExtension(FilenameUtils.getName(filename));
+        }
+        String extension = Framework.getService(MimetypeRegistry.class)
+                                    .getExtensionsFromMimetypeName(mimeType)
+                                    .stream()
+                                    .findFirst()
+                                    .orElse("bin");
+        blob.setFilename(filename + "." + extension);
+        blob.setMimeType(mimeType);
+    }
+
+    /**
+     * Replace the image URLs of an HTML blob by absolute local paths.
+     *
+     * @throws IOException
+     * @since 9.1
+     */
+    protected static Blob replaceURLsByAbsolutePaths(Blob blob, Path tempDirectory, Function<String, Blob> blobResolver)
+            throws IOException {
+        String initialBlobContent = blob.getString();
+        // Find images links in the blob
+        Pattern pattern = Pattern.compile("(src=([\"']))(.*?)(\\2)");
+        Matcher matcher = pattern.matcher(initialBlobContent);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            // Retrieve the image from the URL
+            String url = matcher.group(3);
+            Blob imageBlob = blobResolver.apply(url);
+            if (imageBlob == null) {
+                break;
+            }
+            // Export the image to a temporary directory in File System
+            String safeFilename = FileUtils.getSafeFilename(imageBlob.getFilename());
+            File imageFile = tempDirectory.resolve(safeFilename).toFile();
+            imageBlob.transferTo(imageFile);
+            // Replace the image URL by its absolute local path
+            matcher.appendReplacement(sb, "$1" + Matcher.quoteReplacement(imageFile.toPath().toString()) + "$4");
+        }
+        matcher.appendTail(sb);
+        String blobContentWithAbsolutePaths = sb.toString();
+        if (blobContentWithAbsolutePaths.equals(initialBlobContent)) {
+            return blob;
+        }
+        // Create a new blob with the new content
+        Blob newBlob = new StringBlob(blobContentWithAbsolutePaths, blob.getMimeType(), blob.getEncoding());
+        newBlob.setFilename(blob.getFilename());
+        return newBlob;
+    }
+
+    @Override
     public BlobHolder convert(String converterName, BlobHolder blobHolder, Map<String, Serializable> parameters)
             throws ConversionException {
 
         // set parameters if null to avoid NPE in converters
         if (parameters == null) {
-            parameters = new HashMap<String, Serializable>();
+            parameters = new HashMap<>();
         }
 
         // exist if not registered
@@ -207,6 +324,9 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
             if (config.isCacheEnabled()) {
                 ConversionCacheHolder.addToCache(cacheKey, result);
             }
+        } else {
+            // we need to reset the filename if result came from cache because it's just a hash
+            result.getBlob().setFilename(null);
         }
 
         if (result != null) {
@@ -260,13 +380,15 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
     @Override
     public BlobHolder convertToMimeType(String destinationMimeType, BlobHolder blobHolder,
             Map<String, Serializable> parameters) throws ConversionException {
-        String srcMt = blobHolder.getBlob().getMimeType();
-        String converterName = translationHelper.getConverterName(srcMt, destinationMimeType);
+        String srcMimeType = blobHolder.getBlob().getMimeType();
+        String converterName = translationHelper.getConverterName(srcMimeType, destinationMimeType);
         if (converterName == null) {
-            throw new ConversionException("Cannot find converter from type " + srcMt + " to type "
-                    + destinationMimeType);
+            // Use a chain of 2 converters which will first try to go through HTML,
+            // then HTML to the destination mimetype
+            return convertThroughHTML(blobHolder, destinationMimeType);
+        } else {
+            return convert(converterName, blobHolder, parameters);
         }
-        return convert(converterName, blobHolder, parameters);
     }
 
     @Override
@@ -339,11 +461,12 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
     }
 
     @Override
-    public String scheduleConversion(String converterName, BlobHolder blobHolder, Map<String, Serializable> parameters) {
+    public String scheduleConversion(String converterName, BlobHolder blobHolder,
+            Map<String, Serializable> parameters) {
         WorkManager workManager = Framework.getService(WorkManager.class);
         ConversionWork work = new ConversionWork(converterName, null, blobHolder, parameters);
         workManager.schedule(work);
-        return work.getEntryKey();
+        return work.getId();
     }
 
     @Override
@@ -352,7 +475,7 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
         WorkManager workManager = Framework.getService(WorkManager.class);
         ConversionWork work = new ConversionWork(null, destinationMimeType, blobHolder, parameters);
         workManager.schedule(work);
-        return work.getEntryKey();
+        return work.getId();
     }
 
     @Override
@@ -360,7 +483,8 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
         WorkManager workManager = Framework.getService(WorkManager.class);
         Work.State workState = workManager.getWorkState(id);
         if (workState == null) {
-            if (TransientStoreWork.containsBlobHolder(id)) {
+            String entryKey = TransientStoreWork.computeEntryKey(id);
+            if (TransientStoreWork.containsBlobHolder(entryKey)) {
                 return new ConversionStatus(id, ConversionStatus.Status.COMPLETED);
             }
             return null;
@@ -371,9 +495,10 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
 
     @Override
     public BlobHolder getConversionResult(String id, boolean cleanTransientStoreEntry) {
-        BlobHolder bh = TransientStoreWork.getBlobHolder(id);
+        String entryKey = TransientStoreWork.computeEntryKey(id);
+        BlobHolder bh = TransientStoreWork.getBlobHolder(entryKey);
         if (cleanTransientStoreEntry) {
-            TransientStoreWork.removeBlobHolder(id);
+            TransientStoreWork.removeBlobHolder(entryKey);
         }
         return bh;
     }
@@ -387,13 +512,19 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         startGC();
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        endGC();
     }
 
     protected void startGC() {
         log.debug("CasheCGTaskActivator activated starting GC thread");
-        gcThread = new Thread(new GCTask(), "Nuxeo-Convert-GC");
+        gcTask = new GCTask();
+        gcThread = new Thread(gcTask, "Nuxeo-Convert-GC");
         gcThread.setDaemon(true);
         gcThread.start();
         log.debug("GC Thread started");
@@ -401,7 +532,12 @@ public class ConversionServiceImpl extends DefaultComponent implements Conversio
     }
 
     public void endGC() {
+        if (gcTask == null) {
+            return;
+        }
         log.debug("Stopping GC Thread");
+        gcTask.GCEnabled = false;
+        gcTask = null;
         gcThread.interrupt();
         gcThread = null;
     }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public interface PageProviderService extends Serializable {
      *
      * @since 7.1
      */
-    public static final String NAMED_PARAMETERS = "namedParameters";
+    String NAMED_PARAMETERS = "namedParameters";
 
     /**
      * Returns a named page provider definition.
@@ -50,18 +50,6 @@ public interface PageProviderService extends Serializable {
      * @return the page provider definition or null, if no page provider with this name was found.
      */
     PageProviderDefinition getPageProviderDefinition(String name);
-
-    /**
-     * Returns an instance of a page provider with given name and definition.
-     *
-     * @since 5.4
-     * @deprecated since 5.7: use
-     *             {@link #getPageProvider(String, PageProviderDefinition, DocumentModel, List, Long, Long, Map, Object...)}
-     *             with search document model as additional parameter
-     */
-    @Deprecated
-    PageProvider<?> getPageProvider(String name, PageProviderDefinition desc, List<SortInfo> sortInfos, Long pageSize,
-            Long currentPage, Map<String, Serializable> properties, Object... parameters);
 
     /**
      * Returns an instance of page provider with given name and definition.
@@ -110,6 +98,101 @@ public interface PageProviderService extends Serializable {
      */
     PageProvider<?> getPageProvider(String name, DocumentModel searchDocument, List<SortInfo> sortInfos, Long pageSize,
             Long currentPage, Map<String, Serializable> properties, Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @see #getPageProvider(String, DocumentModel, List, Long, Long, Map, Object...)
+     * @since 8.4
+     */
+    PageProvider<?> getPageProvider(String name, DocumentModel searchDocument, List<SortInfo> sortInfos, Long pageSize,
+            Long currentPage, Map<String, Serializable> properties, List<QuickFilter> quickFilters,
+            Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @see #getPageProvider(String, PageProviderDefinition, DocumentModel, List, Long, Long, Map, Object...)
+     * @since 8.4
+     */
+    PageProvider<?> getPageProvider(String name, PageProviderDefinition desc, DocumentModel searchDocument,
+            List<SortInfo> sortInfos, Long pageSize, Long currentPage, Map<String, Serializable> properties,
+            List<QuickFilter> quickFilters, Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @see #getPageProvider(String, List, Long, Long, Map, Object...)
+     * @since 9.1
+     */
+    PageProvider<?> getPageProvider(String name, List<SortInfo> sortInfos, Long pageSize, Long currentPage,
+            Map<String, Serializable> properties, List<String> highlights, List<QuickFilter> quickFilters,
+            Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @see #getPageProvider(String, DocumentModel, List, Long, Long, Map, Object...)
+     * @since 9.1
+     */
+    PageProvider<?> getPageProvider(String name, DocumentModel searchDocument, List<SortInfo> sortInfos, Long pageSize,
+            Long currentPage, Map<String, Serializable> properties, List<String> highlights,
+            List<QuickFilter> quickFilters, Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @param name the name that will be set on the provider.
+     * @param searchDocument the search document to be used by the provider.
+     * @param sortInfos sort information to set on the provider instance.
+     * @param pageSize the provider page size.
+     * @param currentPage the provider current page index. Ignored if currentOffset set.
+     * @param currentOffset the provider current offset.
+     * @param properties the provider properties.
+     * @param highlights list of the fields to be highlighted.
+     * @param quickFilters list of the quickFilters to be applied.
+     * @param parameters the provider parameters.
+     * @return the page provider instance.
+     * @since 9.3
+     */
+    PageProvider<?> getPageProvider(String name, DocumentModel searchDocument, List<SortInfo> sortInfos, Long pageSize,
+            Long currentPage, Long currentOffset, Map<String, Serializable> properties, List<String> highlights,
+            List<QuickFilter> quickFilters, Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name.
+     *
+     * @see #getPageProvider(String, PageProviderDefinition, DocumentModel, List, Long, Long, Map, Object...)
+     * @since 9.1
+     */
+    PageProvider<?> getPageProvider(String name, PageProviderDefinition desc, DocumentModel searchDocument,
+            List<SortInfo> sortInfos, Long pageSize, Long currentPage, Map<String, Serializable> properties,
+            List<String> highlights, List<QuickFilter> quickFilters, Object... parameters);
+
+    /**
+     * Returns an instance of page provider with given name and definition.
+     * <p>
+     * If not null, parameters sortInfos and pageSize will override information computed in the XML file. If not null,
+     * currentPage will override default current page (0).
+     *
+     * @param name the name that will be set on the provider.
+     * @param desc the definition used to build the provider instance.
+     * @param searchDocument the search document to be used by the provider.
+     * @param sortInfos sort information to set on the provider instance.
+     * @param pageSize the provider page size.
+     * @param currentPage the provider current page index. Ignored if currentOffset set.
+     * @param currentOffset the provider current page offset.
+     * @param properties the provider properties.
+     * @param highlights list of the fields to be highlighted.
+     * @param quickFilters list of the quickFilters to be applied.
+     * @param parameters the provider parameters.
+     * @return the page provider instance.
+     * @since 9.3
+     */
+    PageProvider<?> getPageProvider(String name, PageProviderDefinition desc, DocumentModel searchDocument,
+            List<SortInfo> sortInfos, Long pageSize, Long currentPage, Long currentOffset,
+            Map<String, Serializable> properties, List<String> highlights, List<QuickFilter> quickFilters,
+            Object... parameters);
 
     /**
      * @since 6.0

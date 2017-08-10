@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.sql.XAConnection;
-import javax.sql.XADataSource;
 import javax.transaction.xa.XAResource;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.utils.JDBCUtils;
 import org.nuxeo.ecm.core.api.ConcurrentUpdateException;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.storage.sql.Mapper.Identification;
@@ -62,21 +59,12 @@ public class JDBCConnection {
     /** The dialect. */
     protected final Dialect dialect;
 
-    /** The xa datasource. */
-    protected final XADataSource xadatasource;
-
-    /** The xa pooled connection. */
-    private XAConnection xaconnection;
-
     /** The actual connection. */
     public Connection connection;
 
     protected boolean supportsBatchUpdates;
 
     protected XAResource xaresource = new XAResourceConnectionAdapter(this);
-
-    /** Whether this connection must never be shared (long-lived). */
-    protected final boolean noSharing;
 
     // for tests
     public boolean countExecutes;
@@ -100,13 +88,11 @@ public class JDBCConnection {
      *
      * @param model the model
      * @param sqlInfo the sql info
-     * @param xadatasource the XA datasource to use to get connections
+     * @param noSharing whether to use no-sharing mode for the connection
      */
-    public JDBCConnection(Model model, SQLInfo sqlInfo, XADataSource xadatasource, boolean noSharing) {
+    public JDBCConnection(Model model, SQLInfo sqlInfo) {
         this.model = model;
         this.sqlInfo = sqlInfo;
-        this.xadatasource = xadatasource;
-        this.noSharing = noSharing;
         dialect = sqlInfo.dialect;
         setClientInfo = Boolean.parseBoolean(Framework.getProperty(SET_CLIENT_INFO_PROP, SET_CLIENT_INFO_DEFAULT));
     }
@@ -117,9 +103,7 @@ public class JDBCConnection {
      * @since 5.9.3
      */
     public JDBCConnection() {
-        xadatasource = null;
         sqlInfo = null;
-        noSharing = false;
         model = null;
         dialect = null;
     }
@@ -138,9 +122,18 @@ public class JDBCConnection {
         }
     }
 
-    protected void openConnections() {
+    /**
+     * Gets the datasource to use for the given repository.
+     *
+     * @since 8.4
+     */
+    public static String getDataSourceName(String repositoryName) {
+        return "repository_" + repositoryName;
+    }
+
+    protected void openConnections(boolean noSharing) {
         try {
-            openBaseConnection();
+            openBaseConnection(noSharing);
             supportsBatchUpdates = connection.getMetaData().supportsBatchUpdates();
             dialect.performPostOpenStatements(connection);
         } catch (SQLException cause) {
@@ -148,19 +141,9 @@ public class JDBCConnection {
         }
     }
 
-    protected void openBaseConnection() throws SQLException {
-        // try single-datasource non-XA mode
-        String dataSourceName = ConnectionHelper.getPseudoDataSourceNameForRepository(getRepositoryName());
+    protected void openBaseConnection(boolean noSharing) throws SQLException {
+        String dataSourceName = getDataSourceName(getRepositoryName());
         connection = ConnectionHelper.getConnection(dataSourceName, noSharing);
-        if (connection == null) {
-            // standard XA mode
-            xaconnection = JDBCUtils.getXAConnection(xadatasource);
-            connection = xaconnection.getConnection();
-            xaresource = xaconnection.getXAResource();
-        } else {
-            // single-datasource non-XA mode
-            xaconnection = null;
-        }
         if (setClientInfo) {
             // log the mapper number (m=123)
             connection.setClientInfo(APPLICATION_NAME, "nuxeo m=" + instanceNumber);
@@ -188,15 +171,6 @@ public class JDBCConnection {
                 connection = null;
             }
         }
-        if (xaconnection != null) {
-            try {
-                xaconnection.close();
-            } catch (SQLException e) {
-                log.error(e, e);
-            } finally {
-                xaconnection = null;
-            }
-        }
     }
 
     /**
@@ -208,31 +182,6 @@ public class JDBCConnection {
     protected void checkConcurrentUpdate(Throwable e) throws ConcurrentUpdateException {
         if (dialect.isConcurrentUpdateException(e)) {
             throw new ConcurrentUpdateException(e);
-        }
-    }
-
-    protected void closeStatement(Statement s) throws SQLException {
-        try {
-            if (s != null) {
-                s.close();
-            }
-        } catch (IllegalArgumentException e) {
-            // ignore
-            // http://bugs.mysql.com/35489 with JDBC 4 and driver <= 5.1.6
-        }
-    }
-
-    protected void closeStatement(Statement s, ResultSet r) throws SQLException {
-        try {
-            if (r != null) {
-                r.close();
-            }
-            if (s != null) {
-                s.close();
-            }
-        } catch (IllegalArgumentException e) {
-            // ignore
-            // http://bugs.mysql.com/35489 with JDBC 4 and driver <= 5.1.6
         }
     }
 

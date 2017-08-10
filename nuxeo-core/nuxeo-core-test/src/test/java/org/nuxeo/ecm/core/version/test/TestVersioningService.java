@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,99 +20,15 @@ package org.nuxeo.ecm.core.version.test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.List;
-
-import javax.inject.Inject;
-
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.nuxeo.common.collections.ScopeType;
-import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.VersioningOption;
-import org.nuxeo.ecm.core.api.facet.VersioningDocument;
-import org.nuxeo.ecm.core.event.EventService;
-import org.nuxeo.ecm.core.test.CoreFeature;
-import org.nuxeo.ecm.core.test.annotations.Granularity;
-import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
-import org.nuxeo.ecm.core.versioning.CompatVersioningService;
-import org.nuxeo.ecm.core.versioning.VersioningComponent;
 import org.nuxeo.ecm.core.versioning.VersioningService;
-import org.nuxeo.runtime.test.runner.Features;
-import org.nuxeo.runtime.test.runner.FeaturesRunner;
-import org.nuxeo.runtime.test.runner.LocalDeploy;
-import org.nuxeo.runtime.transaction.TransactionHelper;
 
-@RunWith(FeaturesRunner.class)
-@Features(CoreFeature.class)
-@RepositoryConfig(cleanup = Granularity.METHOD)
-public class TestVersioningService {
-
-    @Inject
-    protected CoreFeature coreFeature;
-
-    @Inject
-    protected VersioningService service;
-
-    @Inject
-    protected EventService eventService;
-
-    @Inject
-    protected CoreSession session;
-
-    protected void maybeSleepToNextSecond() {
-        coreFeature.getStorageConfiguration().maybeSleepToNextSecond();
-    }
-
-    protected void waitForAsyncCompletion() {
-        nextTransaction();
-        eventService.waitForAsyncCompletion();
-    }
-
-    protected void nextTransaction() {
-        if (TransactionHelper.isTransactionActiveOrMarkedRollback()) {
-            TransactionHelper.commitOrRollbackTransaction();
-            TransactionHelper.startTransaction();
-        }
-    }
-
-    protected long getMajor(DocumentModel doc) {
-        return getVersion(doc, VersioningService.MAJOR_VERSION_PROP);
-    }
-
-    protected long getMinor(DocumentModel doc) {
-        return getVersion(doc, VersioningService.MINOR_VERSION_PROP);
-    }
-
-    protected long getVersion(DocumentModel doc, String prop) {
-        Object propVal = doc.getPropertyValue(prop);
-        if (propVal == null || !(propVal instanceof Long)) {
-            return -1;
-        } else {
-            return ((Long) propVal).longValue();
-        }
-    }
-
-    protected void assertVersion(String expected, DocumentModel doc) throws Exception {
-        assertEquals(expected, getMajor(doc) + "." + getMinor(doc));
-    }
-
-    protected void assertLatestVersion(String expected, DocumentModel doc) throws Exception {
-        DocumentModel ver = doc.getCoreSession().getLastDocumentVersion(doc.getRef());
-        if (ver == null) {
-            assertNull(expected);
-        } else {
-            assertVersion(expected, ver);
-        }
-    }
-
-    protected void assertVersionLabel(String expected, DocumentModel doc) {
-        assertEquals(expected, service.getVersionLabel(doc));
-    }
+public class TestVersioningService extends AbstractTestVersioning {
 
     @Test
     public void testStandardVersioning() throws Exception {
@@ -229,118 +145,6 @@ public class TestVersioningService {
         assertVersion("1.3", doc);
         assertVersionLabel("1.3", doc);
         assertLatestVersion("1.3", doc);
-    }
-
-    @SuppressWarnings("deprecation")
-    @Test
-    @LocalDeploy("org.nuxeo.ecm.core.test.tests:test-versioningservice-contrib.xml")
-    public void testOldNuxeoVersioning() throws Exception {
-        ((VersioningComponent) service).service = new CompatVersioningService();
-
-        DocumentModel folder = session.createDocumentModel("/", "folder", "Folder");
-        folder = session.createDocument(folder);
-        DocumentModel doc = session.createDocumentModel("/", "testfile1", "File");
-        doc = session.createDocument(doc);
-        doc.setPropertyValue("dc:title", "A");
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        DocumentRef docRef = doc.getRef();
-        assertTrue(doc.isCheckedOut());
-        assertVersion("1.0", doc);
-        assertLatestVersion(null, doc);
-
-        // snapshot A=1.0 and save B
-        doc.setPropertyValue("dc:title", "B");
-        doc.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MINOR);
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("1.1", doc);
-        assertLatestVersion("1.0", doc);
-
-        // another snapshot for B=1.1, using major inc
-        doc.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MAJOR);
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("2.0", doc);
-        assertLatestVersion("1.1", doc);
-        DocumentModel v11 = session.getLastDocumentVersion(docRef);
-        assertVersion("1.1", v11);
-
-        // another snapshot but no increment doesn't change anything, doc is
-        // clean
-        doc.putContextData(ScopeType.REQUEST, VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY, Boolean.TRUE);
-        doc = session.saveDocument(doc);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("2.0", doc);
-        assertLatestVersion("1.1", doc);
-
-        // now dirty doc and snapshot+inc
-        doc.setPropertyValue("dc:title", "C");
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        doc.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MINOR);
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("2.1", doc);
-        assertLatestVersion("2.0", doc);
-
-        // another save+inc, no snapshot
-        doc.setPropertyValue("dc:title", "D");
-        doc.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MAJOR);
-        maybeSleepToNextSecond();
-        doc = session.saveDocument(doc);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("3.0", doc);
-        assertLatestVersion("2.1", doc);
-
-        // checkin/checkout (old style)
-        maybeSleepToNextSecond();
-        session.checkIn(docRef, null);
-        session.checkOut(docRef);
-        doc = session.getDocument(docRef);
-        assertTrue(doc.isCheckedOut());
-        assertVersion("3.1", doc);
-        assertLatestVersion("3.0", doc);
-
-        // wait before doing a restore
-        session.save();
-        waitForAsyncCompletion();
-
-        // restore 1.1 -> 3.2 (snapshots 3.1)
-        maybeSleepToNextSecond();
-        doc = session.restoreToVersion(docRef, v11.getRef());
-        assertFalse(doc.isCheckedOut());
-        assertVersion("1.1", doc);
-        assertVersionLabel("1.1", doc);
-        assertLatestVersion("3.1", doc);
-
-        // checkout restored version
-        doc.checkOut();
-        assertTrue(doc.isCheckedOut());
-        assertVersion("3.2", doc);
-        assertVersionLabel("3.2", doc);
-        assertLatestVersion("3.1", doc);
-    }
-
-    @Test
-    @LocalDeploy("org.nuxeo.ecm.core.test.tests:test-versioning-nooptions.xml")
-    public void testNoOptions() throws Exception {
-        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
-        doc = session.createDocument(doc);
-
-        // no options according to config
-        List<VersioningOption> opts = service.getSaveOptions(doc);
-        assertEquals(0, opts.size());
-
-        doc.setPropertyValue("dc:title", "A");
-        doc = session.saveDocument(doc);
-
-        assertVersion("0.0", doc);
-        assertVersionLabel("0.0", doc);
-        assertLatestVersion(null, doc);
     }
 
     @Test

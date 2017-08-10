@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,19 +37,19 @@ public class PropertyMap implements Serializable {
     protected final LinkedHashMap<String, Object> map;
 
     public PropertyMap() {
-        map = new LinkedHashMap<String, Object>();
+        map = new LinkedHashMap<>();
     }
 
     public PropertyMap(PropertyMap props) {
-        map = new LinkedHashMap<String, Object>(props.map);
+        map = new LinkedHashMap<>(props.map);
     }
 
     public PropertyMap(Map<String, Object> map) {
-        this.map = new LinkedHashMap<String, Object>(map);
+        this.map = new LinkedHashMap<>(map);
     }
 
     public PropertyMap(int size) {
-        map = new LinkedHashMap<String, Object>(size);
+        map = new LinkedHashMap<>(size);
     }
 
     public String getString(String key) {
@@ -122,83 +122,6 @@ public class PropertyMap implements Serializable {
 
     public boolean isEmpty() {
         return map.isEmpty();
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, String)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, String value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value);
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, Boolean)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, Boolean value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value.toString());
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, Long)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, Long value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value.toString());
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, Double)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, Double value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value.toString());
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, java.util.Date)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, Date value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, DateUtils.formatDate(value));
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, PropertyList)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, PropertyList value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value);
-    }
-
-    /**
-     * @deprecated since 5.7. Use {@link Document#set(String, PropertyMap)} to inject data.
-     */
-    @Deprecated
-    public void set(String key, PropertyMap value) {
-        if (value == null) {
-            map.remove(key);
-        }
-        map.put(key, value);
     }
 
     public Map<String, Object> map() {

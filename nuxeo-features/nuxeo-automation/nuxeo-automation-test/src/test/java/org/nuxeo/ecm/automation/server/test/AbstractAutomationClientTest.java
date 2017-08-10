@@ -34,17 +34,19 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import javax.inject.Inject;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.client.Constants;
 import org.nuxeo.ecm.automation.client.RemoteException;
 import org.nuxeo.ecm.automation.client.RemoteThrowable;
@@ -108,8 +110,8 @@ public abstract class AbstractAutomationClientTest {
     }
 
     protected File newFile(String content) throws IOException {
-        File file = Framework.createTempFile("automation-test-", ".xml");
-        FileUtils.writeFile(file, content);
+        File file = Framework.createTempFile("automation-test-\u00e9\u00e1\u00f2-", ".xml");
+        FileUtils.writeStringToFile(file, content);
         return file;
     }
 
@@ -265,6 +267,64 @@ public abstract class AbstractAutomationClientTest {
     }
 
     @Test
+    public void testUpdateDocumentWithChangeToken() throws Exception {
+        // create a doc
+        Document doc = (Document) session.newRequest(CreateDocument.ID)
+                                         .setInput(automationTestFolder)
+                                         .set("type", "Note")
+                                         .set("name", "note1")
+                                         .set("properties", "dc:title=Note1")
+                                         .execute();
+        String docPath = "/automation-test-folder/note1";
+
+        // we have a change token
+        String changeToken = doc.getChangeToken();
+        assertNotNull(changeToken);
+
+        // update with previous change token
+        doc = (Document) session.newRequest(UpdateDocument.ID)
+                                .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
+                                .setInput(new DocRef(docPath))
+                                .set("changeToken", changeToken)
+                                .set("properties", "dc:title=Update 1")
+                                .execute();
+        assertEquals("Update 1", doc.getString("dc:title"));
+
+        // update by simulating a system change in between (depends on change token internals)
+        changeToken = doc.getChangeToken();
+        String[] parts = changeToken.split("-");
+        String newChangeToken = (Long.parseLong(parts[0]) - 1) + "-" + parts[1];
+        doc = (Document) session.newRequest(UpdateDocument.ID)
+                                .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
+                                .setInput(new DocRef(docPath))
+                                .set("changeToken", newChangeToken)
+                                .set("properties", "dc:title=Update 2")
+                                .execute();
+        assertEquals("Update 2", doc.getString("dc:title"));
+
+        // failing update by passing an old/invalid change token
+        try {
+            session.newRequest(UpdateDocument.ID)
+                   .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
+                   .setInput(new DocRef(docPath))
+                   .set("changeToken", "9999-1234") // old/invalid change token
+                   .set("properties", "dc:title=Update 3")
+                   .execute();
+            fail("should have failed with 409");
+        } catch (RemoteException e) {
+            assertEquals(409, e.getStatus());
+        }
+
+        // re-fetch
+        doc = (Document) session.newRequest(FetchDocument.ID)
+                                .set("value", docPath)
+                                .execute();
+
+        // check that the doc was not updated due to invalid change token
+        assertEquals("Update 2", doc.getString("dc:title"));
+    }
+
+    @Test
     public void testNullProperties() throws Exception {
         Document note = (Document) session.newRequest(CreateDocument.ID)
                                           .setInput(automationTestFolder)
@@ -316,7 +376,8 @@ public abstract class AbstractAutomationClientTest {
         assertEquals(2, docs.size());
         String title1 = docs.get(0).getTitle();
         String title2 = docs.get(1).getTitle();
-        assertTrue(title1.equals("Note1") && title2.equals("Note2") || title1.equals("Note2") && title2.equals("Note1"));
+        assertTrue(
+                title1.equals("Note1") && title2.equals("Note2") || title1.equals("Note2") && title2.equals("Note1"));
 
         // now get children of /testQuery
         docs = (Documents) session.newRequest(GetDocumentChildren.ID).setInput(folder).execute();
@@ -324,7 +385,8 @@ public abstract class AbstractAutomationClientTest {
 
         title1 = docs.get(0).getTitle();
         title2 = docs.get(1).getTitle();
-        assertTrue(title1.equals("Note1") && title2.equals("Note2") || title1.equals("Note2") && title2.equals("Note1"));
+        assertTrue(
+                title1.equals("Note1") && title2.equals("Note2") || title1.equals("Note2") && title2.equals("Note1"));
 
     }
 
@@ -430,6 +492,7 @@ public abstract class AbstractAutomationClientTest {
      * Test blobs input / output
      */
     @Test
+    @Ignore("NXP-22652")
     public void testGetBlobs() throws Exception {
         // create a note
         Document note = (Document) session.newRequest(CreateDocument.ID)
@@ -614,10 +677,10 @@ public abstract class AbstractAutomationClientTest {
 
     @Test
     public void testSetArrayProperty() throws Exception {
-        PropertyMap props = new PropertyMap();
-        props.set("dc:title", "My Test Folder");
-        props.set("dc:description", "test");
-        props.set("dc:subjects", "art,sciences,biology");
+        Map<String, Object> props = new HashMap<>();
+        props.put("dc:title", "My Test Folder");
+        props.put("dc:description", "test");
+        props.put("dc:subjects", "art,sciences,biology");
         Document folder = (Document) session.newRequest(CreateDocument.ID)
                                             .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
                                             .setInput(automationTestFolder)
@@ -653,7 +716,7 @@ public abstract class AbstractAutomationClientTest {
                                      .set("value", "/")
                                      .setHeader(Constants.HEADER_NX_SCHEMAS, "common")
                                      .execute();
-            assertEquals(4, root.getProperties().size());
+            assertEquals(3, root.getProperties().size());
 
             // reset
             session.setDefaultSchemas(null);
@@ -724,6 +787,27 @@ public abstract class AbstractAutomationClientTest {
                                    .execute();
 
         assertEquals(folder.getTitle(), title);
+    }
+
+    /*
+     * NXP-19835
+     */
+    @Test
+    public void testGetEmptyBlobsList() throws Exception {
+        // create a file
+        Document file = (Document) session.newRequest(CreateDocument.ID)
+                                          .setInput(automationTestFolder)
+                                          .set("type", "File")
+                                          .set("name", "blobs")
+                                          .set("properties", "dc:title=Blobs Test")
+                                          .execute();
+
+        // Get blobs
+        Blobs blobs = (Blobs) session.newRequest(GetDocumentBlobs.ID)
+                                     .setInput(file)
+                                     .execute();
+        assertNotNull(blobs);
+        assertTrue(blobs.isEmpty());
     }
 
 }

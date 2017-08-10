@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -63,14 +64,14 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
 
     int timeout;
 
-    int size;
+    int bulksize;
 
     Thread thread;
 
     DefaultAuditBulker(AuditBackend backend, AuditBulkerDescriptor config) {
         this.backend = backend;
         timeout = config.timeout;
-        size = config.size;
+        bulksize = config.size;
     }
 
     @Override
@@ -85,7 +86,7 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
     }
 
     @Override
-    public void onShutdown() {
+    public void onApplicationStopped() {
         registry.remove(MetricRegistry.name("nuxeo", "audit", "size"));
         ResourcePublisher publisher = Framework.getService(ResourcePublisher.class);
         if (publisher != null) {
@@ -98,6 +99,8 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
             thread = null;
         }
     }
+
+    final AtomicInteger size = new AtomicInteger(0);
 
     final ReentrantLock lock = new ReentrantLock();
 
@@ -116,7 +119,8 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
         }
         queue.add(entry);
         queuedCount.inc();
-        if (queue.size() >= size) {
+
+        if (size.incrementAndGet() >= bulksize) {
             lock.lock();
             try {
                 isFilled.signalAll();
@@ -128,9 +132,6 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
 
     @Override
     public boolean await(long time, TimeUnit unit) throws InterruptedException {
-        if (queue.isEmpty()) {
-            return true;
-        }
         lock.lock();
         try {
             isFilled.signalAll();
@@ -146,16 +147,10 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
             entries.add(queue.remove());
         }
         backend.addLogEntries(entries);
-        drainedCount.inc(entries.size());
-        if (queue.isEmpty()) {
-            lock.lock();
-            try {
-                isEmpty.signalAll();
-            } finally {
-                lock.unlock();
-            }
-        }
-        return entries.size();
+        int delta = entries.size();
+        size.addAndGet(-delta);
+        drainedCount.inc(delta);
+        return delta;
     }
 
     class Consumer implements Runnable {
@@ -170,19 +165,16 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
                     if (queue.isEmpty()) {
                         continue;
                     }
-                } catch (InterruptedException cause) {
-                    Thread.currentThread().interrupt();
-                    return;
-                } finally {
-                    lock.unlock();
-                }
-                try {
                     int count = drain();
                     if (log.isDebugEnabled()) {
                         log.debug("flushed " + count + " events");
                     }
-                } catch (RuntimeException cause) {
-                    log.error("caught error while draining audit queue", cause);
+                } catch (InterruptedException cause) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } finally {
+                    isEmpty.signalAll();
+                    lock.unlock();
                 }
             }
             log.info("bulk audit logger stopped");
@@ -202,12 +194,12 @@ public class DefaultAuditBulker implements AuditBulkerMBean, AuditBulker {
 
     @Override
     public int getBulkSize() {
-        return size;
+        return bulksize;
     }
 
     @Override
     public void setBulkSize(int value) {
-        size = value;
+        bulksize = value;
     }
 
     @Override

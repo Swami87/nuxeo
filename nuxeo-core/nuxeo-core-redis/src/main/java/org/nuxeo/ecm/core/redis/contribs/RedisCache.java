@@ -26,6 +26,8 @@ import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -103,12 +105,26 @@ public class RedisCache extends AbstractCache {
 
     }
 
+    @Override
+    public Set<String> keySet() {
+        return executor.execute(new RedisCallable<Set<String>>() {
+            @Override
+            public Set<String> call(Jedis jedis) {
+                int offset = namespace.length();
+                return jedis.keys(formatKey("*"))
+                            .stream()
+                            .map(key -> key.substring(offset))
+                            .collect(Collectors.toSet());
+            }
+        });
+    }
+
     protected byte[] serializeValue(Serializable value) throws IOException {
         ByteArrayOutputStream baout = new ByteArrayOutputStream();
-        ObjectOutputStream out = new ObjectOutputStream(baout);
-        out.writeObject(value);
-        out.flush();
-        out.close();
+        try (ObjectOutputStream out = new ObjectOutputStream(baout)) {
+            out.writeObject(value);
+            out.flush();
+        }
         return baout.toByteArray();
     }
 
@@ -149,12 +165,20 @@ public class RedisCache extends AbstractCache {
 
     @Override
     public boolean hasEntry(final String key) {
-        return (Boolean) executor.execute(new RedisCallable<Serializable>() {
+        return executor.<Boolean>execute(new RedisCallable<Boolean>() {
             @Override
-            public Serializable call(Jedis jedis) {
+            public Boolean call(Jedis jedis) {
                 return jedis.exists(bytes(formatKey(key)));
             }
-        });
+        }).booleanValue();
     }
 
+    /**
+     * Too expensive to evaluate the # keys redis side, should monitor redis itself
+     * @return -1L
+     */
+    @Override
+    public long getSize() {
+        return -1L;
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,29 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.deployment.preprocessor.install.commands;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
 import org.nuxeo.common.utils.FileNamePattern;
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.runtime.deployment.preprocessor.install.Command;
 import org.nuxeo.runtime.deployment.preprocessor.install.CommandContext;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
@@ -63,23 +70,29 @@ public class AppendCommand implements Command {
         File dstFile = new File(baseDir, ctx.expandVars(dst.toString()));
 
         if (pattern == null && !srcFile.exists()) {
-            throw new FileNotFoundException("Could not find the file " + srcFile.getAbsolutePath() + " to append.");
+            throw new FileNotFoundException("Could not find the file " + srcFile.getAbsolutePath()
+                    + " to append to ' when deploying bundle '" + ctx.get("bundle") + "'.");
         }
 
         if (!dstFile.isFile()) {
             try {
+                File parent = dstFile.getParentFile();
+                if (!parent.isDirectory()) {
+                    parent.mkdirs();
+                }
                 dstFile.createNewFile();
             } catch (IOException e) {
-                throw new IOException("Could not create " + dstFile, e);
+                throw new IOException(
+                        "Could not create '" + dstFile + "' when deploying bundle '" + ctx.get("bundle") + "'.", e);
             }
         }
         if (pattern == null) {
-            FileUtils.append(srcFile, dstFile, addNewLine);
+            append(srcFile, dstFile, addNewLine);
         } else {
             ArrayList<File> files = new ArrayList<File>();
             FileUtils.collectFiles(srcFile, pattern, files);
             for (File file : files) {
-                FileUtils.append(file, dstFile);
+                append(file, dstFile, false);
             }
         }
     }
@@ -94,4 +107,25 @@ public class AppendCommand implements Command {
         return "append " + ctx.expandVars(src.toString()) + " > " + ctx.expandVars(dst.toString());
     }
 
+    private void append(File srcFile, File dstFile, boolean appendNewLine) throws IOException {
+        String srcExt = FileUtils.getFileExtension(srcFile.getName());
+        String dstExt = FileUtils.getFileExtension(dstFile.getName());
+        boolean isDstEmpty = dstFile.length() == 0; // file empty or doesn't exists
+        if (!isDstEmpty && StringUtils.equalsIgnoreCase(srcExt, dstExt) && "json".equalsIgnoreCase(srcExt)) {
+            // merge the json
+            ObjectMapper m = new ObjectMapper();
+            ObjectNode destNode = m.readValue(dstFile, ObjectNode.class);
+            ObjectNode srcNode = m.readValue(srcFile, ObjectNode.class);
+            destNode.setAll(srcNode);
+            m.writeValue(dstFile, destNode);
+        } else {
+            try (InputStream in = new FileInputStream(srcFile);
+                    OutputStream out = new BufferedOutputStream(new FileOutputStream(dstFile, true))) {
+                if (appendNewLine) {
+                    out.write(System.getProperty("line.separator").getBytes());
+                }
+                IOUtils.copy(in, out);
+            }
+        }
+    }
 }

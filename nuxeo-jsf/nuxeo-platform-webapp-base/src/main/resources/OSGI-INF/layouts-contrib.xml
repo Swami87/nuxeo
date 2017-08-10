@@ -186,6 +186,25 @@
       </fields>
     </widget>
 
+    <widget name="select2_closeOnSelect" type="text">
+      <categories>
+        <category>widgetTypeConf</category>
+      </categories>
+      <labels>
+        <label mode="any">Select2 closeOnSelect</label>
+      </labels>
+      <helpLabels>
+        <label mode="any">
+         If set to false the dropdown is not closed after a selection is made,
+         allowing for rapid selection of multiple items.
+         By default this option is set to true.
+        </label>
+      </helpLabels>
+      <fields>
+        <field>closeOnSelect</field>
+      </fields>
+    </widget>
+
     <widget name="select2_directory_labelFieldName" type="text">
       <categories>
         <category>widgetTypeConf</category>
@@ -1345,6 +1364,9 @@
                   <widget category="widgetTypeConf">select2_frequency</widget>
                 </row>
                 <row>
+                  <widget category="widgetTypeConf">select2_closeOnSelect</widget>
+                </row>
+                <row>
                   <widget category="widgetTypeConf">suggestion_minChars</widget>
                 </row>
                 <row>
@@ -1656,6 +1678,9 @@
                   <widget category="widgetTypeConf">select2_frequency</widget>
                 </row>
                 <row>
+                  <widget category="widgetTypeConf">select2_closeOnSelect</widget>
+                </row>
+                <row>
                   <widget category="widgetTypeConf">suggestion_minChars</widget>
                 </row>
                 <row>
@@ -1864,6 +1889,9 @@
                 </row>
                 <row>
                   <widget category="widgetTypeConf">select2_frequency</widget>
+                </row>
+                <row>
+                  <widget category="widgetTypeConf">select2_closeOnSelect</widget>
                 </row>
                 <row>
                   <widget category="widgetTypeConf">suggestion_minChars</widget>
@@ -4694,7 +4722,7 @@
                   <label mode="any">
                     The start default time, ignore if time is
                     not taken into account in the date pattern/format. Defaults
-                    to 00:00, available since 7.1.
+                    to 00:00:00, available since 7.1.
                   </label>
                 </helpLabels>
                 <fields>
@@ -4712,7 +4740,7 @@
                   <label mode="any">
                     The end default time, ignore if time is
                     not taken into account in the date pattern/format. Defaults
-                    to 23:59, available since 7.1.
+                    to 23:59:59, available since 7.1.
                   </label>
                 </helpLabels>
                 <fields>
@@ -5241,7 +5269,7 @@
       </helpLabels>
       <translated>true</translated>
       <fields>
-        <field>contextData['request/comment']</field>
+        <field>contextData['comment']</field>
       </fields>
       <widgetModes>
         <mode value="create">hidden</mode>
@@ -5295,7 +5323,7 @@
       <subWidgets>
         <widget name="versioning_options" type="selectOneRadio">
           <fields>
-            <field>contextData['default/VersioningOption']</field>
+            <field>contextData['VersioningOption']</field>
           </fields>
           <properties widgetMode="edit">
             <property name="defaultValue">

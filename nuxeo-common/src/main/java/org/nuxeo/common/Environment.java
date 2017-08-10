@@ -16,7 +16,6 @@
  * Contributors:
  *     bstefanescu, jcarsique
  */
-
 package org.nuxeo.common;
 
 import java.io.File;
@@ -108,46 +107,6 @@ public class Environment {
      * @since 5.6
      */
     public static final String NUXEO_CONTEXT_PATH = "org.nuxeo.ecm.contextPath";
-
-    /**
-     * The home directory.
-     *
-     * @deprecated never defined; use {@link #NUXEO_HOME_DIR}
-     */
-    @Deprecated
-    public static final String HOME_DIR = "org.nuxeo.app.home";
-
-    /**
-     * The web root.
-     *
-     * @deprecated never defined; use {@link #NUXEO_WEB_DIR}
-     */
-    @Deprecated
-    public static final String WEB_DIR = "org.nuxeo.app.web";
-
-    /**
-     * The config directory.
-     *
-     * @deprecated never defined; use {@link #NUXEO_CONFIG_DIR}
-     */
-    @Deprecated
-    public static final String CONFIG_DIR = "org.nuxeo.app.config";
-
-    /**
-     * The data directory.
-     *
-     * @deprecated never defined; use {@link #NUXEO_DATA_DIR}
-     */
-    @Deprecated
-    public static final String DATA_DIR = "org.nuxeo.app.data";
-
-    /**
-     * The log directory.
-     *
-     * @deprecated never defined; use {@link #NUXEO_LOG_DIR}
-     */
-    @Deprecated
-    public static final String LOG_DIR = "org.nuxeo.app.log";
 
     /**
      * The application layout (optional): directory containing nuxeo runtime osgi bundles.
@@ -320,7 +279,6 @@ public class Environment {
         if (properties != null) {
             loadProperties(properties);
         }
-        this.properties.setProperty(HOME_DIR, this.home.getAbsolutePath());
     }
 
     public static synchronized void setDefault(Environment env) {
@@ -383,7 +341,6 @@ public class Environment {
     /**
      * Resolve the path against {@link Environment#serverHome} if not absolute.
      *
-     * @param temp
      * @since 8.1
      */
     public void setTemp(String temp) {
@@ -406,7 +363,6 @@ public class Environment {
     /**
      * Resolve the path against {@link Environment#runtimeHome} if not absolute.
      *
-     * @param config
      * @since 8.1
      */
     public void setConfig(String config) {
@@ -430,7 +386,6 @@ public class Environment {
     /**
      * Resolve the path against {@link Environment#serverHome} if not absolute.
      *
-     * @param log
      * @since 8.1
      */
     public void setLog(String log) {
@@ -453,7 +408,6 @@ public class Environment {
     /**
      * Resolve the path against {@link Environment#runtimeHome} if not absolute.
      *
-     * @param data
      * @since 8.1
      */
     public void setData(String data) {
@@ -476,7 +430,6 @@ public class Environment {
     /**
      * Resolve the path against {@link Environment#runtimeHome} if not absolute.
      *
-     * @param web
      * @since 8.1
      */
     public void setWeb(String web) {
@@ -700,7 +653,6 @@ public class Environment {
     }
 
     /**
-     * @param key
      * @return the file which path is associated with the given key. The file is guaranteed to be absolute if it has
      *         been set with {@link #setPath(String, File)}
      * @since 8.1

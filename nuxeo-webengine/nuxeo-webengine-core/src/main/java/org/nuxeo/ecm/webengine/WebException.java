@@ -20,9 +20,15 @@
 
 package org.nuxeo.ecm.webengine;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
+import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.Response;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.poi.openxml4j.exceptions.InvalidOperationException;
 import org.nuxeo.common.utils.ExceptionUtils;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.DocumentSecurityException;
@@ -30,13 +36,6 @@ import org.nuxeo.ecm.webengine.model.ModuleResource;
 import org.nuxeo.ecm.webengine.model.WebContext;
 import org.nuxeo.ecm.webengine.model.exceptions.WebResourceNotFoundException;
 import org.nuxeo.ecm.webengine.model.exceptions.WebSecurityException;
-
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
-
-import java.io.PrintWriter;
-import java.io.StringWriter;
 
 public class WebException extends WebApplicationException {
 
@@ -188,8 +187,6 @@ public class WebException extends WebApplicationException {
             return HttpServletResponse.SC_FORBIDDEN;
         } else if (cause instanceof DocumentNotFoundException || cause instanceof WebResourceNotFoundException) {
             return HttpServletResponse.SC_NOT_FOUND;
-        } else if (cause instanceof InvalidOperationException) {
-            return HttpServletResponse.SC_BAD_REQUEST;
         } else if (cause instanceof WebSecurityException) {
             return HttpServletResponse.SC_UNAUTHORIZED;
         }

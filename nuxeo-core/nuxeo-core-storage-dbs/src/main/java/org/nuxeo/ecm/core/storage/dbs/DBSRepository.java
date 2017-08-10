@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.blob.BlobManager;
 import org.nuxeo.ecm.core.model.LockManager;
 import org.nuxeo.ecm.core.model.Repository;
@@ -31,6 +32,7 @@ import org.nuxeo.ecm.core.query.sql.model.OrderByClause;
 import org.nuxeo.ecm.core.storage.FulltextConfiguration;
 import org.nuxeo.ecm.core.storage.State;
 import org.nuxeo.ecm.core.storage.State.StateDiff;
+import org.nuxeo.ecm.core.storage.dbs.DBSTransactionState.ChangeTokenUpdater;
 
 /**
  * Interface for a {@link Repository} for Document-Based Storage.
@@ -50,7 +52,6 @@ public interface DBSRepository extends Repository, LockManager {
      * Gets the fulltext configuration.
      *
      * @return the fulltext configuration
-     *
      * @since 7.10-HF04, 8.1
      */
     FulltextConfiguration getFulltextConfiguration();
@@ -62,6 +63,14 @@ public interface DBSRepository extends Repository, LockManager {
      * @since 7.1, 6.0-HF02
      */
     boolean isFulltextDisabled();
+
+    /**
+     * Checks if database-managed document change tokens are enabled.
+     *
+     * @return {@code true} if the database maintains document change tokens
+     * @since 9.1
+     */
+    boolean isChangeTokenEnabled();
 
     /**
      * Gets the root id.
@@ -103,12 +112,22 @@ public interface DBSRepository extends Repository, LockManager {
     void createState(State state);
 
     /**
+     * Creates documents.
+     *
+     * @param states the document states
+     */
+    default void createStates(List<State> states) {
+        states.forEach(this::createState);
+    }
+
+    /**
      * Updates a document.
      *
      * @param id the document id
      * @param diff the diff to apply
+     * @param changeTokenUpdater how to get and update the change token (may be {@code null})
      */
-    void updateState(String id, StateDiff diff);
+    void updateState(String id, StateDiff diff, ChangeTokenUpdater changeTokenUpdater);
 
     /**
      * Deletes a set of document.
@@ -206,5 +225,47 @@ public interface DBSRepository extends Repository, LockManager {
      * @since 7.4
      */
     LockManager getLockManager();
+
+    /**
+     * Executes the given query and returns the first batch of results, next batch must be requested
+     * within the {@code keepAliveSeconds} delay.
+     *
+     * @since 8.4
+     */
+    ScrollResult scroll(DBSExpressionEvaluator evaluator, int batchSize, int keepAliveSeconds);
+
+    /**
+     * Get the next batch of result, the {@code scrollId} is part of the previous {@link ScrollResult} response.
+     *
+     * @since 8.4
+     */
+    ScrollResult scroll(String scrollId);
+
+    /**
+     * Called when created a transaction.
+     *
+     * @since 8.10
+     */
+    default void begin() {
+
+    }
+
+    /**
+     * Saves and flushes to database.
+     *
+     * @since 8.10
+     */
+    default void commit() {
+
+    }
+
+    /**
+     * Rolls back the save state by applying the undo log.
+     *
+     * @since 8.10
+     */
+    default void rollback() {
+
+    }
 
 }

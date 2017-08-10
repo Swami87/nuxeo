@@ -19,9 +19,6 @@
  */
 package org.nuxeo.ecm.automation.core.operations.execution;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.automation.AutomationService;
@@ -34,7 +31,7 @@ import org.nuxeo.ecm.automation.core.annotations.OperationMethod;
 import org.nuxeo.ecm.automation.core.annotations.Param;
 import org.nuxeo.ecm.automation.core.util.Properties;
 import org.nuxeo.ecm.core.api.CoreSession;
-import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
@@ -70,7 +67,7 @@ public class RunInNewTransaction {
     protected boolean rollbackGlobalOnError = false;
 
     @Param(name = "parameters", description = "Accessible in the subcontext ChainParameters. For instance, @{ChainParameters['parameterKey']}.", required = false)
-    protected Properties chainParameters;
+    protected Properties chainParameters = new Properties();
 
     @Param(name = "timeout", required = false)
     protected Integer timeout = Integer.valueOf(60);
@@ -81,51 +78,28 @@ public class RunInNewTransaction {
         if (TransactionHelper.isTransactionMarkedRollback()) {
             return;
         }
-        // commit the current transaction
-        TransactionHelper.commitOrRollbackTransaction();
-
-        Map<String, Object> vars = isolate ? new HashMap<String, Object>(ctx.getVars()) : ctx.getVars();
-
-        int to = timeout == null ? 0 : timeout.intValue();
-
-        TransactionHelper.startTransaction(to);
-        boolean ok = false;
         try {
-            OperationContext subctx = new OperationContext(session, vars);
-            subctx.setInput(ctx.getInput());
-            service.run(subctx, chainId, (Map) chainParameters);
-            ok = true;
-        } catch (OperationException e) {
-            if (rollbackGlobalOnError) {
-                throw e;
-            } else {
-                // just log, no rethrow
-                log.error("Error while executing operation " + chainId, e);
-            }
-        } finally {
-            if (!ok) {
-                // will be logged by Automation framework
-                TransactionHelper.setTransactionRollbackOnly();
-            }
-            TransactionHelper.commitOrRollbackTransaction();
-            // caller expects a transaction to be started
-            TransactionHelper.startTransaction();
-        }
-
-        // reconnect documents in the context
-        if (!isolate) {
-            for (String varName : vars.keySet()) {
-                if (!ctx.getVars().containsKey(varName)) {
-                    ctx.put(varName, vars.get(varName));
-                } else {
-                    Object value = vars.get(varName);
-                    if (session != null && value != null && value instanceof DocumentModel) {
-                        ctx.getVars().put(varName, session.getDocument(((DocumentModel) value).getRef()));
-                    } else {
-                        ctx.getVars().put(varName, value);
+            TransactionHelper.runInNewTransaction(() -> {
+                try (OperationContext subctx = ctx.getSubContext(isolate)) {
+                    try {
+                        service.run(subctx, chainId, chainParameters);
+                    } catch (OperationException e) {
+                        if (rollbackGlobalOnError) {
+                            throw new NuxeoException(e);
+                        } else {
+                            // just log, no rethrow
+                            log.error("Error while executing operation " + chainId, e);
+                        }
                     }
+                } catch (OperationException e) {
+                    throw new NuxeoException(e);
                 }
+            });
+        } catch (NuxeoException e) {
+            if (e.getCause() instanceof OperationException) {
+                throw (OperationException) e.getCause();
             }
+            throw e;
         }
     }
 

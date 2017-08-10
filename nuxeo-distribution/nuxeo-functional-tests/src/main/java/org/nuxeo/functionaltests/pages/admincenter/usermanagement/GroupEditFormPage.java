@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,11 @@
  */
 package org.nuxeo.functionaltests.pages.admincenter.usermanagement;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.nuxeo.functionaltests.AjaxRequestManager;
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.forms.Select2WidgetElement;
 import org.openqa.selenium.WebDriver;
@@ -32,15 +37,15 @@ import org.openqa.selenium.support.FindBy;
 public class GroupEditFormPage extends UsersGroupsBasePage {
 
     @Required
-    @FindBy(id = "viewGroupView:editGroup:nxl_group_1:nxw_group_label_1")
+    @FindBy(id = "viewGroupView:editGroup:nxl_group:nxw_group_label")
     WebElement labelInput;
 
     @Required
-    @FindBy(id = "s2id_viewGroupView:editGroup:nxl_group_1:nxw_group_members_1_select2")
+    @FindBy(id = "s2id_viewGroupView:editGroup:nxl_group:nxw_group_members_select2")
     WebElement membersSelect;
 
     @Required
-    @FindBy(id = "s2id_viewGroupView:editGroup:nxl_group_1:nxw_group_subgroups_1_select2")
+    @FindBy(id = "s2id_viewGroupView:editGroup:nxl_group:nxw_group_subgroups_select2")
     WebElement subgroupsSelect;
 
     @Required
@@ -56,12 +61,53 @@ public class GroupEditFormPage extends UsersGroupsBasePage {
         labelInput.sendKeys(label);
     }
 
-    public void setMembers(String... members) {
-        new Select2WidgetElement(driver, membersSelect, true).selectValues(members);
+    /**
+     * @since 8.3
+     */
+    public List<String> getMembers() {
+        return new Select2WidgetElement(driver, membersSelect, true).getSelectedValues()
+                                                                    .stream()
+                                                                    .map(WebElement::getText)
+                                                                    .collect(Collectors.toList());
     }
 
-    public void setSubGroups(String... subgroups) {
-        new Select2WidgetElement(driver, subgroupsSelect, true).selectValues(subgroups);
+    public GroupEditFormPage setMembers(String... members) {
+        new Select2WidgetElement(driver, membersSelect, true).selectValues(members);
+        return asPage(GroupEditFormPage.class);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public GroupEditFormPage addMember(String member) {
+        new Select2WidgetElement(driver, membersSelect, true).selectValue(member);
+        return asPage(GroupEditFormPage.class);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public List<String> getSubGroups() {
+        return new Select2WidgetElement(driver, subgroupsSelect, true).getSelectedValues()
+                                                                      .stream()
+                                                                      .map(WebElement::getText)
+                                                                      .collect(Collectors.toList());
+    }
+
+    public GroupEditFormPage setSubGroups(String... subGroups) {
+        new Select2WidgetElement(driver, subgroupsSelect, true).selectValues(subGroups);
+        return asPage(GroupEditFormPage.class);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public GroupViewTabSubPage save() {
+        AjaxRequestManager arm = new AjaxRequestManager(driver);
+        arm.begin();
+        Locator.waitUntilEnabledAndClick(saveButton);
+        arm.end();
+        return asPage(GroupViewTabSubPage.class);
     }
 
 }

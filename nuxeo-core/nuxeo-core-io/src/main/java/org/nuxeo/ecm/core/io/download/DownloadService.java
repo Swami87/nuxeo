@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  *
  * Contributors:
  *     Florent Guillaume
+ *     Estelle Giuy <egiuly@nuxeo.com>
  */
 package org.nuxeo.ecm.core.io.download;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -46,7 +48,13 @@ public interface DownloadService {
 
     String NXBIGBLOB = "nxbigblob";
 
+    /** @deprecated since 9.1, use nxbigblob instead */
+    @Deprecated
     String NXBIGZIPFILE = "nxbigzipfile";
+
+    /** @deprecated since 7.4, use nxfile instead */
+    @Deprecated
+    String NXBIGFILE = "nxbigfile";
 
     String BLOBHOLDER_PREFIX = "blobholder:";
 
@@ -77,6 +85,15 @@ public interface DownloadService {
     }
 
     /**
+     * Stores the blobs for later download.
+     *
+     * @param the list of blobs to store
+     * @return the store key used for retrieving the blobs (@see {@link DownloadService#getDownloadUrl(String)}
+     * @since 9.1
+     */
+    String storeBlobs(List<Blob> blobs);
+
+    /**
      * Gets the URL to use to download the blob at the given xpath in the given document.
      * <p>
      * The URL is relative to the Nuxeo Web Application context.
@@ -104,6 +121,50 @@ public interface DownloadService {
      * @return the download URL
      */
     String getDownloadUrl(String repositoryName, String docId, String xpath, String filename);
+
+    /**
+     * Gets the URL to use to download the blobs identified by a storage key.
+     * <p>
+     * The URL is relative to the Nuxeo Web Application context.
+     * <p>
+     * Returns something like {@code nxbigblob/key}
+     *
+     * @param key The key of stored blobs to download
+     * @return the download URL
+     * @since 9.1
+     */
+    String getDownloadUrl(String storeKey);
+
+    /**
+     * Finds a document's blob given the URL to use to download the blob.
+     *
+     * @param url the URL to use to download the blob
+     * @return the blob, or {@code null} if not found
+     * @since 9.1
+     */
+    Blob resolveBlobFromDownloadUrl(String url);
+
+    /**
+     * Handles the download of a document.
+     *
+     * @param req the request
+     * @param resp the response
+     * @param baseUrl the request baseUrl
+     * @param path the request path, without the context
+     * @since 9.1
+     */
+    void handleDownload(HttpServletRequest req, HttpServletResponse resp, String baseUrl, String path)
+            throws IOException;
+
+    /**
+     * Triggers a blobs download. Once the temporary blobs are transfered from the store, they are
+     * automatically deleted.
+     *
+     * @param storeKey the stored blobs key
+     * @param reason the download reason
+     * @since 9.1
+     */
+    void downloadBlob(HttpServletRequest request, HttpServletResponse response, String storeKey, String reason) throws IOException;
 
     /**
      * Triggers a blob download.

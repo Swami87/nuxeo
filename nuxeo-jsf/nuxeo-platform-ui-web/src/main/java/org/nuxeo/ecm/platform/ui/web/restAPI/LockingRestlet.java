@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@
  *     Nuxeo
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.platform.ui.web.restAPI;
+
+import java.text.DateFormat;
+import java.util.Date;
 
 import org.dom4j.dom.DOMDocument;
 import org.dom4j.dom.DOMDocumentFactory;
@@ -89,8 +91,8 @@ public class LockingRestlet extends BaseStatelessNuxeoRestlet {
             action = UNLOCK;
         }
 
-        String response = "";
-        String code = "";
+        String response;
+        String code;
         if (action.equals(LOCK)) {
             try {
                 Lock lock = session.getLockInfo(targetDocRef);
@@ -134,7 +136,7 @@ public class LockingRestlet extends BaseStatelessNuxeoRestlet {
         } else if (action.equals(STATUS)) {
             try {
                 Lock lock = session.getLockInfo(targetDocRef);
-                response = session.getLock(targetDocRef);
+                response = oldLockKey(session.getLockInfo(targetDocRef));
                 if (lock == null) {
                     code = SC_LOCKINFO_NOT_LOCKED;
                 } else {
@@ -172,6 +174,18 @@ public class LockingRestlet extends BaseStatelessNuxeoRestlet {
         result.setRootElement((org.dom4j.Element) current);
         res.setEntity(result.asXML(), MediaType.TEXT_XML);
         res.getEntity().setCharacterSet(CharacterSet.UTF_8);
+    }
+
+    protected String oldLockKey(Lock lock) {
+        if (lock == null) {
+            return null;
+        }
+        // return deprecated format, like "someuser:Nov 29, 2010"
+        String lockCreationDate = (lock.getCreated() == null) ? null : DateFormat.getDateInstance(DateFormat.MEDIUM)
+                                                                                 .format(new Date(
+                                                                                         lock.getCreated()
+                                                                                             .getTimeInMillis()));
+        return lock.getOwner() + ':' + lockCreationDate;
     }
 
 }

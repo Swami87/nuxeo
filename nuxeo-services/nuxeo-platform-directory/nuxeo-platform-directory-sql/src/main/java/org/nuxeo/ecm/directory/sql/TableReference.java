@@ -20,6 +20,7 @@
 package org.nuxeo.ecm.directory.sql;
 
 import java.io.Serializable;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -28,11 +29,14 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
-import org.nuxeo.common.xmap.annotation.XNode;
-import org.nuxeo.common.xmap.annotation.XObject;
+import org.nuxeo.ecm.core.schema.types.SchemaImpl;
+import org.nuxeo.ecm.core.schema.types.primitives.StringType;
 import org.nuxeo.ecm.core.storage.sql.ColumnType;
+import org.nuxeo.ecm.core.storage.sql.jdbc.db.Column;
 import org.nuxeo.ecm.core.storage.sql.jdbc.db.Delete;
 import org.nuxeo.ecm.core.storage.sql.jdbc.db.Insert;
 import org.nuxeo.ecm.core.storage.sql.jdbc.db.Select;
@@ -40,37 +44,21 @@ import org.nuxeo.ecm.core.storage.sql.jdbc.db.Table;
 import org.nuxeo.ecm.core.storage.sql.jdbc.db.Table.IndexType;
 import org.nuxeo.ecm.core.storage.sql.jdbc.dialect.Dialect;
 import org.nuxeo.ecm.directory.AbstractReference;
+import org.nuxeo.ecm.directory.BaseDirectoryDescriptor;
 import org.nuxeo.ecm.directory.Directory;
+import org.nuxeo.ecm.directory.DirectoryCSVLoader;
 import org.nuxeo.ecm.directory.DirectoryException;
-import org.nuxeo.ecm.directory.PermissionDescriptor;
+import org.nuxeo.ecm.directory.ReferenceDescriptor;
+import org.nuxeo.ecm.directory.Session;
 
-@XObject(value = "tableReference")
-public class TableReference extends AbstractReference implements Cloneable {
+public class TableReference extends AbstractReference {
 
-    @XNode("@field")
-    public void setFieldName(String fieldName) {
-        this.fieldName = fieldName;
-    }
-
-    @Override
-    @XNode("@directory")
-    public void setTargetDirectoryName(String targetDirectoryName) {
-        this.targetDirectoryName = targetDirectoryName;
-    }
-
-    @XNode("@table")
     protected String tableName;
 
-    @XNode("@sourceColumn")
     protected String sourceColumn;
 
-    @XNode("@targetColumn")
     protected String targetColumn;
 
-    @XNode("@schema")
-    protected String schemaName;
-
-    @XNode("@dataFile")
     protected String dataFileName;
 
     private Table table;
@@ -79,17 +67,73 @@ public class TableReference extends AbstractReference implements Cloneable {
 
     private boolean initialized = false;
 
+    /**
+     * @since 9.2
+     */
+    public TableReference(String fieldName, String directory, String tableName, String sourceColumn,
+            String targetColumn, String dataFileName) {
+        super(fieldName, directory);
+        this.tableName = tableName;
+        this.sourceColumn = sourceColumn;
+        this.targetColumn = targetColumn;
+        this.dataFileName = dataFileName;
+    }
+
+    /**
+     * @since 9.2
+     */
+    public TableReference(TableReferenceDescriptor descriptor) {
+        this(descriptor.getFieldName(), descriptor.getTargetDirectoryName(), descriptor.getTableName(),
+                descriptor.getSourceColumn(), descriptor.getTargetColumn(), descriptor.getDataFileName());
+    }
+
+    /**
+     * @since 9.2
+     */
+    public TableReference(ReferenceDescriptor descriptor) {
+        this(descriptor.getFieldName(), descriptor.getDirectory(), descriptor.getReferenceName(),
+                descriptor.getSource(), descriptor.getTarget(), descriptor.getDataFileName());
+    }
+
     private SQLDirectory getSQLSourceDirectory() throws DirectoryException {
         Directory dir = getSourceDirectory();
         return (SQLDirectory) dir;
     }
 
     private void initialize(SQLSession sqlSession) throws DirectoryException {
+        Connection connection = sqlSession.sqlConnection;
         SQLDirectory directory = getSQLSourceDirectory();
-        String createTablePolicy = directory.getDescriptor().createTablePolicy;
         Table table = getTable();
-        SQLHelper helper = new SQLHelper(sqlSession.sqlConnection, table, dataFileName, createTablePolicy);
-        helper.setupTable();
+        SQLHelper helper = new SQLHelper(connection, table, directory.getDescriptor().getCreateTablePolicy());
+        boolean loadData = helper.setupTable();
+        if (loadData && dataFileName != null) {
+            // fake schema for DirectoryCSVLoader.loadData
+            SchemaImpl schema = new SchemaImpl(tableName, null);
+            schema.addField(sourceColumn, StringType.INSTANCE, null, 0, Collections.emptySet());
+            schema.addField(targetColumn, StringType.INSTANCE, null, 0, Collections.emptySet());
+            Insert insert = new Insert(table);
+            for (Column column : table.getColumns()) {
+                insert.addColumn(column);
+            }
+            try (PreparedStatement ps = connection.prepareStatement(insert.getStatement())) {
+                Consumer<Map<String, Object>> loader = new Consumer<Map<String, Object>>() {
+                    @Override
+                    public void accept(Map<String, Object> map) {
+                        try {
+                            ps.setString(1, (String) map.get(sourceColumn));
+                            ps.setString(2, (String) map.get(targetColumn));
+                            ps.execute();
+                        } catch (SQLException e) {
+                            throw new DirectoryException(e);
+                        }
+                    }
+                };
+                DirectoryCSVLoader.loadData(dataFileName, BaseDirectoryDescriptor.DEFAULT_DATA_FILE_CHARACTER_SEPARATOR,
+                        schema, loader);
+            } catch (SQLException e) {
+                throw new DirectoryException(String.format("Table '%s' initialization failed", tableName), e);
+            }
+        }
     }
 
     @Override
@@ -112,21 +156,27 @@ public class TableReference extends AbstractReference implements Cloneable {
         }
     }
 
-    public void addLinks(String sourceId, List<String> targetIds, SQLSession session) throws DirectoryException {
+    @Override
+    public void addLinks(String sourceId, List<String> targetIds, Session session) throws DirectoryException {
         if (targetIds == null) {
             return;
         }
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
         for (String targetId : targetIds) {
-            addLink(sourceId, targetId, session, true);
+            addLink(sourceId, targetId, sqlSession, true);
         }
     }
 
-    public void addLinks(List<String> sourceIds, String targetId, SQLSession session) throws DirectoryException {
+    @Override
+    public void addLinks(List<String> sourceIds, String targetId, Session session) throws DirectoryException {
         if (sourceIds == null) {
             return;
         }
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
         for (String sourceId : sourceIds) {
-            addLink(sourceId, targetId, session, true);
+            addLink(sourceId, targetId, sqlSession, true);
         }
     }
 
@@ -289,12 +339,18 @@ public class TableReference extends AbstractReference implements Cloneable {
         }
     }
 
-    public void removeLinksForSource(String sourceId, SQLSession session) throws DirectoryException {
-        removeLinksFor(sourceColumn, sourceId, session);
+    @Override
+    public void removeLinksForSource(String sourceId, Session session) throws DirectoryException {
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
+        removeLinksFor(sourceColumn, sourceId, sqlSession);
     }
 
-    public void removeLinksForTarget(String targetId, SQLSession session) throws DirectoryException {
-        removeLinksFor(targetColumn, targetId, session);
+    @Override
+    public void removeLinksForTarget(String targetId, Session session) throws DirectoryException {
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
+        removeLinksFor(targetColumn, targetId, sqlSession);
     }
 
     @Override
@@ -419,10 +475,26 @@ public class TableReference extends AbstractReference implements Cloneable {
     }
 
     @Override
+    public void setSourceIdsForTarget(String targetId, List<String> sourceIds, Session session)
+            throws DirectoryException {
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
+        setSourceIdsForTarget(targetId, sourceIds, sqlSession);
+    }
+
+    @Override
     public void setTargetIdsForSource(String sourceId, List<String> targetIds) throws DirectoryException {
         try (SQLSession session = getSQLSession()) {
             setTargetIdsForSource(sourceId, targetIds, session);
         }
+    }
+
+    @Override
+    public void setTargetIdsForSource(String sourceId, List<String> targetIds, Session session)
+            throws DirectoryException {
+        SQLSession sqlSession = (SQLSession) session;
+        maybeInitialize(sqlSession);
+        setTargetIdsForSource(sourceId, targetIds, sqlSession);
     }
 
     // TODO add support for the ListDiff type
@@ -485,22 +557,8 @@ public class TableReference extends AbstractReference implements Cloneable {
         return tableName;
     }
 
-    public String getSchemaName() {
-        return schemaName;
-    }
-
     public String getDataFileName() {
         return dataFileName;
-    }
-
-    /**
-     * @since 5.6
-     */
-    @Override
-    public TableReference clone() {
-        TableReference clone = (TableReference) super.clone();
-        // basic fields are already copied by super.clone()
-        return clone;
     }
 
 }

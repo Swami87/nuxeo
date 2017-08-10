@@ -45,10 +45,11 @@ import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.impl.DocumentModelListImpl;
 import org.nuxeo.ecm.directory.BaseSession;
+import org.nuxeo.ecm.directory.DirectoryDeleteConstraintException;
 import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
+import org.nuxeo.ecm.directory.api.DirectoryDeleteConstraint;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUI;
-import org.nuxeo.ecm.directory.api.ui.DirectoryUIDeleteConstraint;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUIManager;
 import org.nuxeo.ecm.platform.actions.ActionContext;
 import org.nuxeo.ecm.platform.actions.ejb.ActionManager;
@@ -134,17 +135,6 @@ public class DirectoryUIActionsBean implements Serializable {
 
     public void setSelectedDirectoryName(String selectedDirectoryName) {
         this.selectedDirectoryName = selectedDirectoryName;
-    }
-
-    @Deprecated
-    public String selectDirectory(String directoryName) {
-        resetSelectedDirectoryData();
-        currentDirectoryInfo = directoryUIManager.getDirectoryInfo(directoryName);
-        String view = currentDirectoryInfo.getView();
-        if (view == null) {
-            view = DIRECTORY_DEFAULT_VIEW;
-        }
-        return view;
     }
 
     public void selectDirectory() {
@@ -264,9 +254,9 @@ public class DirectoryUIActionsBean implements Serializable {
 
     public void deleteDirectoryEntry(String entryId) {
         String dirName = currentDirectoryInfo.getName();
-        List<DirectoryUIDeleteConstraint> deleteConstraints = currentDirectoryInfo.getDeleteConstraints();
+        List<DirectoryDeleteConstraint> deleteConstraints = currentDirectoryInfo.getDeleteConstraints();
         if (deleteConstraints != null && !deleteConstraints.isEmpty()) {
-            for (DirectoryUIDeleteConstraint deleteConstraint : deleteConstraints) {
+            for (DirectoryDeleteConstraint deleteConstraint : deleteConstraints) {
                 if (!deleteConstraint.canDelete(dirService, entryId)) {
                     facesMessages.add(StatusMessage.Severity.ERROR,
                             messages.get("feedback.directory.deleteEntry.constraintError"));
@@ -275,11 +265,16 @@ public class DirectoryUIActionsBean implements Serializable {
             }
         }
         try (Session dirSession = dirService.open(dirName)) {
-            dirSession.deleteEntry(entryId);
-            // invalidate directory entries list
-            currentDirectoryEntries = null;
-            Events.instance().raiseEvent(EventNames.DIRECTORY_CHANGED, dirName);
-            facesMessages.add(StatusMessage.Severity.INFO, messages.get("vocabulary.entry.deleted"));
+            try {
+                dirSession.deleteEntry(entryId);
+                // invalidate directory entries list
+                currentDirectoryEntries = null;
+                Events.instance().raiseEvent(EventNames.DIRECTORY_CHANGED, dirName);
+                facesMessages.add(StatusMessage.Severity.INFO, messages.get("vocabulary.entry.deleted"));
+            } catch (DirectoryDeleteConstraintException e) {
+                facesMessages.add(StatusMessage.Severity.ERROR,
+                        messages.get("feedback.directory.deleteEntry.constraintError"));
+            }
         }
     }
 

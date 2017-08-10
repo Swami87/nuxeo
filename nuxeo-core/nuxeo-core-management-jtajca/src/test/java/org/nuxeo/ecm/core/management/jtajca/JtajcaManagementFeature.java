@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,37 +18,41 @@
  */
 package org.nuxeo.ecm.core.management.jtajca;
 
+import java.util.HashSet;
 import java.util.Set;
 
+import javax.inject.Inject;
 import javax.management.JMX;
 import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import javax.transaction.TransactionManager;
 
-import org.nuxeo.ecm.core.storage.sql.IgnoreNonPooledCondition;
+import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.jtajca.NuxeoContainer;
+import org.nuxeo.runtime.management.ManagementFeature;
 import org.nuxeo.runtime.management.ServerLocator;
-import org.nuxeo.runtime.test.runner.ConditionalIgnoreRule;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
+import org.nuxeo.runtime.test.runner.HotDeployer.ActionHandler;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
+import org.nuxeo.runtime.test.runner.RuntimeFeature;
 import org.nuxeo.runtime.test.runner.SimpleFeature;
 
 import com.google.inject.Binder;
+import com.google.inject.Provider;
+import com.google.inject.name.Named;
 import com.google.inject.name.Names;
 
-@Features(CoreFeature.class)
-@Deploy({ "org.nuxeo.runtime.metrics", "org.nuxeo.runtime.datasource", "org.nuxeo.ecm.core.management.jtajca" })
-@LocalDeploy({ "org.nuxeo.ecm.core.management.jtajca:login-config.xml",
-        "org.nuxeo.ecm.core.management.jtajca:ds-contrib.xml" })
-@ConditionalIgnoreRule.Ignore(condition = IgnoreNonPooledCondition.class)
+@Features(ManagementFeature.class)
+@Deploy({ "org.nuxeo.runtime.jtajca", "org.nuxeo.runtime.datasource", "org.nuxeo.ecm.core.management.jtajca" })
+@LocalDeploy({ "org.nuxeo.ecm.core.management.jtajca:login-config.xml" })
 public class JtajcaManagementFeature extends SimpleFeature {
 
-    protected ObjectName nameOf(Class<?> itf) {
+    protected static ObjectName nameOf(Class<?> itf) {
         try {
             return new ObjectName(Defaults.instance.name(itf, "*"));
         } catch (MalformedObjectNameException cause) {
@@ -59,15 +63,68 @@ public class JtajcaManagementFeature extends SimpleFeature {
     protected <T> void bind(Binder binder, MBeanServer mbs, Class<T> type) {
         final Set<ObjectName> names = mbs.queryNames(nameOf(type), null);
         for (ObjectName name : names) {
-            T instance = type.cast(JMX.newMXBeanProxy(mbs, name, type));
-            binder.bind(type).annotatedWith(Names.named(name.getKeyProperty("name"))).toInstance(instance);
+            binder.bind(type)
+                  .annotatedWith(Names.named(name.getKeyProperty("name")))
+                  .toProvider(new MBeanProvider<>(type, name));
         }
+    }
+
+    class MBeanProvider<T> implements Provider<T> {
+        protected Class<T> type;
+
+        protected ObjectName name;
+
+        public MBeanProvider(Class<T> type, ObjectName name) {
+            this.type = type;
+            this.name = name;
+        }
+
+        @Override
+        public T get() {
+            MBeanServer mbs = Framework.getLocalService(ServerLocator.class).lookupServer();
+            return type.cast(JMX.newMXBeanProxy(mbs, name, type));
+        }
+    }
+
+    public static <T> T getInstanceNamedWithPrefix(Class<T> type, String prefix) {
+        MBeanServer mbs = Framework.getService(ServerLocator.class).lookupServer();
+        Set<String> names = new HashSet<>();
+        for (ObjectName objectName : mbs.queryNames(nameOf(type), null)) {
+            String name = objectName.getKeyProperty("name");
+            names.add(name); // for error case
+            if (name.startsWith(prefix)) {
+                return JMX.newMXBeanProxy(mbs, objectName, type);
+            }
+        }
+        throw new RuntimeException("Found no bean with name prefix: " + prefix + " in available names: " + names);
+    }
+
+    CoreFeature core;
+
+    Class<?> target;
+
+    @Override
+    public void start(FeaturesRunner runner) throws Exception {
+        core = runner.getFeature(CoreFeature.class);
+        target = runner.getTargetTestClass();
     }
 
     @Override
     public void configure(FeaturesRunner runner, Binder binder) {
+        if (core == null) {
+            return;
+        }
+        // if components are restarted (due to a hot deploy) while in a test method we need to register
+        // a deploy handler to recreate the tx checker..
+        runner.getFeature(RuntimeFeature.class).registerHandler(new ActionHandler() {
+            @Override
+            public void exec(String action, String... args) throws Exception {
+                next.exec(action, args);
+                JtajcaManagementFeature.this.txChecker = new TxChecker(runner);
+            }
+        });
         // bind repository
-        String repositoryName = runner.getFeature(CoreFeature.class).getStorageConfiguration().getRepositoryName();
+        String repositoryName = core.getStorageConfiguration().getRepositoryName();
         NuxeoContainer.getConnectionManager(repositoryName);
 
         MBeanServer mbs = Framework.getLocalService(ServerLocator.class).lookupServer();
@@ -80,4 +137,45 @@ public class JtajcaManagementFeature extends SimpleFeature {
         }
     }
 
+    class TxChecker {
+        @Inject
+        @Named("default")
+        TransactionMonitor monitor;
+
+        void assertNoTransactions() {
+            long count = monitor.getActiveCount();
+            if (count == 0) {
+                LogFactory.getLog(JtajcaManagementFeature.class).debug(target + " was successful");
+                return;
+            }
+            throw new AssertionError(
+                    String.format("still have tx active (%d) %s", count, monitor.getActiveStatistics()));
+        }
+
+        public TxChecker(FeaturesRunner runner) {
+            runner.getInjector().injectMembers(this);
+        }
+    }
+
+    TxChecker txChecker;
+
+    @Override
+    public void beforeSetup(FeaturesRunner runner) throws Exception {
+        if (core == null) {
+            return;
+        }
+        txChecker = new TxChecker(runner);
+    }
+
+    @Override
+    public void afterTeardown(FeaturesRunner runner) throws Exception {
+        if (txChecker == null) {
+            return;
+        }
+        try {
+            txChecker.assertNoTransactions();
+        } finally {
+            txChecker = null;
+        }
+    }
 }

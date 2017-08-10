@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
+import javax.inject.Inject;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -47,6 +49,7 @@ import org.nuxeo.elasticsearch.api.ElasticSearchAdmin;
 import org.nuxeo.elasticsearch.api.ElasticSearchIndexing;
 import org.nuxeo.elasticsearch.api.ElasticSearchService;
 import org.nuxeo.elasticsearch.api.EsResult;
+import org.nuxeo.elasticsearch.core.EsResultSetImpl;
 import org.nuxeo.elasticsearch.query.NxQueryBuilder;
 import org.nuxeo.elasticsearch.test.RepositoryElasticSearchFeature;
 import org.nuxeo.runtime.api.Framework;
@@ -54,8 +57,6 @@ import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 import org.nuxeo.runtime.transaction.TransactionHelper;
-
-import com.google.inject.Inject;
 
 @RunWith(FeaturesRunner.class)
 @Features({ RepositoryElasticSearchFeature.class })
@@ -153,7 +154,7 @@ public class TestCompareQueryAndFetch {
                     // ISO 8601
                     value = String.format("%tFT%<tT.%<tL%<tz", (Calendar) value);
                 }
-                if (coreFeature.getStorageConfiguration().isDBSMongoDB()) {
+                if (coreFeature.getStorageConfiguration().isDBS()) {
                     if (key.equals("ecm:name") || key.equals("ecm:parentId")) {
                         // MongoDB has extra keys in the result set, ignore them
                         continue;
@@ -191,6 +192,18 @@ public class TestCompareQueryAndFetch {
         compareESAndCore("select ecm:uuid, dc:nature from File order by dc:nature, ecm:uuid");
         // TODO some timezone issues here...
         // compareESAndCore("select ecm:uuid, dc:issued from File order by ecm:uuid");
+    }
+
+    @Test
+    public void testIteratorWithLimit() throws Exception {
+        int LIMIT = 5;
+        EsResult esRes = ess.queryAndAggregate(new NxQueryBuilder(session).nxql("select ecm:uuid From Document").limit(LIMIT));
+        try(IterableQueryResult res = esRes.getRows()) {
+            // the number of doc in the iterator
+            Assert.assertEquals(LIMIT, res.size());
+            // the total number of docs that match for the query
+            Assert.assertEquals(20, ((EsResultSetImpl) res).totalSize());
+        }
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.lifecycle.event;
 
 import java.util.List;
@@ -38,6 +35,9 @@ import org.nuxeo.ecm.core.event.EventBundle;
 import org.nuxeo.ecm.core.event.EventContext;
 import org.nuxeo.ecm.core.event.PostCommitEventListener;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
+import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
  * Listener for life cycle change events.
@@ -53,6 +53,16 @@ import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
  * Reinit document copy lifeCycle (BulkLifeCycleChangeListener is bound to the event documentCreatedByCopy)
  */
 public class BulkLifeCycleChangeListener implements PostCommitEventListener {
+
+    /**
+     * @since 8.10-HF05 9.2
+     */
+    public static final String PAGINATE_GET_CHILDREN_PROPERTY = "nuxeo.bulkLifeCycleChangeListener.paginate-get-children";
+
+    /**
+     * @since 8.10-HF05 9.2
+     */
+    public static final String GET_CHILDREN_PAGE_SIZE_PROPERTY = "nuxeo.bulkLifeCycleChangeListener.get-children-page-size";
 
     private static final Log log = LogFactory.getLog(BulkLifeCycleChangeListener.class);
 
@@ -117,9 +127,7 @@ public class BulkLifeCycleChangeListener implements PostCommitEventListener {
                 transition = LifeCycleConstants.UNDELETE_TRANSITION;
                 targetState = ""; // unused
             }
-            DocumentModelList docs = session.getChildren(doc.getRef());
-            changeDocumentsState(session, docs, transition, targetState);
-            session.save();
+            changeChildrenState(session, transition, targetState, doc);
         }
     }
 
@@ -140,34 +148,80 @@ public class BulkLifeCycleChangeListener implements PostCommitEventListener {
         return nonRecursiveTransitions.contains(transition);
     }
 
-    // change doc state and recurse in children
-    protected void changeDocumentsState(CoreSession documentManager, DocumentModelList docModelList, String transition,
-            String targetState) {
-        for (DocumentModel docMod : docModelList) {
-            boolean removed = false;
-            if (docMod.getCurrentLifeCycleState() == null) {
+    /**
+     * @since 9.2
+     */
+    protected void changeChildrenState(CoreSession session, String transition, String targetState, DocumentModel doc) {
+        // Check if we need to paginate children fetch
+        ConfigurationService confService = Framework.getService(ConfigurationService.class);
+        boolean paginate = confService.isBooleanPropertyTrue(PAGINATE_GET_CHILDREN_PROPERTY);
+        if (paginate) {
+            long pageSize = Long.parseLong(confService.getProperty(GET_CHILDREN_PAGE_SIZE_PROPERTY, "500"));
+            // execute a first query to know total size
+            String query = String.format("SELECT * FROM Document where ecm:parentId ='%s'", doc.getId());
+            DocumentModelList documents = session.query(query, null, pageSize, 0, true);
+            changeDocumentsState(session, transition, targetState, documents);
+            session.save();
+            // commit the first page
+            TransactionHelper.commitOrRollbackTransaction();
+
+            // loop on other children
+            long nbChildren = documents.totalSize();
+            for (long offset = pageSize; offset < nbChildren; offset += pageSize) {
+                long i = offset;
+                // start a new transaction
+                TransactionHelper.runInTransaction(() -> {
+                    DocumentModelList docs = session.query(query, null, pageSize, i, false);
+                    changeDocumentsState(session, transition, targetState, docs);
+                    session.save();
+                });
+            }
+
+            // start a new transaction for following
+            TransactionHelper.startTransaction();
+        } else {
+            DocumentModelList documents = session.getChildren(doc.getRef());
+            changeDocumentsState(session, transition, targetState, documents);
+            session.save();
+        }
+    }
+
+    /**
+     * Change doc state. Don't recurse on children as following transition trigger an event which will be handled by
+     * this listener.
+     *
+     * @since 9.2
+     */
+    protected void changeDocumentsState(CoreSession session, String transition, String targetState,
+            DocumentModelList docs) {
+        for (DocumentModel doc : docs) {
+            if (doc.getCurrentLifeCycleState() == null) {
                 if (LifeCycleConstants.DELETED_STATE.equals(targetState)) {
                     log.debug("Doc has no lifecycle, deleting ...");
-                    documentManager.removeDocument(docMod.getRef());
-                    removed = true;
+                    session.removeDocument(doc.getRef());
                 }
-            } else if (docMod.getAllowedStateTransitions().contains(transition) && !docMod.isProxy()) {
-                docMod.followTransition(transition);
+            } else if (doc.getAllowedStateTransitions().contains(transition) && !doc.isProxy()) {
+                doc.followTransition(transition);
             } else {
-                if (targetState.equals(docMod.getCurrentLifeCycleState())) {
-                    log.debug("Document" + docMod.getRef() + " is already in the target LifeCycle state");
+                if (targetState.equals(doc.getCurrentLifeCycleState())) {
+                    log.debug("Document" + doc.getRef() + " is already in the target LifeCycle state");
                 } else if (LifeCycleConstants.DELETED_STATE.equals(targetState)) {
-                    log.debug("Impossible to change state of " + docMod.getRef() + " :removing");
-                    documentManager.removeDocument(docMod.getRef());
-                    removed = true;
+                    log.debug("Impossible to change state of " + doc.getRef() + " :removing");
+                    session.removeDocument(doc.getRef());
                 } else {
-                    log.debug("Document" + docMod.getRef() + " has no transition to the target LifeCycle state");
+                    log.debug("Document" + doc.getRef() + " has no transition to the target LifeCycle state");
                 }
-            }
-            if (docMod.isFolder() && !removed) {
-                changeDocumentsState(documentManager, documentManager.getChildren(docMod.getRef()), transition,
-                        targetState);
             }
         }
     }
+
+    /**
+     * @deprecated since 9.2 use {@link #changeDocumentsState(CoreSession, String, String, DocumentModelList)} instead.
+     */
+    @Deprecated
+    protected void changeDocumentsState(CoreSession session, DocumentModelList docs, String transition,
+            String targetState) {
+        changeDocumentsState(session, transition, targetState, docs);
+    }
+
 }

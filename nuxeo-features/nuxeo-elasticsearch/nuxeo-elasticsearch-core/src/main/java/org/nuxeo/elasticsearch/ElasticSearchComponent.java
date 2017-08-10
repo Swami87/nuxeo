@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -50,12 +49,14 @@ import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.core.repository.RepositoryService;
 import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkManager;
+import org.nuxeo.elasticsearch.api.ESClientInitializationService;
 import org.nuxeo.elasticsearch.api.ElasticSearchAdmin;
 import org.nuxeo.elasticsearch.api.ElasticSearchIndexing;
 import org.nuxeo.elasticsearch.api.ElasticSearchService;
 import org.nuxeo.elasticsearch.api.EsResult;
 import org.nuxeo.elasticsearch.api.EsScrollResult;
 import org.nuxeo.elasticsearch.commands.IndexingCommand;
+import org.nuxeo.elasticsearch.config.ESClientInitializationDescriptor;
 import org.nuxeo.elasticsearch.config.ElasticSearchDocWriterDescriptor;
 import org.nuxeo.elasticsearch.config.ElasticSearchIndexConfig;
 import org.nuxeo.elasticsearch.config.ElasticSearchLocalConfig;
@@ -79,8 +80,8 @@ import com.google.common.util.concurrent.MoreExecutors;
 /**
  * Component used to configure and manage ElasticSearch integration
  */
-public class ElasticSearchComponent extends DefaultComponent implements ElasticSearchAdmin, ElasticSearchIndexing,
-        ElasticSearchService {
+public class ElasticSearchComponent extends DefaultComponent
+        implements ElasticSearchAdmin, ElasticSearchIndexing, ElasticSearchService {
 
     private static final Log log = LogFactory.getLog(ElasticSearchComponent.class);
 
@@ -91,6 +92,8 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
     private static final String EP_INDEX = "elasticSearchIndex";
 
     private static final String EP_DOC_WRITER = "elasticSearchDocWriter";
+
+    private static final String EP_CLIENT_INIT = "elasticSearchClientInitialization";
 
     private static final long REINDEX_TIMEOUT = 20;
 
@@ -110,6 +113,8 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
     private ElasticSearchServiceImpl ess;
 
     protected JsonESDocumentWriter jsonESDocumentWriter;
+
+    protected ESClientInitializationService clientInitService;
 
     private ListeningExecutorService waiterExecutorService;
 
@@ -136,7 +141,8 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
             if (remoteContribution.isEnabled()) {
                 remoteConfig = remoteContribution;
                 localConfig = null;
-                log.info("Registering remote configuration: " + remoteConfig + ", loaded from " + contributor.getName());
+                log.info(
+                        "Registering remote configuration: " + remoteConfig + ", loaded from " + contributor.getName());
             } else if (remoteConfig != null) {
                 log.info("Disabling previous remote configuration, deactivated by " + contributor.getName());
                 remoteConfig = null;
@@ -163,23 +169,52 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
                 throw new RuntimeException(e);
             }
             break;
+        case EP_CLIENT_INIT:
+            ESClientInitializationDescriptor clientInitDescriptor = (ESClientInitializationDescriptor) contribution;
+            try {
+                clientInitService = clientInitDescriptor.getKlass().newInstance();
+                clientInitService.setUsername(clientInitDescriptor.getUsername());
+                clientInitService.setPassword(clientInitDescriptor.getPassword());
+                clientInitService.setSslKeystorePath(clientInitDescriptor.getSslKeystorePath());
+                clientInitService.setSslKeystorePassword(clientInitDescriptor.getSslKeystorePassword());
+            } catch (IllegalAccessException | InstantiationException e) {
+                log.error(
+                        "Can not instantiate ES Client initialization service from " + clientInitDescriptor.getKlass());
+                throw new RuntimeException(e);
+            }
+            break;
         default:
             throw new IllegalStateException("Invalid EP: " + extensionPoint);
         }
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         if (!isElasticsearchEnabled()) {
             log.info("Elasticsearch service is disabled");
             return;
         }
-        esa = new ElasticSearchAdminImpl(localConfig, remoteConfig, indexConfig);
+        esa = new ElasticSearchAdminImpl(localConfig, remoteConfig, indexConfig, clientInitService);
         esi = new ElasticSearchIndexingImpl(esa, jsonESDocumentWriter);
         ess = new ElasticSearchServiceImpl(esa);
         initListenerThreadPool();
         processStackedCommands();
         reindexOnStartup();
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        try {
+            shutdownListenerThreadPool();
+        } finally {
+            try {
+                esa.disconnect();
+            } finally {
+                esa = null;
+                esi = null;
+                ess = null;
+            }
+        }
     }
 
     private void reindexOnStartup() {
@@ -197,7 +232,7 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
             } catch (ExecutionException e) {
                 log.error(e.getMessage(), e);
             } catch (TimeoutException e) {
-                log.warn(String.format("Indexation of repository %s not finised after %d s, continuing in background",
+                log.warn(String.format("Indexation of repository %s not finished after %d s, continuing in background",
                         repositoryName, REINDEX_TIMEOUT));
             }
         }
@@ -205,13 +240,6 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
 
     protected boolean isElasticsearchEnabled() {
         return Boolean.parseBoolean(Framework.getProperty(ES_ENABLED_PROPERTY, "true"));
-    }
-
-    @Override
-    public void deactivate(ComponentContext context) {
-        if (esa != null) {
-            esa.disconnect();
-        }
     }
 
     @Override
@@ -272,15 +300,19 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
         return esa.getIndexNameForType(type);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public long getPendingWorkerCount() {
         WorkManager wm = Framework.getLocalService(WorkManager.class);
+        // api is deprecated for completed work
         return wm.getQueueSize(INDEXING_QUEUE_ID, Work.State.SCHEDULED);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public long getRunningWorkerCount() {
         WorkManager wm = Framework.getLocalService(WorkManager.class);
+        // api is deprecated for completed work
         return runIndexingWorkerCount.get() + wm.getQueueSize(INDEXING_QUEUE_ID, Work.State.RUNNING);
     }
 
@@ -306,16 +338,13 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
 
     @Override
     public ListenableFuture<Boolean> prepareWaitForIndexing() {
-        return waiterExecutorService.submit(new Callable<Boolean>() {
-            @Override
-            public Boolean call() throws Exception {
-                WorkManager wm = Framework.getLocalService(WorkManager.class);
-                boolean completed = false;
-                do {
-                    completed = wm.awaitCompletion(INDEXING_QUEUE_ID, 300, TimeUnit.SECONDS);
-                } while (!completed);
-                return true;
-            }
+        return waiterExecutorService.submit(() -> {
+            WorkManager wm = Framework.getLocalService(WorkManager.class);
+            boolean completed = false;
+            do {
+                completed = wm.awaitCompletion(INDEXING_QUEUE_ID, 300, TimeUnit.SECONDS);
+            } while (!completed);
+            return true;
         });
     }
 
@@ -328,7 +357,16 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
     }
 
     protected void initListenerThreadPool() {
-        waiterExecutorService = MoreExecutors.listeningDecorator(Executors.newCachedThreadPool(new NamedThreadFactory()));
+        waiterExecutorService = MoreExecutors.listeningDecorator(
+                Executors.newCachedThreadPool(new NamedThreadFactory()));
+    }
+
+    protected void shutdownListenerThreadPool() {
+        try {
+            waiterExecutorService.shutdown();
+        } finally {
+            waiterExecutorService = null;
+        }
     }
 
     @Override
@@ -370,9 +408,7 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
 
     @Override
     public void indexNonRecursive(IndexingCommand cmd) {
-        List<IndexingCommand> cmds = new ArrayList<>(1);
-        cmds.add(cmd);
-        indexNonRecursive(cmds);
+        indexNonRecursive(Collections.singletonList(cmd));
     }
 
     @Override
@@ -493,13 +529,13 @@ public class ElasticSearchComponent extends DefaultComponent implements ElasticS
     }
 
     @Override
-    public EsScrollResult scanAndScroll(NxQueryBuilder queryBuilder, long keepAlive) {
-        return ess.scanAndScroll(queryBuilder, keepAlive);
+    public EsScrollResult scroll(EsScrollResult scrollResult) {
+        return ess.scroll(scrollResult);
     }
 
     @Override
-    public EsScrollResult scroll(EsScrollResult scrollResult) {
-        return ess.scroll(scrollResult);
+    public void clearScroll(EsScrollResult scrollResult) {
+        ess.clearScroll(scrollResult);
     }
 
     @Deprecated

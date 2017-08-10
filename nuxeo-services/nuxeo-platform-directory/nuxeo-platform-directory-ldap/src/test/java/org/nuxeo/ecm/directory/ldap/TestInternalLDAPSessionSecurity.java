@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import java.util.Map;
 
 import javax.inject.Inject;
 import javax.inject.Named;
-import javax.naming.NamingException;
 import javax.naming.directory.DirContext;
 import javax.security.auth.login.LoginException;
 
@@ -79,19 +78,15 @@ public class TestInternalLDAPSessionSecurity {
     @Inject
     MockLdapServer embeddedLDAPserver;
 
-    @Inject
-    @Named(SQLDirectoryFeature.USER_DIRECTORY_NAME)
-    Directory userDir;
-
-    @Inject
-    @Named(SQLDirectoryFeature.GROUP_DIRECTORY_NAME)
-    Directory groupDir;
-
     @Before
     public void setUp() {
+
+        Directory userDir = dirService.getDirectory("userDirectory");
+        Directory groupDir = dirService.getDirectory("groupDirectory");
+
         ((LDAPDirectory) userDir).setTestServer(embeddedLDAPserver);
         ((LDAPDirectory) groupDir).setTestServer(embeddedLDAPserver);
-        try (LDAPSession session = (LDAPSession) ((LDAPDirectory) userDir).getSession()) {
+        try (LDAPSession session = (LDAPSession) userDir.getSession()) {
             DirContext ctx = session.getContext();
             for (String ldifFile : ldapFeature.getLdifFiles()) {
                 ldapFeature.loadDataFromLdif(ldifFile, ctx);
@@ -103,7 +98,7 @@ public class TestInternalLDAPSessionSecurity {
     }
 
     @After
-    public void tearDown() throws NamingException {
+    public void tearDown() {
         userDirSession.close();
         groupDirSession.close();
         if (embeddedLDAPserver != null) {
@@ -114,7 +109,7 @@ public class TestInternalLDAPSessionSecurity {
 
     @Test
     public void readerUserCanGetEntry() throws Exception {
-        dummyLogin.loginAs(READER_USER);
+        dummyLogin.login(READER_USER);
         DocumentModel entry = userDirSession.getEntry("Administrator");
         assertNotNull(entry);
         assertEquals("Administrator", entry.getId());
@@ -123,8 +118,8 @@ public class TestInternalLDAPSessionSecurity {
 
     @Test
     public void readerUserCanQuery() throws LoginException {
-        dummyLogin.loginAs(READER_USER);
-        Map<String, Serializable> filter = new HashMap<String, Serializable>();
+        dummyLogin.login(READER_USER);
+        Map<String, Serializable> filter = new HashMap<>();
         filter.put("lastName", "Manager");
         DocumentModelList entries = userDirSession.query(filter);
         assertEquals(1, entries.size());
@@ -133,7 +128,7 @@ public class TestInternalLDAPSessionSecurity {
 
     @Test
     public void unauthorizedUserCantGetEntry() throws Exception {
-        dummyLogin.loginAs("unauthorizedUser");
+        dummyLogin.login("unauthorizedUser");
         DocumentModel entry = userDirSession.getEntry("Administrator");
         Assert.assertNull(entry);
         dummyLogin.logout();
@@ -141,7 +136,7 @@ public class TestInternalLDAPSessionSecurity {
 
     @Test
     public void everyoneGroupCanGetEntry() throws Exception {
-        dummyLogin.loginAs("anEveryoneUser");
+        dummyLogin.login("anEveryoneUser");
         DocumentModel entry = groupDirSession.getEntry("members");
         assertNotNull(entry);
         assertEquals("members", entry.getId());

@@ -29,7 +29,7 @@ import org.nuxeo.runtime.api.Framework;
  *
  * @author ogrisel
  */
-public abstract class AbstractReference implements Reference, Cloneable {
+public abstract class AbstractReference implements Reference {
 
     protected String sourceDirectoryName;
 
@@ -40,6 +40,14 @@ public abstract class AbstractReference implements Reference, Cloneable {
     protected Directory targetDirectory;
 
     protected String fieldName;
+
+    /**
+     * @since 9.2
+     */
+    public AbstractReference(String fieldName, String targetDirectoryName) {
+        this.fieldName = fieldName;
+        this.targetDirectoryName = targetDirectoryName;
+    }
 
     @Override
     public String getFieldName() {
@@ -73,20 +81,4 @@ public abstract class AbstractReference implements Reference, Cloneable {
         targetDirectory = null;
         this.targetDirectoryName = targetDirectoryName;
     }
-
-    /**
-     * @since 5.6
-     */
-    @Override
-    public AbstractReference clone() {
-        AbstractReference clone;
-        try {
-            clone = (AbstractReference) super.clone();
-        } catch (CloneNotSupportedException e) {
-            throw new AssertionError(e);
-        }
-        // basic fields are already copied by super.clone()
-        return clone;
-    }
-
 }

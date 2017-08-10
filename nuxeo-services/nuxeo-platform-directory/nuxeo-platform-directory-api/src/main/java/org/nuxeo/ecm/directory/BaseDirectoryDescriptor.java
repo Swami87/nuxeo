@@ -19,12 +19,17 @@
  */
 package org.nuxeo.ecm.directory;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.xmap.annotation.XNode;
 import org.nuxeo.common.xmap.annotation.XNodeList;
 import org.nuxeo.common.xmap.annotation.XObject;
+import org.nuxeo.ecm.directory.api.DirectoryDeleteConstraint;
 
 /**
  * Basic directory descriptor, containing the basic fields used by all directories.
@@ -52,6 +57,8 @@ public class BaseDirectoryDescriptor implements Cloneable {
         subany;
     }
 
+    public static final boolean AUTO_INCREMENT_ID_FIELD_DEFAULT = false;
+
     public static final int CACHE_TIMEOUT_DEFAULT = 0;
 
     public static final int CACHE_MAX_SIZE_DEFAULT = 0;
@@ -59,6 +66,29 @@ public class BaseDirectoryDescriptor implements Cloneable {
     public static final boolean READ_ONLY_DEFAULT = false;
 
     public static final SubstringMatchType SUBSTRING_MATCH_TYPE_DEFAULT = SubstringMatchType.subinitial;
+
+    public static final char DEFAULT_DATA_FILE_CHARACTER_SEPARATOR = ',';
+
+    /**
+     * Doesn't create or modify the table in any way.
+     */
+    public static final String CREATE_TABLE_POLICY_NEVER = "never";
+
+    /**
+     * Always recreates the table from scratch and loads the CSV data.
+     */
+    public static final String CREATE_TABLE_POLICY_ALWAYS = "always";
+
+    /**
+     * If the table doesn't exist then creates it and loads the CSV data. If the table already exists, only adds missing
+     * columns (with null values).
+     */
+    public static final String CREATE_TABLE_POLICY_ON_MISSING_COLUMNS = "on_missing_columns";
+
+    public static final String CREATE_TABLE_POLICY_DEFAULT = CREATE_TABLE_POLICY_NEVER;
+
+    public static final List<String> CREATE_TABLE_POLICIES = Arrays.asList(CREATE_TABLE_POLICY_NEVER,
+            CREATE_TABLE_POLICY_ALWAYS, CREATE_TABLE_POLICY_ON_MISSING_COLUMNS);
 
     @XNode("@name")
     public String name;
@@ -80,6 +110,17 @@ public class BaseDirectoryDescriptor implements Cloneable {
 
     @XNode("idField")
     public String idField;
+
+    @XNode("autoincrementIdField")
+    public Boolean autoincrementIdField;
+
+    public boolean isAutoincrementIdField() {
+        return autoincrementIdField == null ? AUTO_INCREMENT_ID_FIELD_DEFAULT : autoincrementIdField.booleanValue();
+    }
+
+    public void setAutoincrementIdField(boolean autoincrementIdField) {
+        this.autoincrementIdField = Boolean.valueOf(autoincrementIdField);
+    }
 
     @XNode("table")
     public String tableName;
@@ -113,6 +154,69 @@ public class BaseDirectoryDescriptor implements Cloneable {
 
     @XNode("substringMatchType")
     public String substringMatchType;
+
+    /**
+     * @since 8.4
+     */
+    @XNodeList(value = "types/type", type = String[].class, componentType = String.class)
+    public String[] types;
+
+    /**
+     * @since 8.4
+     */
+    @XNodeList(value = "deleteConstraint", type = ArrayList.class, componentType = DirectoryDeleteConstraintDescriptor.class)
+    List<DirectoryDeleteConstraintDescriptor> deleteConstraints;
+
+    /**
+     * @since 9.2
+     */
+    @XNodeList(value = "references/reference", type = ReferenceDescriptor[].class, componentType = ReferenceDescriptor.class)
+    ReferenceDescriptor[] references;
+
+    /**
+     * @since 9.2
+     */
+    @XNodeList(value = "references/inverseReference", type = InverseReferenceDescriptor[].class, componentType = InverseReferenceDescriptor.class)
+    InverseReferenceDescriptor[] inverseReferences;
+
+    @XNode("dataFile")
+    public String dataFileName;
+
+    public String getDataFileName() {
+        return dataFileName;
+    }
+
+    @XNode(value = "dataFileCharacterSeparator", trim = false)
+    public String dataFileCharacterSeparator = ",";
+
+    public char getDataFileCharacterSeparator() {
+        char sep;
+        if (StringUtils.isEmpty(dataFileCharacterSeparator)) {
+            sep = DEFAULT_DATA_FILE_CHARACTER_SEPARATOR;
+        } else {
+            sep = dataFileCharacterSeparator.charAt(0);
+            if (dataFileCharacterSeparator.length() > 1) {
+                log.warn("More than one character found for character separator, will use the first one \"" + sep
+                        + "\"");
+            }
+        }
+        return sep;
+    }
+
+    @XNode("createTablePolicy")
+    public String createTablePolicy;
+
+    public String getCreateTablePolicy() {
+        if (StringUtils.isBlank(createTablePolicy)) {
+            return CREATE_TABLE_POLICY_DEFAULT;
+        }
+        String ctp = createTablePolicy.toLowerCase();
+        if (!CREATE_TABLE_POLICIES.contains(ctp)) {
+            throw new DirectoryException("Invalid createTablePolicy: " + createTablePolicy + ", it should be one of: "
+                    + CREATE_TABLE_POLICIES);
+        }
+        return ctp;
+    }
 
     public boolean isReadOnly() {
         return readOnly == null ? READ_ONLY_DEFAULT : readOnly.booleanValue();
@@ -165,6 +269,16 @@ public class BaseDirectoryDescriptor implements Cloneable {
                 clone.permissions[i] = permissions[i].clone();
             }
         }
+        if (references != null) {
+            clone.references = Arrays.stream(references)
+                                     .map(ReferenceDescriptor::clone)
+                                     .toArray(ReferenceDescriptor[]::new);
+        }
+        if (inverseReferences != null) {
+            clone.inverseReferences = Arrays.stream(inverseReferences)
+                                     .map(InverseReferenceDescriptor::clone)
+                                     .toArray(InverseReferenceDescriptor[]::new);
+        }
         return clone;
     }
 
@@ -179,6 +293,9 @@ public class BaseDirectoryDescriptor implements Cloneable {
         }
         if (other.idField != null) {
             idField = other.idField;
+        }
+        if (other.autoincrementIdField != null) {
+            autoincrementIdField = other.autoincrementIdField;
         }
         if (other.tableName != null) {
             tableName = other.tableName;
@@ -213,13 +330,61 @@ public class BaseDirectoryDescriptor implements Cloneable {
         if (other.substringMatchType != null) {
             substringMatchType = other.substringMatchType;
         }
+        if (other.types != null) {
+            types = other.types;
+        }
+        if (other.deleteConstraints != null) {
+            deleteConstraints = other.deleteConstraints;
+        }
+        if (other.dataFileName != null) {
+            dataFileName = other.dataFileName;
+        }
+        if (other.dataFileCharacterSeparator != null) {
+            dataFileCharacterSeparator = other.dataFileCharacterSeparator;
+        }
+        if (other.createTablePolicy != null) {
+            createTablePolicy = other.createTablePolicy;
+        }
+        if (other.references != null && other.references.length != 0) {
+            references = other.references;
+        }
+        if (other.inverseReferences != null && other.inverseReferences.length != 0) {
+            inverseReferences = other.inverseReferences;
+        }
     }
 
     /**
-     * Creates a new {@link Directory} instance from this {@link DirectoryDescriptor).
+     * Creates a new {@link Directory} instance from this {@link BaseDirectoryDescriptor).
      */
     public Directory newDirectory() {
         throw new UnsupportedOperationException("Cannot be instantiated as Directory: " + getClass().getName());
+    }
+
+    /**
+     * @since 8.4
+     */
+    public List<DirectoryDeleteConstraint> getDeleteConstraints() throws DirectoryException {
+        List<DirectoryDeleteConstraint> res = new ArrayList<>();
+        if (deleteConstraints != null) {
+            for (DirectoryDeleteConstraintDescriptor deleteConstraintDescriptor : deleteConstraints) {
+                res.add(deleteConstraintDescriptor.getDeleteConstraint());
+            }
+        }
+        return res;
+    }
+
+    /**
+     * @since 9.2
+     */
+    public ReferenceDescriptor[] getReferences() {
+        return references;
+    }
+
+    /**
+     * @since 9.2
+     */
+    public InverseReferenceDescriptor[] getInverseReferences() {
+        return inverseReferences;
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
@@ -236,8 +237,14 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
     @Override
     public void registerResourceBundle(ResourceBundle bundle) {
         log.info(String.format("Register resource bundle '%s'", bundle.getName()));
+        if (bundle.getResources().removeIf(StringUtils::isBlank)) {
+            log.error("Some resources references were null or blank while setting " + bundle.getName()
+                    + " and have been supressed. This probably happened because some <resource> tags were empty in "
+                    + "the xml declaration. The correct form is <resource>resource name</resource>.");
+        }
         resourceBundles.addContribution(bundle);
         log.info(String.format("Done registering resource bundle '%s'", bundle.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -245,6 +252,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Removing resource bundle '%s'", bundle.getName()));
         resourceBundles.removeContribution(bundle);
         log.info(String.format("Done removing resource bundle '%s'", bundle.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -252,6 +260,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Register resource '%s'", resource.getName()));
         resources.addContribution(resource);
         log.info(String.format("Done registering resource '%s'", resource.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -259,6 +268,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Removing resource '%s'", resource.getName()));
         resources.removeContribution(resource);
         log.info(String.format("Done removing resource '%s'", resource.getName()));
+        setModifiedNow();
     }
 
 }

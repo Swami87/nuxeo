@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@
  */
 package org.nuxeo.functionaltests.pages.admincenter.activity;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 import org.nuxeo.functionaltests.EventListener;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
-
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 /**
  * @since 7.10
@@ -55,7 +55,7 @@ public abstract class ActivityDashboardPage extends ActivityPage {
         sb.append("var date = document.querySelectorAll(\"input[type='date']\")[0];");
         sb.append("date.value = '" + fmtDate + "';");
         // force set the date since change events might not be triggered
-        sb.append("var els = document.querySelectorAll('" + selector +"');");
+        sb.append("var els = document.querySelectorAll('" + selector + "');");
         sb.append("for (var i=0; i<els.length; i++) { els[i].startDate = '" + fmtDate + "'; }");
         js.executeScript(sb.toString());
     }
@@ -66,7 +66,7 @@ public abstract class ActivityDashboardPage extends ActivityPage {
         sb.append("var date = document.querySelectorAll(\"input[type='date']\")[1];");
         sb.append("date.value = '" + fmtDate + "';");
         // force set the date since change events might not be triggered
-        sb.append("var els = document.querySelectorAll('" + selector +"');");
+        sb.append("var els = document.querySelectorAll('" + selector + "');");
         sb.append("for (var i=0; i<els.length; i++) { els[i].endDate = '" + fmtDate + "'; }");
         js.executeScript(sb.toString());
     }

@@ -31,18 +31,31 @@
     <filter-mapping>
       <filter-name>NuxeoAuthenticationFilter
       </filter-name>
-      <url-pattern>/oauth2Grant.jsp</url-pattern>
+      <url-pattern>/oauth2/authorize</url-pattern>
       <dispatcher>REQUEST</dispatcher>
       <dispatcher>FORWARD</dispatcher>
     </filter-mapping>
     <filter-mapping>
       <filter-name>NuxeoAuthenticationFilter
       </filter-name>
-      <url-pattern>/oauth2/*</url-pattern>
+      <url-pattern>/oauth2/authorize_submit</url-pattern>
       <dispatcher>REQUEST</dispatcher>
       <dispatcher>FORWARD</dispatcher>
     </filter-mapping>
+  </extension>
 
+  <extension target="web#SERVLET">
+    <servlet>
+      <servlet-name>OAuth2 Servlet</servlet-name>
+      <servlet-class>
+        org.nuxeo.ecm.platform.oauth2.NuxeoOAuth2Servlet
+      </servlet-class>
+      <load-on-startup>1</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+      <servlet-name>OAuth2 Servlet</servlet-name>
+      <url-pattern>/oauth2/*</url-pattern>
+    </servlet-mapping>
   </extension>
 
 </fragment>

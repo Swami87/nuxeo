@@ -20,14 +20,17 @@ package org.nuxeo.ecm.automation.core.operations.notification;
 
 import java.net.URL;
 
-import org.nuxeo.ecm.core.api.DocumentLocation;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.impl.DocumentLocationImpl;
+import org.nuxeo.ecm.platform.ec.notification.NotificationEventListener;
 import org.nuxeo.ecm.platform.ec.notification.service.NotificationService;
 import org.nuxeo.ecm.platform.ec.notification.service.NotificationServiceHelper;
 import org.nuxeo.ecm.platform.url.DocumentViewImpl;
 import org.nuxeo.ecm.platform.url.api.DocumentView;
 import org.nuxeo.ecm.platform.url.api.DocumentViewCodecManager;
+import org.nuxeo.ecm.platform.url.codec.api.DocumentViewCodec;
 import org.nuxeo.runtime.api.Framework;
 
 /**
@@ -35,25 +38,31 @@ import org.nuxeo.runtime.api.Framework;
  */
 public class MailTemplateHelper {
 
+    protected static final Log log = LogFactory.getLog(MailTemplateHelper.class);
+
     private MailTemplateHelper() {
     }
 
     public static String getDocumentUrl(DocumentModel doc, String viewId) {
-        if (viewId == null) {
-            viewId = "view_documents";
+        NotificationService notificationService = NotificationServiceHelper.getNotificationService();
+        DocumentViewCodecManager codecService = Framework.getService(DocumentViewCodecManager.class);
+        DocumentViewCodec codec = codecService.getCodec(NotificationEventListener.NOTIFICATION_DOCUMENT_ID_CODEC_NAME);
+        boolean isNotificationCodec = codec != null;
+
+        String result = "";
+        if (isNotificationCodec) {
+            DocumentView view;
+            if (viewId == null) {
+                view = new DocumentViewImpl(doc);
+            } else {
+                view = new DocumentViewImpl(new DocumentLocationImpl(doc), viewId);
+            }
+            result = codecService.getUrlFromDocumentView(NotificationEventListener.NOTIFICATION_DOCUMENT_ID_CODEC_NAME,
+                    view, true, notificationService.getServerUrlPrefix());
+        } else {
+            log.warn("No codec was found to notify document url. It is like that no UI is installed.");
         }
-        DocumentLocation docLoc = new DocumentLocationImpl(doc);
-        DocumentView docView = new DocumentViewImpl(docLoc);
-        docView.setViewId(viewId);
-        DocumentViewCodecManager codecMgr = Framework.getService(DocumentViewCodecManager.class);
-        NotificationService notifMgr = NotificationServiceHelper.getNotificationService();
-        if (codecMgr == null) {
-            throw new RuntimeException("Service 'DocumentViewCodecManager' not available");
-        }
-        if (notifMgr == null) {
-            throw new RuntimeException("Service 'NotificationService' not available");
-        }
-        return codecMgr.getUrlFromDocumentView(docView, true, notifMgr.getServerUrlPrefix());
+        return result;
     }
 
     public static URL getTemplate(String name) {

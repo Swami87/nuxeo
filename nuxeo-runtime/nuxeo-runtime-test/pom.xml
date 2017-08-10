@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.nuxeo.runtime</groupId>
     <artifactId>nuxeo-runtime-parent</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
 
   <groupId>org.nuxeo.runtime</groupId>
@@ -41,6 +41,10 @@
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.github.lukehutch</groupId>
+      <artifactId>fast-classpath-scanner</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.nuxeo.common</groupId>
@@ -59,6 +63,7 @@
       <artifactId>nuxeo-runtime-management</artifactId>
     </dependency>
 
+    
     <dependency>
       <groupId>org.javasimon</groupId>
       <artifactId>javasimon-core</artifactId>
@@ -72,6 +77,21 @@
     </dependency>
 
     <!-- Use of compile scope for external dependencies -->
+    <dependency>
+      <groupId>com.tngtech.jgiven</groupId>
+      <artifactId>jgiven-core</artifactId>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.jgiven</groupId>
+      <artifactId>jgiven-junit</artifactId>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.java</groupId>
+      <artifactId>junit-dataprovider</artifactId>
+      <scope>compile</scope>
+    </dependency>
     <dependency>
       <groupId>org.jmock</groupId>
       <artifactId>jmock</artifactId>
@@ -181,13 +201,14 @@
     </dependency>
     <dependency>
       <groupId>org.seleniumhq.selenium</groupId>
-      <artifactId>selenium-htmlunit-driver</artifactId>
+      <artifactId>htmlunit-driver</artifactId>
     </dependency>
 
     <dependency>
       <groupId>org.concordion</groupId>
       <artifactId>concordion</artifactId>
     </dependency>
+
 
     <dependency>
       <groupId>org.ow2.asm</groupId>

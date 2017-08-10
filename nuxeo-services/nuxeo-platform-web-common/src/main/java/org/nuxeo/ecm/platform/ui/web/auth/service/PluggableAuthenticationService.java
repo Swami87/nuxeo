@@ -207,7 +207,12 @@ public class PluggableAuthenticationService extends DefaultComponent {
             if (preFiltersDesc == null) {
                 preFiltersDesc = new HashMap<String, AuthPreFilterDescriptor>();
             }
-            preFiltersDesc.put(desc.getName(), desc);
+
+            if (desc.enabled) {
+                preFiltersDesc.put(desc.getName(), desc);
+            } else {
+                preFiltersDesc.remove(desc.getName());
+            }
         } else if (extensionPoint.equals(EP_LOGINSCREEN)) {
             LoginScreenConfig newConfig = (LoginScreenConfig) contribution;
             loginScreenConfigRegistry.addContribution(newConfig);
@@ -355,7 +360,8 @@ public class PluggableAuthenticationService extends DefaultComponent {
     }
 
     public NuxeoAuthenticationPlugin getPlugin(String pluginName) {
-        if (authenticatorsDescriptors.containsKey(pluginName) && authenticatorsDescriptors.get(pluginName).getEnabled()) {
+        if (authenticatorsDescriptors.containsKey(pluginName)
+                && authenticatorsDescriptors.get(pluginName).getEnabled()) {
             if (authenticators.containsKey(pluginName)) {
                 return authenticators.get(pluginName);
             }

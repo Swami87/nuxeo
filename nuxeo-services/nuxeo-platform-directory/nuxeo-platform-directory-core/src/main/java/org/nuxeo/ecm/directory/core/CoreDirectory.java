@@ -33,6 +33,7 @@ import org.nuxeo.ecm.core.schema.SchemaManager;
 import org.nuxeo.ecm.core.schema.types.Field;
 import org.nuxeo.ecm.core.schema.types.Schema;
 import org.nuxeo.ecm.directory.AbstractDirectory;
+import org.nuxeo.ecm.directory.Directory;
 import org.nuxeo.ecm.directory.DirectoryException;
 import org.nuxeo.ecm.directory.DirectoryFieldMapper;
 import org.nuxeo.ecm.directory.Session;
@@ -50,7 +51,7 @@ public class CoreDirectory extends AbstractDirectory {
     protected final Schema schema;
 
     public CoreDirectory(CoreDirectoryDescriptor descriptor) {
-        super(descriptor);
+        super(descriptor, null);
         SchemaManager schemaManager = Framework.getService(SchemaManager.class);
         schema = schemaManager.getSchema(descriptor.schemaName);
         fieldMapper = new DirectoryFieldMapper(descriptor.fieldMapping);

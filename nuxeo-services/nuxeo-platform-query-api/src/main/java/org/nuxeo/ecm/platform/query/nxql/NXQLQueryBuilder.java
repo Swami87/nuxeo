@@ -30,7 +30,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
-import org.nuxeo.common.collections.ScopeType;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.PropertyException;
@@ -60,6 +61,8 @@ import org.nuxeo.runtime.services.config.ConfigurationService;
  * @author Anahide Tchertchian
  */
 public class NXQLQueryBuilder {
+
+    private static final Log log = LogFactory.getLog(NXQLQueryBuilder.class);
 
     // @since 5.9.2
     public static final String DEFAULT_SELECT_STATEMENT = "SELECT * FROM Document";
@@ -96,6 +99,14 @@ public class NXQLQueryBuilder {
 
     public static String getQuery(DocumentModel model, WhereClauseDefinition whereClause, Object[] params,
             SortInfo... sortInfos) {
+        return getQuery(model, whereClause, null, params, sortInfos);
+    }
+
+    /**
+     * @since 8.4
+     */
+    public static String getQuery(DocumentModel model, WhereClauseDefinition whereClause, String quickFiltersClause,
+            Object[] params, SortInfo... sortInfos) {
         StringBuilder queryBuilder = new StringBuilder();
         String selectStatement = whereClause.getSelectStatement();
         if (StringUtils.isBlank(selectStatement)) {
@@ -103,7 +114,7 @@ public class NXQLQueryBuilder {
         }
         queryBuilder.append(selectStatement);
         if (whereClause != null) {
-            queryBuilder.append(getQueryElement(model, whereClause, params));
+            queryBuilder.append(getQueryElement(model, whereClause, quickFiltersClause, params));
         }
         String sortClause = getSortClause(sortInfos);
         if (sortClause != null && sortClause.length() > 0) {
@@ -114,6 +125,14 @@ public class NXQLQueryBuilder {
     }
 
     public static String getQueryElement(DocumentModel model, WhereClauseDefinition whereClause, Object[] params) {
+        return getQueryElement(model, whereClause, null, params);
+    }
+
+    /**
+     * @since 8.4
+     */
+    public static String getQueryElement(DocumentModel model, WhereClauseDefinition whereClause,
+            String quickFiltersClause, Object[] params) {
         List<String> elements = new ArrayList<String>();
         PredicateDefinition[] predicates = whereClause.getPredicates();
         if (predicates != null) {
@@ -141,6 +160,9 @@ public class NXQLQueryBuilder {
         // add fixed part if applicable
         String fixedPart = whereClause.getFixedPart();
         if (!StringUtils.isBlank(fixedPart)) {
+            if (StringUtils.isNotBlank(quickFiltersClause)) {
+                fixedPart = appendClause(fixedPart, quickFiltersClause);
+            }
             if (elements.isEmpty()) {
                 elements.add(getQuery(fixedPart, params, whereClause.getQuoteFixedPartParameters(),
                         whereClause.getEscapeFixedPartParameters(), model));
@@ -148,6 +170,8 @@ public class NXQLQueryBuilder {
                 elements.add('(' + getQuery(fixedPart, params, whereClause.getQuoteFixedPartParameters(),
                         whereClause.getEscapeFixedPartParameters(), model) + ')');
             }
+        } else if (StringUtils.isNotBlank(quickFiltersClause)) {
+            fixedPart = quickFiltersClause;
         }
 
         if (elements.isEmpty()) {
@@ -204,20 +228,20 @@ public class NXQLQueryBuilder {
                 } else if (parameter instanceof List) {
                     replaceStringList(pattern, (List<?>) parameter, quoteParameters, escape, key);
                 } else if (parameter instanceof Boolean) {
-                    pattern = pattern.replaceAll(key, ((Boolean) parameter) ? "1" : "0");
+                    pattern = buildPattern(pattern, key, ((Boolean) parameter) ? "1" : "0");
                 } else if (parameter instanceof Number) {
-                    pattern = pattern.replaceAll(key, parameter.toString());
+                    pattern = buildPattern(pattern, key, parameter.toString());
                 } else if (parameter instanceof Literal) {
                     if (quoteParameters) {
-                        pattern = pattern.replaceAll(key, "'" + parameter.toString() + "'");
+                        pattern = buildPattern(pattern, key, "'" + parameter.toString() + "'");
                     } else {
-                        pattern = pattern.replaceAll(key, ((Literal) parameter).asString());
+                        pattern = buildPattern(pattern, key, ((Literal) parameter).asString());
                     }
                 } else {
                     if (quoteParameters) {
-                        pattern = pattern.replaceAll(key, "'" + parameter + "'");
+                        pattern = buildPattern(pattern, key, "'" + parameter + "'");
                     } else {
-                        pattern = pattern.replaceAll(key, parameter != null ? parameter.toString() : null);
+                        pattern = buildPattern(pattern, key, parameter != null ? parameter.toString() : null);
                     }
                 }
             }
@@ -287,7 +311,8 @@ public class NXQLQueryBuilder {
         for (Object param : listParams) {
             result.add(prepareStringLiteral(param.toString(), quoteParameters, escape));
         }
-        return pattern.replaceAll(key, '(' + StringUtils.join(result, ", " + "") + ')');
+
+        return buildPattern(pattern, key, '(' + StringUtils.join(result, ", " + "") + ')');
     }
 
     /**
@@ -625,7 +650,7 @@ public class NXQLQueryBuilder {
             }
         } catch (PropertyNotFoundException e) {
             // fall back on named parameters if any
-            Map<String, Object> params = (Map<String, Object>) model.getContextData().getScopedValue(ScopeType.DEFAULT,
+            Map<String, Object> params = (Map<String, Object>) model.getContextData(
                     PageProviderService.NAMED_PARAMETERS);
             if (params != null) {
                 if (xpath != null) {
@@ -708,6 +733,30 @@ public class NXQLQueryBuilder {
         } else {
             return (Boolean) rawValue;
         }
+    }
+
+    /**
+     * @since 8.4
+     */
+    public static String appendClause(String query, String clause) {
+        return query + " AND " + clause;
+    }
+
+    /**
+     * @since 8.4
+     */
+    public static String buildPattern(String pattern, String key, String replacement) {
+        int index = pattern.indexOf(key);
+        while (index >= 0) {
+            // All keys not prefixed by a letter or a digit has to be replaced, because
+            // It could be part of a schema name
+            if (!Character.isLetterOrDigit(pattern.charAt(index - 1)) && (index + key.length() == pattern.length()
+                    || !Character.isLetterOrDigit(pattern.charAt(index + key.length())))) {
+                pattern = pattern.substring(0, index) + pattern.substring(index).replaceFirst(key, replacement);
+            }
+            index = pattern.indexOf(key, index + 1);
+        }
+        return pattern;
     }
 
 }

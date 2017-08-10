@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,11 +44,6 @@ import org.nuxeo.runtime.services.event.EventListener;
 public class NuxeoJSFReloadHandler implements EventListener {
 
     private static final Log log = LogFactory.getLog(NuxeoJSFReloadHandler.class);
-
-    @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return true;
-    }
 
     @Override
     public void handleEvent(Event event) {

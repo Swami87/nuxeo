@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.nuxeo.ecm.platform</groupId>
     <artifactId>nuxeo-services-parent</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
     <relativePath>../nuxeo-services/pom.xml</relativePath>
   </parent>
 
@@ -23,15 +23,13 @@
     <module>nuxeo-platform-domsync-core</module>
     <module>nuxeo-platform-io</module>
     <module>nuxeo-platform-tag-service</module>
-    <module>nuxeo-webengine-features</module>
     <module>annot</module>
     <module>nuxeo-platform-imaging-tiling</module>
     <module>nuxeo-platform-lang</module>
     <module>nuxeo-platform-mail</module>
     <module>nuxeo-platform-notification</module>
-    <module>nuxeo-platform-preview</module>
+    <module>preview</module>
     <module>nuxeo-platform-publisher</module>
-    <module>nuxeo-platform-forum</module>
     <module>nuxeo-platform-userworkspace</module>
     <module>nuxeo-platform-virtualnavigation</module>
     <module>nuxeo-automation</module>
@@ -47,7 +45,7 @@
     <module>nuxeo-platform-oauth</module>
     <module>nuxeo-platform-collections</module>
     <module>rest-api</module>
-    <module>nuxeo-search-ui</module>
+    <module>nuxeo-search</module>
     <module>nuxeo-elasticsearch</module>
     <module>nuxeo-platform-rendition</module>
     <module>nuxeo-user-center</module>

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,7 @@
  */
 package org.nuxeo.ecm.core.schema;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
-import org.nuxeo.runtime.model.ComponentName;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.model.Extension;
 
@@ -35,45 +31,15 @@ import org.nuxeo.runtime.model.Extension;
  */
 public class TypeService extends DefaultComponent {
 
-    /**
-     * @deprecated since 5.7 (unused)
-     */
-    @Deprecated
-    public static final ComponentName NAME = new ComponentName("org.nuxeo.ecm.core.schema.TypeService");
-
-    private static final Log log = LogFactory.getLog(TypeService.class);
-
     private static final String XP_SCHEMA = "schema";
 
     private static final String XP_DOCTYPE = "doctype";
 
     private static final String XP_CONFIGURATION = "configuration";
 
+    private static final String XP_DEPRECATION = "deprecation";
+
     private SchemaManagerImpl schemaManager;
-
-    /**
-     * @deprecated since 5.7, use {@code Framework.getLocalService(SchemaManager.class)} instead.
-     */
-    @Deprecated
-    public static SchemaManager getSchemaManager() {
-        return Framework.getLocalService(SchemaManager.class);
-    }
-
-    /**
-     * @deprecated since 5.7, use {@code Framework.getLocalService(SchemaManager.class)} instead.
-     */
-    @Deprecated
-    public SchemaManager getTypeManager() {
-        return schemaManager;
-    }
-
-    /**
-     * @deprecated since 5.7 (unused)
-     */
-    @Deprecated
-    public XSDLoader getSchemaLoader() {
-        return new XSDLoader(schemaManager);
-    }
 
     @Override
     public void activate(ComponentContext context) {
@@ -88,8 +54,9 @@ public class TypeService extends DefaultComponent {
     @Override
     public void registerExtension(Extension extension) {
         String xp = extension.getExtensionPoint();
-        if (XP_DOCTYPE.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+        Object[] contribs = extension.getContributions();
+        switch (xp) {
+        case XP_DOCTYPE:
             for (Object contrib : contribs) {
                 if (contrib instanceof DocumentTypeDescriptor) {
                     schemaManager.registerDocumentType((DocumentTypeDescriptor) contrib);
@@ -99,8 +66,8 @@ public class TypeService extends DefaultComponent {
                     schemaManager.registerProxies((ProxiesDescriptor) contrib);
                 }
             }
-        } else if (XP_SCHEMA.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+            break;
+        case XP_SCHEMA:
             for (Object contrib : contribs) {
                 // use the context of the bundle contributing the extension
                 // to load schemas
@@ -108,19 +75,26 @@ public class TypeService extends DefaultComponent {
                 sbd.context = extension.getContext();
                 schemaManager.registerSchema(sbd);
             }
-        } else if (XP_CONFIGURATION.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+            break;
+        case XP_CONFIGURATION:
             for (Object contrib : contribs) {
                 schemaManager.registerConfiguration((TypeConfiguration) contrib);
             }
+            break;
+        case XP_DEPRECATION:
+            for (Object contrib : contribs) {
+                schemaManager.registerPropertyDeprecation((PropertyDeprecationDescriptor) contrib);
+            }
+            break;
         }
     }
 
     @Override
     public void unregisterExtension(Extension extension) {
         String xp = extension.getExtensionPoint();
-        if (XP_DOCTYPE.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+        Object[] contribs = extension.getContributions();
+        switch (xp) {
+        case XP_DOCTYPE:
             for (Object contrib : contribs) {
                 if (contrib instanceof DocumentTypeDescriptor) {
                     schemaManager.unregisterDocumentType((DocumentTypeDescriptor) contrib);
@@ -130,16 +104,22 @@ public class TypeService extends DefaultComponent {
                     schemaManager.unregisterProxies((ProxiesDescriptor) contrib);
                 }
             }
-        } else if (XP_SCHEMA.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+            break;
+        case XP_SCHEMA:
             for (Object contrib : contribs) {
                 schemaManager.unregisterSchema((SchemaBindingDescriptor) contrib);
             }
-        } else if (XP_CONFIGURATION.equals(xp)) {
-            Object[] contribs = extension.getContributions();
+            break;
+        case XP_CONFIGURATION:
             for (Object contrib : contribs) {
                 schemaManager.unregisterConfiguration((TypeConfiguration) contrib);
             }
+            break;
+        case XP_DEPRECATION:
+            for (Object contrib : contribs) {
+                schemaManager.unregisterPropertyDeprecation((PropertyDeprecationDescriptor) contrib);
+            }
+            break;
         }
     }
 
@@ -155,7 +135,7 @@ public class TypeService extends DefaultComponent {
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         schemaManager.flushPendingsRegistration();
     }
 

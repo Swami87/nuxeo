@@ -20,6 +20,7 @@
 package org.nuxeo.elasticsearch;
 
 import static org.junit.Assert.assertEquals;
+
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,11 +56,10 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
  *
  * @since 8.2
  */
-@Deploy({ "org.nuxeo.runtime.metrics",
-        "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.ecm.platform.audit", "org.nuxeo.ecm.platform.uidgen.core",
-        "org.nuxeo.elasticsearch.seqgen",
+@Deploy({ "org.nuxeo.runtime.metrics", "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.ecm.platform.audit",
+        "org.nuxeo.ecm.platform.uidgen.core", "org.nuxeo.elasticsearch.seqgen",
         "org.nuxeo.elasticsearch.seqgen.test:elasticsearch-seqgen-index-test-contrib.xml",
-        "org.nuxeo.elasticsearch.audit" })
+        "org.nuxeo.elasticsearch.audit", "org.nuxeo.admin.center" })
 @RunWith(FeaturesRunner.class)
 @Features({ RepositoryElasticSearchFeature.class, PlatformFeature.class })
 @LocalDeploy({ "org.nuxeo.elasticsearch.audit:elasticsearch-test-contrib.xml",
@@ -81,6 +81,8 @@ public class TestUserGroupAudit {
 
     @Before
     public void setupIndex() throws Exception {
+        // make sure that the audit bulker don't drain pending log entries while we reset the index
+        LogEntryGen.flushAndSync();
         esa.initIndexes(true);
     }
 
@@ -163,10 +165,16 @@ public class TestUserGroupAudit {
                 DocumentModel newUser = userManager.getBareUserModel();
                 newUser.setProperty("user", "username", userName + i);
                 newUser = userManager.createUser(newUser);
+                if (i == 0) {
+                    userManager.deleteUser(newUser);
+                }
             } else {
                 DocumentModel groupModel = userManager.getBareGroupModel();
                 groupModel.setProperty("group", "groupname", groupName + i);
                 groupModel = userManager.createGroup(groupModel);
+                if (i == LIMIT - 1) {
+                    userManager.deleteGroup(groupModel);
+                }
             }
         }
 
@@ -181,7 +189,7 @@ public class TestUserGroupAudit {
 
         List<DocumentModel> latestCreatedUsers = (List<DocumentModel>) pp.getCurrentPage();
 
-        assertEquals(LIMIT, latestCreatedUsers.size());
+        assertEquals(LIMIT - 2, latestCreatedUsers.size());
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  *
  * Contributors:
  *     Mariana Cedica
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.pages;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.functionaltests.AbstractTest;
 import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.forms.Select2WidgetElement;
@@ -30,8 +30,6 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
 
 /**
  * @since 5.8
@@ -63,11 +61,12 @@ public class WorkflowHomePage extends AbstractPage {
     }
 
     public void processFirstTask() {
-        userTasksPanel.findElement(By.xpath("//input[@type='submit' and @value='Process']")).click();
+        WebElement processButton = userTasksPanel.findElement(By.xpath("//input[@type='submit' and @value='Process']"));
+        waitUntilEnabledAndClick(processButton);
     }
 
     public SummaryTabSubPage redirectToTask(String taskTitle) {
-        driver.findElement(By.linkText(taskTitle)).click();
+        findElementWaitUntilEnabledAndClick(By.linkText(taskTitle));
         return new SummaryTabSubPage(driver);
     }
 
@@ -81,9 +80,9 @@ public class WorkflowHomePage extends AbstractPage {
     public void reassignTask(String taskDirective, String user) {
         TaskFancyBoxFragment taskBox = showTaskFancyBox("Reassign Task");
         taskBox.waitForTextToBePresent(taskDirective);
-        Select2WidgetElement particpants = new Select2WidgetElement(
-                driver,
-                driver.findElement(By.xpath("//div[contains(@id, 'nxl_workflowTaskReassignmentLayout_1:nxw_task_reassignment_actors_1_select2')]")),
+        Select2WidgetElement particpants = new Select2WidgetElement(driver,
+                driver.findElement(By
+                                     .xpath("//div[contains(@id, 'nxl_workflowTaskReassignmentLayout_1:nxw_task_reassignment_actors_1_select2')]")),
                 true);
         particpants.selectValue(user);
         taskBox.submit();
@@ -95,9 +94,9 @@ public class WorkflowHomePage extends AbstractPage {
     public void delegateTask(String taskDirective, String user) {
         TaskFancyBoxFragment taskBox = showTaskFancyBox("Delegate Task");
         taskBox.waitForTextToBePresent(taskDirective);
-        Select2WidgetElement particpants = new Select2WidgetElement(
-                driver,
-                driver.findElement(By.xpath("//div[contains(@id, 'nxl_workflowTaskReassignmentLayout:nxw_task_reassignment_actors_select2')]")),
+        Select2WidgetElement particpants = new Select2WidgetElement(driver,
+                driver.findElement(By
+                                     .xpath("//div[contains(@id, 'nxl_workflowTaskReassignmentLayout:nxw_task_reassignment_actors_select2')]")),
                 true);
         particpants.selectValue(user);
         taskBox.submit();
@@ -107,8 +106,9 @@ public class WorkflowHomePage extends AbstractPage {
      * @since 5.9.1
      */
     public TaskFancyBoxFragment showTaskFancyBox(String taskAction) {
-        driver.findElement(By.xpath(String.format("//input[@type='submit' and @value='%s']", taskAction))).click();
-        WebElement element = getFancyBoxContent();
+        findElementWaitUntilEnabledAndClick(
+                By.xpath(String.format("//input[@type='submit' and @value='%s']", taskAction)));
+        WebElement element = AbstractPage.getFancyBoxContent();
         return getWebFragment(element, WorkflowHomePage.TaskFancyBoxFragment.class);
     }
 
@@ -128,18 +128,15 @@ public class WorkflowHomePage extends AbstractPage {
         }
 
         public void cancel() {
-            cancelButton.click();
-            // make sure the fancybox content is not loaded anymore
-            WebDriverWait wait = new WebDriverWait(driver, AbstractTest.LOAD_TIMEOUT_SECONDS);
-            wait.until(ExpectedConditions.invisibilityOfElementLocated(By.id("fancybox-content")));
+            Locator.waitUntilEnabledAndClick(cancelButton);
+            AbstractPage.waitForFancyBoxClosed();
         }
 
         @Override
         public void submit() {
-            sumbitButton.click();
-            // make sure the fancybox content is not loaded anymore
-            WebDriverWait wait = new WebDriverWait(driver, AbstractTest.LOAD_TIMEOUT_SECONDS);
-            wait.until(ExpectedConditions.invisibilityOfElementLocated(By.id("fancybox-content")));
+            Locator.waitUntilEnabledAndClick(sumbitButton);
+            AbstractPage.waitForFancyBoxClosed();
         }
+
     }
 }

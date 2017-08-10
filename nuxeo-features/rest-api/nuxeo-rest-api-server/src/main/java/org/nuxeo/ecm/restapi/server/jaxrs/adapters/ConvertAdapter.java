@@ -67,27 +67,14 @@ public class ConvertAdapter extends DefaultAdapter {
     public Blob convert(@QueryParam("converter") String converter, @QueryParam("type") String type,
             @QueryParam("format") String format, @Context UriInfo uriInfo) {
         BlobHolder bh = getBlobHolderToConvert();
-
-        boolean txWasActive = false;
-        try {
-            if (TransactionHelper.isTransactionActive()) {
-                txWasActive = true;
-                TransactionHelper.commitOrRollbackTransaction();
-            }
-
-            if (StringUtils.isNotBlank(converter)) {
-                return convertWithConverter(bh, converter, uriInfo);
-            } else if (StringUtils.isNotBlank(type)) {
-                return convertWithMimeType(bh, type, uriInfo);
-            } else if (StringUtils.isNotBlank(format)) {
-                return convertWithFormat(bh, format, uriInfo);
-            } else {
-                throw new IllegalParameterException("No converter, type or format parameter specified");
-            }
-        } finally {
-            if (txWasActive && !TransactionHelper.isTransactionActiveOrMarkedRollback()) {
-                TransactionHelper.startTransaction();
-            }
+        if (StringUtils.isNotBlank(converter)) {
+            return convertWithConverter(bh, converter, uriInfo);
+        } else if (StringUtils.isNotBlank(type)) {
+            return convertWithMimeType(bh, type, uriInfo);
+        } else if (StringUtils.isNotBlank(format)) {
+            return convertWithFormat(bh, format, uriInfo);
+        } else {
+            throw new IllegalParameterException("No converter, type or format parameter specified");
         }
     }
 
@@ -180,12 +167,10 @@ public class ConvertAdapter extends DefaultAdapter {
             throw new IllegalParameterException("No converter, type or format parameter specified");
         }
 
-        String serverURL = ctx.getServerURL().toString();
-        if (serverURL.endsWith("/")) {
-            serverURL = serverURL.substring(0, serverURL.length() - 1);
-        }
+        String serverURL = StringUtils.stripEnd(ctx.getServerURL().toString(), "/");
         String pollingURL = String.format("%s%s/conversions/%s/poll", serverURL, ctx.getModulePath(), conversionId);
-        ConversionScheduled conversionScheduled = new ConversionScheduled(conversionId, pollingURL);
+        String resultURL = String.format("%s%s/conversions/%s/result", serverURL, ctx.getModulePath(), conversionId);
+        ConversionScheduled conversionScheduled = new ConversionScheduled(conversionId, pollingURL, resultURL);
         try {
             return Response.status(Response.Status.ACCEPTED)
                            .location(new URI(pollingURL))

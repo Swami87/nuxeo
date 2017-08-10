@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,11 +42,10 @@ import java.util.Map;
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 
-import org.junit.Assert;
-
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.hamcrest.number.IsCloseTo;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -94,11 +93,13 @@ import org.nuxeo.ecm.automation.server.test.json.JSONOperationWithArrays.SimpleP
 import org.nuxeo.ecm.automation.server.test.json.NestedJSONOperation;
 import org.nuxeo.ecm.automation.server.test.json.POJOObject;
 import org.nuxeo.ecm.automation.server.test.json.SimplePojoObjectMarshaller;
+import org.nuxeo.ecm.automation.server.test.operations.ContextInjectionOperation;
 import org.nuxeo.ecm.automation.test.EmbeddedAutomationServerFeature;
 import org.nuxeo.ecm.automation.test.helpers.ExceptionTest;
 import org.nuxeo.ecm.automation.test.helpers.HttpStatusOperationTest;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
+import org.nuxeo.ecm.core.test.TransactionalFeature;
 import org.nuxeo.ecm.core.test.annotations.Granularity;
 import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
 import org.nuxeo.ecm.platform.audit.AuditFeature;
@@ -106,6 +107,7 @@ import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.ecm.platform.web.common.ServletHelper;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentInstance;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
@@ -132,6 +134,9 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
     @Inject
     UserManager userManager;
 
+    @Inject
+    private TransactionalFeature txFeature;
+
     @BeforeClass
     public static void setupCodecs() throws Exception {
         Framework.getLocalService(ObjectCodecService.class).addCodec(new MyObjectCodec());
@@ -143,7 +148,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         ComponentInstance componentInstance = Framework.getRuntime().getComponentInstance(
                 "org.nuxeo.ecm.automation.server.AutomationServer");
         AutomationServerComponent automationServerComponent = (AutomationServerComponent) componentInstance.getInstance();
-        automationServerComponent.applicationStarted(componentInstance);
+        automationServerComponent.start(componentInstance);
     }
 
     /**
@@ -166,7 +171,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         // send the fields representation as json
         File fieldAsJsonFile = FileUtils.getResourceFileFromContext("creationFields.json");
         assertNotNull(fieldAsJsonFile);
-        String fieldsDataAsJSon = FileUtils.readFile(fieldAsJsonFile);
+        String fieldsDataAsJSon = org.apache.commons.io.FileUtils.readFileToString(fieldAsJsonFile);
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\n", "");
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\r", "");
         creationProps.put("ds:fields", fieldsDataAsJSon);
@@ -285,9 +290,9 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
      */
     @Test
     public void testRemoteChain() throws Exception {
-        OperationDocumentation opd = session.getOperation("principals");
+        OperationDocumentation opd = session.getOperation("testchain");
         assertNotNull(opd);
-        Document doc = (Document) session.newRequest("principals").setInput(DocRef.newRef("/")).execute();
+        Document doc = (Document) session.newRequest("testchain").setInput(DocRef.newRef("/")).execute();
         assertNotNull(doc);
     }
 
@@ -511,7 +516,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         // send the fields representation as json
         File fieldAsJsonFile = FileUtils.getResourceFileFromContext("updateFields.json");
         assertNotNull(fieldAsJsonFile);
-        String fieldsDataAsJSon = FileUtils.readFile(fieldAsJsonFile);
+        String fieldsDataAsJSon = org.apache.commons.io.FileUtils.readFileToString(fieldAsJsonFile);
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\n", "");
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\r", "");
         updateProps.put("ds:fields", fieldsDataAsJSon);
@@ -556,8 +561,8 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         Map<String, Object> map2 = mapper.readValue(obj2JSON, Map.class);
 
         // Expected result when passing obj1 and obj2 as input to the
-        POJOObject expectedObj12 = new POJOObject("Merged texts: [obj1 text][obj2 text]", Arrays.asList("1", "2", "2",
-                "3"));
+        POJOObject expectedObj12 = new POJOObject("Merged texts: [obj1 text][obj2 text]",
+                Arrays.asList("1", "2", "2", "3"));
 
         // The pojo and the map parameters can be passed as java objects
         // directly in the client call, the generic Jackson-based parser /
@@ -680,7 +685,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         // send the fields representation as json
         File fieldAsJsonFile = FileUtils.getResourceFileFromContext("updateFields.json");
         assertNotNull(fieldAsJsonFile);
-        String fieldsDataAsJSon = FileUtils.readFile(fieldAsJsonFile);
+        String fieldsDataAsJSon = org.apache.commons.io.FileUtils.readFileToString(fieldAsJsonFile);
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\n", "");
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\r", "");
         testDoc.set("ds:fields", fieldsDataAsJSon);
@@ -719,9 +724,6 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         Document folder = (Document) session.newRequest(CreateDocument.ID)
                                             .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
                                             .setInput(automationTestFolder)
-                                            // Check for context null property marshalling
-                                            .setContextProperty("test", null)
-                                            .setContextProperty("test1", "hello")
                                             .set("type", document.getType())
                                             .set("name", document.getId())
                                             .set("properties", document)
@@ -744,7 +746,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         // send the fields representation as json
         File fieldAsJsonFile = FileUtils.getResourceFileFromContext("updateFields.json");
         assertNotNull(fieldAsJsonFile);
-        String fieldsDataAsJSon = FileUtils.readFile(fieldAsJsonFile);
+        String fieldsDataAsJSon = org.apache.commons.io.FileUtils.readFileToString(fieldAsJsonFile);
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\n", "");
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\r", "");
         testDoc.set("ds:fields", fieldsDataAsJSon);
@@ -813,7 +815,7 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         // send the fields representation as json
         File fieldAsJsonFile = FileUtils.getResourceFileFromContext("updateFields.json");
         assertNotNull(fieldAsJsonFile);
-        String fieldsDataAsJSon = FileUtils.readFile(fieldAsJsonFile);
+        String fieldsDataAsJSon = org.apache.commons.io.FileUtils.readFileToString(fieldAsJsonFile);
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\n", "");
         fieldsDataAsJSon = fieldsDataAsJSon.replaceAll("\r", "");
         testDoc.set("ds:fields", fieldsDataAsJSon);
@@ -902,7 +904,8 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         logRequest.setInput(new PathRef("/"));
         logRequest.execute();
 
-        OperationRequest queryRequest = session.newRequest(AuditPageProviderOperation.ID, new HashMap<String, Object>());
+        OperationRequest queryRequest = session.newRequest(AuditPageProviderOperation.ID,
+                new HashMap<String, Object>());
 
         queryRequest.getParameters().put("providerName", "AUDIT_BROWSER");
         Object result = queryRequest.execute();
@@ -958,11 +961,11 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
             fail();
         } catch (RemoteException e) {
             assertNotNull(e);
-            assertEquals("Exception Message", e.getRemoteCause().getCause().getMessage());
             RemoteThrowable cause = (RemoteThrowable) e.getRemoteCause();
             while (cause.getCause() != null && cause.getCause() != cause) {
                 cause = (RemoteThrowable) cause.getCause();
             }
+            assertEquals("Exception Message", cause.getMessage());
             assertEquals(ExceptionTest.class.getCanonicalName(), cause.getOtherNodes().get("className").getTextValue());
             assertEquals(HttpServletResponse.SC_METHOD_NOT_ALLOWED, e.getStatus());
         } catch (Exception e) {
@@ -1002,22 +1005,84 @@ public class EmbeddedAutomationClientTest extends AbstractAutomationClientTest {
         assertEquals("documents", ((PropertyMap) root.getContextParameters().get("breadcrumb")).get("entity-type"));
     }
 
-    /**
-     * @since 7.4
-     */
     @Test
     public void canSendCalendarParameters() throws IOException {
+        canSendCalendarParameters("existingMembers");
+    }
+
+    @Test
+    @LocalDeploy("org.nuxeo.ecm.automation.test.test:test-allow-virtual-user.xml")
+    public void canSendCalendarParametersIfUserNotFound() throws IOException {
+        ConfigurationService configService = Framework.getService(ConfigurationService.class);
+        assertTrue(configService.isBooleanPropertyTrue(AddPermission.ALLOW_VIRTUAL_USER));
+
+        canSendCalendarParameters("nonExistentMembers");
+    }
+
+    @Test
+    public void cannotSendCalendarParametersIfUserNotFound() throws IOException {
+        cannotSendCalendarParameters("nonExistentMembers");
+    }
+
+    private void cannotSendCalendarParameters(String username) throws IOException {
         Document root = (Document) super.session.newRequest(FetchDocument.ID).set("value", "/").execute();
         OperationRequest request = session.newRequest(AddPermission.ID);
         GregorianCalendar begin = new GregorianCalendar(2015, Calendar.JUNE, 20, 12, 34, 56);
         GregorianCalendar end = new GregorianCalendar(2015, Calendar.JULY, 14, 12, 34, 56);
-        request.setInput(root)
-               .set("username", "members")
-               .set("permission", "Write")
-               .set("begin", begin)
-               .set("end", end)
-               .execute();
-        // TODO NXP-17232 to use context parameters in json payload response with automation and automation client.
-        // Once NXP-17232 resolved: assertions possible to get related doc ACLs.
+        try {
+            request.setInput(root)
+                   .set("username", username)
+                   .set("permission", "Write")
+                   .set("begin", begin)
+                   .set("end", end)
+                   .execute();
+        } catch (RemoteException e) {
+            String expectedMsg = "Failed to invoke operation: Document.AddPermission";
+            assertEquals(e.getMessage(), expectedMsg, e.getMessage());
+        }
+    }
+
+    private void canSendCalendarParameters(String username) throws IOException {
+        // Setup
+        DocumentModel testUser = userManager.getBareUserModel();
+        testUser.setProperty("user", "username", username);
+        testUser = userManager.createUser(testUser);
+        assertNotNull(testUser.getId());
+        txFeature.nextTransaction();
+
+        try {
+            Document root = (Document) super.session.newRequest(FetchDocument.ID).set("value", "/").execute();
+            OperationRequest request = session.newRequest(AddPermission.ID);
+            GregorianCalendar begin = new GregorianCalendar(2015, Calendar.JUNE, 20, 12, 34, 56);
+            GregorianCalendar end = new GregorianCalendar(2015, Calendar.JULY, 14, 12, 34, 56);
+            request.setInput(root)
+                   .set("username", username)
+                   .set("permission", "Write")
+                   .set("begin", begin)
+                   .set("end", end)
+                   .execute();
+            // TODO NXP-17232 to use context parameters in json payload response with automation and automation client.
+            // Once NXP-17232 resolved: assertions possible to get related doc ACLs.
+        } finally {
+            // Tear down
+            userManager.deleteUser(testUser.getId());
+        }
+    }
+
+    /**
+     * @since 8.3
+     */
+    @Test
+    public void testContextInjection() throws IOException {
+        Document root = (Document) session.newRequest(FetchDocument.ID).set("value", "/").execute();
+        Document folder = (Document) session.newRequest(ContextInjectionOperation.ID)
+                                            .setHeader(Constants.HEADER_NX_SCHEMAS, "*")
+                                            .setInput(root)
+                                            // Check for context null property marshalling
+                                            .setContextProperty("description", null)
+                                            .setContextProperty("title", "hello")
+                                            .execute();
+        assertEquals("hello", folder.getString("dc:title"));
+        assertNull(folder.getString("dc:description"));
     }
 }

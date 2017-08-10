@@ -47,6 +47,7 @@ import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 
 /**
  * Enrich {@link DocumentModel} Json.
@@ -111,6 +112,8 @@ public class ACLJsonEnricher extends AbstractJsonEnricher<DocumentModel> {
 
     public static final String EXTENDED_ACLS_PROPERTY = "extended";
 
+    public static final String COMPATIBILITY_CONFIGURATION_PARAM = "nuxeo.permissions.acl.enricher.compatibility";
+
     public ACLJsonEnricher() {
         super(NAME);
     }
@@ -122,33 +125,42 @@ public class ACLJsonEnricher extends AbstractJsonEnricher<DocumentModel> {
         for (ACL acl : item.getACLs()) {
             jg.writeStartObject();
             jg.writeStringField("name", acl.getName());
-            jg.writeArrayFieldStart("aces");
-            for (ACE ace : acl.getACEs()) {
-                jg.writeStartObject();
-                jg.writeStringField("id", ace.getId());
-                String username = ace.getUsername();
-                writePrincipalOrGroup(USERNAME_PROPERTY, username, jg);
-                jg.writeBooleanField("externalUser", NuxeoPrincipal.isTransientUsername(username));
-                jg.writeStringField("permission", ace.getPermission());
-                jg.writeBooleanField("granted", ace.isGranted());
-                writePrincipalOrGroup(CREATOR_PROPERTY, ace.getCreator(), jg);
-                DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime();
-                jg.writeStringField("begin",
-                        ace.getBegin() != null ? dateTimeFormatter.print(new DateTime(ace.getBegin())) : null);
-                jg.writeStringField("end", ace.getEnd() != null ? dateTimeFormatter.print(new DateTime(ace.getEnd()))
-                        : null);
-                jg.writeStringField("status", ace.getStatus().toString().toLowerCase());
+            writeACEsField(jg, "aces", acl, document);
 
-                if (ctx.getFetched(NAME).contains(EXTENDED_ACLS_PROPERTY)) {
-                    Map<String, Serializable> m = computeAdditionalFields(document, acl.getName(), ace.getId());
-                    for (Map.Entry<String, Serializable> entry : m.entrySet()) {
-                        jg.writeObjectField(entry.getKey(), entry.getValue());
-                    }
-                }
-
-                jg.writeEndObject();
+            ConfigurationService configurationService = Framework.getService(ConfigurationService.class);
+            if (configurationService.isBooleanPropertyTrue(COMPATIBILITY_CONFIGURATION_PARAM)) {
+                writeACEsField(jg, "ace", acl, document);
             }
-            jg.writeEndArray();
+            jg.writeEndObject();
+        }
+        jg.writeEndArray();
+    }
+
+    protected void writeACEsField(JsonGenerator jg, String fieldName, ACL acl, DocumentModel document)
+            throws IOException {
+        jg.writeArrayFieldStart(fieldName);
+        for (ACE ace : acl.getACEs()) {
+            jg.writeStartObject();
+            jg.writeStringField("id", ace.getId());
+            String username = ace.getUsername();
+            writePrincipalOrGroup(USERNAME_PROPERTY, username, jg);
+            jg.writeBooleanField("externalUser", NuxeoPrincipal.isTransientUsername(username));
+            jg.writeStringField("permission", ace.getPermission());
+            jg.writeBooleanField("granted", ace.isGranted());
+            writePrincipalOrGroup(CREATOR_PROPERTY, ace.getCreator(), jg);
+            DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime();
+            jg.writeStringField("begin",
+                    ace.getBegin() != null ? dateTimeFormatter.print(new DateTime(ace.getBegin())) : null);
+            jg.writeStringField("end",
+                    ace.getEnd() != null ? dateTimeFormatter.print(new DateTime(ace.getEnd())) : null);
+            jg.writeStringField("status", ace.getStatus().toString().toLowerCase());
+
+            if (ctx.getFetched(NAME).contains(EXTENDED_ACLS_PROPERTY)) {
+                Map<String, Serializable> m = computeAdditionalFields(document, acl.getName(), ace.getId());
+                for (Map.Entry<String, Serializable> entry : m.entrySet()) {
+                    jg.writeObjectField(entry.getKey(), entry.getValue());
+                }
+            }
             jg.writeEndObject();
         }
         jg.writeEndArray();
@@ -178,20 +190,16 @@ public class ACLJsonEnricher extends AbstractJsonEnricher<DocumentModel> {
         Map<String, Serializable> m = new HashMap<>();
 
         DirectoryService directoryService = Framework.getLocalService(DirectoryService.class);
-        Session session = null;
-        try {
-            session = directoryService.open(ACE_INFO_DIRECTORY);
-            String id = computeDirectoryId(doc, aclName, aceId);
-            DocumentModel entry = session.getEntry(id);
-            if (entry != null) {
-                m.put("notify", entry.getPropertyValue(ACE_INFO_NOTIFY));
-                m.put("comment", entry.getPropertyValue(ACE_INFO_COMMENT));
+        Framework.doPrivileged(() -> {
+            try (Session session = directoryService.open(ACE_INFO_DIRECTORY)) {
+                String id = computeDirectoryId(doc, aclName, aceId);
+                DocumentModel entry = session.getEntry(id);
+                if (entry != null) {
+                    m.put("notify", entry.getPropertyValue(ACE_INFO_NOTIFY));
+                    m.put("comment", entry.getPropertyValue(ACE_INFO_COMMENT));
+                }
             }
-        } finally {
-            if (session != null) {
-                session.close();
-            }
-        }
+        });
 
         return m;
     }

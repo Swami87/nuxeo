@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,23 +21,18 @@ package org.nuxeo.ecm.core.redis;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Collections;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.text.StrBuilder;
 import org.nuxeo.ecm.core.api.NuxeoException;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.model.SimpleContributionRegistry;
 import org.osgi.framework.Bundle;
-
-import redis.clients.jedis.Jedis;
 
 /**
  * Implementation of the Redis Service holding the configured Jedis pool.
@@ -48,7 +43,7 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
 
     private static final String DEFAULT_PREFIX = "nuxeo:";
 
-    protected volatile RedisExecutor executor = RedisExecutor.NOOP;
+    protected volatile RedisExecutor executor;
 
     protected RedisPoolDescriptorRegistry registry = new RedisPoolDescriptorRegistry();
 
@@ -78,7 +73,7 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
         public void clear() {
             config = null;
         }
-    };
+    }
 
     protected String delsha;
 
@@ -112,37 +107,38 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
         registry.removeContribution(contrib);
     }
 
+    @Override
     public RedisPoolDescriptor getConfig() {
         return registry.getConfig();
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         RedisPoolDescriptor config = getConfig();
         if (config == null || config.disabled) {
             return;
         }
-        Framework.addListener(new RuntimeServiceListener() {
-
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-                    return;
-                }
-                Framework.removeListener(this);
-                try {
-                    executor.getPool().destroy();
-                } finally {
-                    executor = null;
-                }
-            }
-        });
         handleNewExecutor(config.newExecutor());
     }
 
     @Override
+    public void stop(ComponentContext context) {
+        if (executor == null) {
+            return;
+        }
+        try {
+            executor.getPool().destroy();
+        } finally {
+            executor = null;
+        }
+    }
+
+    @Override
     public int getApplicationStartedOrder() {
-        return ((DefaultComponent) Framework.getRuntime().getComponentInstance("org.nuxeo.ecm.core.work.service").getInstance()).getApplicationStartedOrder() - 1;
+        return ((DefaultComponent) Framework.getRuntime()
+                                            .getComponentInstance("org.nuxeo.ecm.core.work.service")
+                                            .getInstance()).getApplicationStartedOrder()
+                - 1;
     }
 
     public void handleNewExecutor(RedisExecutor executor) {
@@ -157,14 +153,7 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
 
     @Override
     public Long clear(final String pattern) {
-        return executor.execute(new RedisCallable<Long>() {
-            @Override
-            public Long call(Jedis jedis) {
-                List<String> keys = Arrays.asList(pattern);
-                List<String> args = Arrays.asList();
-                return (Long) jedis.evalsha(delsha, keys, args);
-            }
-        });
+        return (Long) executor.evalsha(delsha, Collections.singletonList(pattern), Collections.emptyList());
     }
 
     @Override
@@ -174,7 +163,7 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
         if (loc == null) {
             throw new RuntimeException("Fail to load lua script: " + scriptName);
         }
-        InputStream is = null;
+        InputStream is;
         final StrBuilder builder;
         try {
             is = loc.openStream();
@@ -186,12 +175,7 @@ public class RedisComponent extends DefaultComponent implements RedisAdmin {
             throw new RuntimeException("Fail to load lua script: " + scriptName, e);
         }
 
-        return executor.execute(new RedisCallable<String>() {
-            @Override
-            public String call(Jedis jedis) {
-                return jedis.scriptLoad(builder.toString());
-            }
-        });
+        return executor.scriptLoad(builder.toString());
     }
 
     @Override

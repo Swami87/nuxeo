@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,11 @@ package org.nuxeo.ecm.automation.core.test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -33,12 +35,14 @@ import org.nuxeo.ecm.automation.AutomationService;
 import org.nuxeo.ecm.automation.InvalidChainException;
 import org.nuxeo.ecm.automation.OperationChain;
 import org.nuxeo.ecm.automation.OperationContext;
+import org.nuxeo.ecm.automation.OperationDocumentation;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
+import org.nuxeo.runtime.test.runner.HotDeployer;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
 
 /**
@@ -49,10 +53,13 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
 @RunWith(FeaturesRunner.class)
 @Features(CoreFeature.class)
 @Deploy("org.nuxeo.ecm.automation.core")
-@LocalDeploy("org.nuxeo.ecm.automation.core:test-operations.xml")
+@LocalDeploy("org.nuxeo.ecm.automation.core:test-operations-alias.xml")
 public class OperationAliasTest {
 
     private final static String HELLO_WORLD = "Hello World!";
+
+    @Inject
+    HotDeployer deployer;
 
     @Inject
     CoreSession session;
@@ -70,7 +77,7 @@ public class OperationAliasTest {
     public void testAliasOnOperationParam() throws InvalidChainException, OperationException, Exception {
         OperationContext ctx = new OperationContext(session);
 
-        Map<String, Object> params = new HashMap<String, Object>();
+        Map<String, Object> params = new HashMap<>();
         params.put("paramAlias", HELLO_WORLD);
 
         OperationChain chain = new OperationChain("testChain");
@@ -97,7 +104,7 @@ public class OperationAliasTest {
     @Test
     public void testAliasOnOperation() throws Exception {
         OperationContext ctx = new OperationContext(session);
-        Map<String, Object> params = new HashMap<String, Object>();
+        Map<String, Object> params = new HashMap<>();
         params.put("paramName", HELLO_WORLD);
         Object result = service.run(ctx, ParamNameWithAliasOperation.ALIAS_OP, params);
         assertNotNull(result);
@@ -118,6 +125,36 @@ public class OperationAliasTest {
         // with its alias.
         result = service.run(ctx, "chainAlias3");
         assertNotNull(result);
+    }
+
+    @Test
+    public void testAliasesDocumentation() throws Exception {
+        List<OperationDocumentation> documentation = service.getDocumentation();
+
+        OperationDocumentation operationDoc = documentation.stream()
+                                                           .filter(od -> od.id.equals(ParamNameWithAliasOperation.ID))
+                                                           .findFirst()
+                                                           .orElse(null);
+        assertNotNull(operationDoc);
+        assertEquals(ParamNameWithAliasOperation.ID, operationDoc.id);
+
+        operationDoc = documentation.stream()
+                                    .filter(od -> od.id.equals(ParamNameWithAliasOperation.ALIAS_OP))
+                                    .findFirst()
+                                    .orElse(null);
+        assertNull(operationDoc);
+
+        deployer.deploy("org.nuxeo.ecm.automation.core:test-export-alias-config.xml");
+
+        documentation = service.getDocumentation();
+
+        operationDoc = documentation.stream()
+                                    .filter(od -> od.id.equals(ParamNameWithAliasOperation.ALIAS_OP))
+                                    .findFirst()
+                                    .orElse(null);
+        assertNotNull(operationDoc);
+        assertEquals(ParamNameWithAliasOperation.ALIAS_OP, operationDoc.id);
+        assertNull(operationDoc.aliases);
     }
 
 }

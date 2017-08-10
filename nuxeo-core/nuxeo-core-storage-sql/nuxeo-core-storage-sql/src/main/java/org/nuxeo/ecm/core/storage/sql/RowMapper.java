@@ -79,6 +79,9 @@ public interface RowMapper {
         // if -1 then a full update must be done
         public final int pos;
 
+        // conditions to add to get a conditional update, for change token
+        public Map<String, Serializable> conditions;
+
         /** Constructor for simple fragment update. */
         public RowUpdate(Row row, Collection<String> keys) {
             this.row = row;
@@ -96,6 +99,10 @@ public interface RowMapper {
             this.row = row;
             keys = null;
             this.pos = pos;
+        }
+
+        public void setConditions(Map<String, Serializable> conditions) {
+            this.conditions = conditions;
         }
 
         @Override
@@ -117,7 +124,11 @@ public interface RowMapper {
 
         @Override
         public String toString() {
-            return getClass().getSimpleName() + '(' + row + ", keys=" + keys + ')';
+            String string = getClass().getSimpleName() + '(' + row + ", keys=" + keys + ')';
+            if (conditions != null && !conditions.isEmpty()) {
+                string += "(IF=" + conditions + ')';
+            }
+            return string;
         }
     }
 
@@ -216,6 +227,13 @@ public interface RowMapper {
      */
     List<Row> readSelectionRows(SelectionType selType, Serializable selId, Serializable filter, Serializable criterion,
             boolean limitToOne);
+
+    /**
+     * Gets all the selection ids for a given list of values.
+     *
+     * @since 9.2
+     */
+    Set<Serializable> readSelectionsIds(SelectionType selType, List<Serializable> values);
 
     /*
      * ----- Copy -----
@@ -350,12 +368,22 @@ public interface RowMapper {
     }
 
     /**
-     * Deletes a hierarchy and returns information to generate invalidations.
+     * Gets descendants infos from a given root node. This does not include information about the root node itself.
      *
-     * @param rootInfo info about the root to be deleted with its children (root id, and the rest is for invalidations)
-     * @return info about the descendants removed (including the root)
+     * @param rootId the root node id from which to get descendants info
+     * @return the list of descendant nodes info
+     * @since 9.2
      */
-    List<NodeInfo> remove(NodeInfo rootInfo);
+    List<NodeInfo> getDescendantsInfo(Serializable rootId);
+
+    /**
+     * Deletes a hierarchy.
+     *
+     * @param rootId the id of the root node to be deleted with its children
+     * @param nodeInfos the information about all descendants being deleted along the root node
+     * @since 9.2
+     */
+    void remove(Serializable rootId, List<NodeInfo> nodeInfos);
 
     /**
      * Processes and returns the invalidations queued for processing by the cache (if any).

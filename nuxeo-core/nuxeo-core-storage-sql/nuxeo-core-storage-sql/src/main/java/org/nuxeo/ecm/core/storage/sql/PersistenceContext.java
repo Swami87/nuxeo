@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.map.AbstractReferenceMap;
 import org.apache.commons.collections.map.ReferenceMap;
@@ -41,7 +42,9 @@ import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.utils.StringUtils;
 import org.nuxeo.ecm.core.api.DocumentExistsException;
 import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.core.api.model.DeltaLong;
 import org.nuxeo.ecm.core.schema.FacetNames;
+import org.nuxeo.ecm.core.storage.BaseDocument;
 import org.nuxeo.ecm.core.storage.sql.Fragment.State;
 import org.nuxeo.ecm.core.storage.sql.RowMapper.CopyResult;
 import org.nuxeo.ecm.core.storage.sql.RowMapper.IdWithTypes;
@@ -143,6 +146,13 @@ public class PersistenceContext {
     private final Set<Serializable> createdIds;
 
     /**
+     * Document ids modified as "user changes", which means that a change token should be checked.
+     *
+     * @since 9.2
+     */
+    protected final Set<Serializable> userChangeIds = new HashSet<>();
+
+    /**
      * Cache statistics
      *
      * @since 5.7
@@ -166,7 +176,7 @@ public class PersistenceContext {
         hierComplex = new SelectionContext(SelectionType.CHILDREN, Boolean.TRUE, mapper, this);
         hierNonComplex = new SelectionContext(SelectionType.CHILDREN, Boolean.FALSE, mapper, this);
         seriesVersions = new SelectionContext(SelectionType.SERIES_VERSIONS, null, mapper, this);
-        selections = new ArrayList<SelectionContext>(Arrays.asList(hierComplex, hierNonComplex, seriesVersions));
+        selections = new ArrayList<>(Arrays.asList(hierComplex, hierNonComplex, seriesVersions));
         if (model.proxiesEnabled) {
             seriesProxies = new SelectionContext(SelectionType.SERIES_PROXIES, null, mapper, this);
             targetProxies = new SelectionContext(SelectionType.TARGET_PROXIES, null, mapper, this);
@@ -181,18 +191,20 @@ public class PersistenceContext {
         // they need to be referenced, as the underlying mapper also has its own
         // cache
         pristine = new ReferenceMap(AbstractReferenceMap.HARD, AbstractReferenceMap.WEAK);
-        modified = new HashMap<RowId, Fragment>();
+        modified = new HashMap<>();
         // this has to be linked to keep creation order, as foreign keys
         // are used and need this
-        createdIds = new LinkedHashSet<Serializable>();
-        cacheCount = registry.counter(MetricRegistry.name("nuxeo", "repositories", session.getRepositoryName(),
-                "caches", "count"));
-        cacheHitCount = registry.counter(MetricRegistry.name("nuxeo", "repositories", session.getRepositoryName(),
-                "caches", "hit"));
+        createdIds = new LinkedHashSet<>();
+        cacheCount = registry.counter(
+                MetricRegistry.name("nuxeo", "repositories", session.getRepositoryName(), "caches", "count"));
+        cacheHitCount = registry.counter(
+                MetricRegistry.name("nuxeo", "repositories", session.getRepositoryName(), "caches", "hit"));
         try {
-            bigSelWarnThreshold = Long.parseLong(Framework.getProperty(SEL_WARN_THRESHOLD_PROP, SEL_WARN_THRESHOLD_DEFAULT));
+            bigSelWarnThreshold = Long.parseLong(
+                    Framework.getProperty(SEL_WARN_THRESHOLD_PROP, SEL_WARN_THRESHOLD_DEFAULT));
         } catch (NumberFormatException e) {
-            log.error("Invalid value for " + SEL_WARN_THRESHOLD_PROP + ": " + Framework.getProperty(SEL_WARN_THRESHOLD_PROP));
+            log.error("Invalid value for " + SEL_WARN_THRESHOLD_PROP + ": "
+                    + Framework.getProperty(SEL_WARN_THRESHOLD_PROP));
         }
     }
 
@@ -204,6 +216,7 @@ public class PersistenceContext {
         int n = clearLocalCaches();
         modified.clear(); // not empty when rolling back before save
         createdIds.clear();
+        userChangeIds.clear();
         return n;
     }
 
@@ -252,6 +265,17 @@ public class PersistenceContext {
     }
 
     /**
+     * Marks this document id as belonging to a user change.
+     *
+     * @since 9.2
+     */
+    protected void markUserChange(Serializable id) {
+        if (session.changeTokenEnabled) {
+            userChangeIds.add(id);
+        }
+    }
+
+    /**
      * Saves all the created, modified and deleted rows into a batch object, for later execution.
      * <p>
      * Also updates the passed fragmentsToClearDirty list with dirty modified fragments, for later call of clearDirty
@@ -260,6 +284,34 @@ public class PersistenceContext {
      */
     protected RowBatch getSaveBatch(List<Fragment> fragmentsToClearDirty) {
         RowBatch batch = new RowBatch();
+
+        // update change tokens
+        Map<Serializable, Map<String, Serializable>> rowUpdateConditions = new HashMap<>();
+        if (session.changeTokenEnabled) {
+            // find which docs are created
+            for (Serializable id : createdIds) {
+                SimpleFragment hier = getHier(id, false);
+                if (hier == null) {
+                    // was created and deleted before save
+                    continue;
+                }
+                hier.put(Model.MAIN_CHANGE_TOKEN_KEY, Model.INITIAL_CHANGE_TOKEN);
+            }
+            // find which docs are modified
+            Set<Serializable> modifiedDocIds = findModifiedDocuments();
+            for (Serializable id : modifiedDocIds) {
+                SimpleFragment hier = getHier(id, false);
+                // increment system change token
+                Long base = (Long) hier.get(Model.MAIN_SYS_CHANGE_TOKEN_KEY);
+                hier.put(Model.MAIN_SYS_CHANGE_TOKEN_KEY, DeltaLong.valueOf(base, 1));
+                // update change token if applicable (user change)
+                if (userChangeIds.contains(id)) {
+                    Map<String, Serializable> conditions = updateChangeToken(hier);
+                    rowUpdateConditions.put(id, conditions);
+                }
+            }
+            userChangeIds.clear();
+        }
 
         // created main rows are saved first in the batch (in their order of
         // creation), because they are used as foreign keys in all other tables
@@ -292,6 +344,12 @@ public class PersistenceContext {
             case MODIFIED:
                 RowUpdate rowu = fragment.getRowUpdate();
                 if (rowu != null) {
+                    if (Model.HIER_TABLE_NAME.equals(fragment.row.tableName)) {
+                        Map<String, Serializable> conditions = rowUpdateConditions.get(fragment.getId());
+                        if (conditions != null) {
+                            rowu.setConditions(conditions);
+                        }
+                    }
                     batch.updates.add(rowu);
                     fragmentsToClearDirty.add(fragment);
                 }
@@ -328,6 +386,20 @@ public class PersistenceContext {
         return batch;
     }
 
+    /** Updates a change token in the main fragment, and returns the condition to check. */
+    protected Map<String, Serializable> updateChangeToken(SimpleFragment hier) {
+        Long oldToken = (Long) hier.get(Model.MAIN_CHANGE_TOKEN_KEY);
+        Long newToken;
+        if (oldToken == null) {
+            // document without change token, just created
+            newToken = Model.INITIAL_CHANGE_TOKEN;
+        } else {
+            newToken = BaseDocument.updateChangeToken(oldToken);
+        }
+        hier.put(Model.MAIN_CHANGE_TOKEN_KEY, newToken);
+        return Collections.singletonMap(Model.MAIN_CHANGE_TOKEN_KEY, oldToken);
+    }
+
     private boolean complexProp(SimpleFragment fragment) {
         return complexProp((Boolean) fragment.get(Model.HIER_CHILD_ISPROPERTY_KEY));
     }
@@ -341,6 +413,46 @@ public class PersistenceContext {
     }
 
     /**
+     * Finds the documents having been modified.
+     * <p>
+     * A document is modified if any of its direct fragments (same id) is modified, or if any of its complex property
+     * fragments having it as an ancestor is created, modified or deleted.
+     * <p>
+     * Created and deleted documents aren't considered modified.
+     *
+     * @return the set of modified documents
+     * @since 9.1
+     */
+    protected Set<Serializable> findModifiedDocuments() {
+        Set<Serializable> modifiedDocIds = new HashSet<>();
+        Set<Serializable> deletedDocIds = new HashSet<>();
+        for (Fragment fragment : modified.values()) {
+            Serializable docId = getContainingDocument(fragment.getId());
+            boolean complexProp = !fragment.getId().equals(docId);
+            switch (fragment.getState()) {
+            case MODIFIED:
+                modifiedDocIds.add(docId);
+                break;
+            case CREATED:
+                modifiedDocIds.add(docId);
+                break;
+            case DELETED:
+            case DELETED_DEPENDENT:
+                if (complexProp) {
+                    modifiedDocIds.add(docId);
+                } else if (Model.HIER_TABLE_NAME.equals(fragment.row.tableName)) {
+                    deletedDocIds.add(docId);
+                }
+                break;
+            default:
+            }
+        }
+        modifiedDocIds.removeAll(deletedDocIds);
+        modifiedDocIds.removeAll(createdIds);
+        return modifiedDocIds;
+    }
+
+    /**
      * Finds the documents having dirty text or dirty binaries that have to be reindexed as fulltext.
      *
      * @param dirtyStrings set of ids, updated by this method
@@ -348,7 +460,7 @@ public class PersistenceContext {
      */
     protected void findDirtyDocuments(Set<Serializable> dirtyStrings, Set<Serializable> dirtyBinaries) {
         // deleted documents, for which we don't need to reindex anything
-        Set<Serializable> deleted = null;
+        Set<Serializable> deleted = new HashSet<>();
         for (Fragment fragment : modified.values()) {
             Serializable docId = getContainingDocument(fragment.getId());
             String tableName = fragment.row.tableName;
@@ -358,9 +470,6 @@ public class PersistenceContext {
             case DELETED_DEPENDENT:
                 if (Model.HIER_TABLE_NAME.equals(tableName) && fragment.getId().equals(docId)) {
                     // deleting the document, record this
-                    if (deleted == null) {
-                        deleted = new HashSet<Serializable>();
-                    }
                     deleted.add(docId);
                 }
                 if (isDeleted(docId)) {
@@ -399,11 +508,9 @@ public class PersistenceContext {
                 break;
             default:
             }
-            if (deleted != null) {
-                dirtyStrings.removeAll(deleted);
-                dirtyBinaries.removeAll(deleted);
-            }
         }
+        dirtyStrings.removeAll(deleted);
+        dirtyBinaries.removeAll(deleted);
     }
 
     /**
@@ -586,10 +693,10 @@ public class PersistenceContext {
      * Fragments not found are not returned if {@code allowAbsent} is {@code false}.
      */
     protected List<Fragment> getFromMapper(Collection<RowId> rowIds, boolean allowAbsent, boolean cacheOnly) {
-        List<Fragment> res = new ArrayList<Fragment>(rowIds.size());
+        List<Fragment> res = new ArrayList<>(rowIds.size());
 
         // find fragments we really want to fetch
-        List<RowId> todo = new ArrayList<RowId>(rowIds.size());
+        List<RowId> todo = new ArrayList<>(rowIds.size());
         for (RowId rowId : rowIds) {
             if (isIdNew(rowId.id)) {
                 // the id has not been saved, so nothing exists yet in the
@@ -632,8 +739,8 @@ public class PersistenceContext {
         }
 
         // find those already in the context
-        List<Fragment> res = new ArrayList<Fragment>(rowIds.size());
-        List<RowId> todo = new LinkedList<RowId>();
+        List<Fragment> res = new ArrayList<>(rowIds.size());
+        List<RowId> todo = new LinkedList<>();
         for (RowId rowId : rowIds) {
             Fragment fragment = getIfPresent(rowId);
             if (fragment == null) {
@@ -672,7 +779,7 @@ public class PersistenceContext {
      * @return the list of fragments
      */
     protected List<Fragment> getFragmentsFromFetchedRows(List<? extends RowId> rowIds, boolean allowAbsent) {
-        List<Fragment> fragments = new ArrayList<Fragment>(rowIds.size());
+        List<Fragment> fragments = new ArrayList<>(rowIds.size());
         for (RowId rowId : rowIds) {
             Fragment fragment = getFragmentFromFetchedRow(rowId, allowAbsent);
             if (fragment != null) {
@@ -802,8 +909,8 @@ public class PersistenceContext {
      */
     public void removePropertyNode(SimpleFragment hierFragment) {
         // collect children
-        Deque<SimpleFragment> todo = new LinkedList<SimpleFragment>();
-        List<SimpleFragment> children = new LinkedList<SimpleFragment>();
+        Deque<SimpleFragment> todo = new LinkedList<>();
+        List<SimpleFragment> children = new LinkedList<>();
         todo.add(hierFragment);
         while (!todo.isEmpty()) {
             SimpleFragment fragment = todo.removeFirst();
@@ -837,14 +944,13 @@ public class PersistenceContext {
     }
 
     /**
-     * Removes a document node and its children.
-     * <p>
-     * Assumes a full flush was done.
+     * Gets descendants infos from a given root node. This includes information about the root node itself.
+     *
+     * @since 9.2
      */
-    public void removeNode(SimpleFragment hierFragment) {
+    public List<NodeInfo> getNodeAndDescendantsInfo(SimpleFragment hierFragment) {
+        // get root info
         Serializable rootId = hierFragment.getId();
-
-        // get root info before deletion. may be a version or proxy
         SimpleFragment versionFragment;
         SimpleFragment proxyFragment;
         if (Model.PROXY_TYPE.equals(hierFragment.getString(Model.MAIN_PRIMARY_TYPE_KEY))) {
@@ -858,12 +964,34 @@ public class PersistenceContext {
             proxyFragment = null;
         }
         NodeInfo rootInfo = new NodeInfo(hierFragment, versionFragment, proxyFragment);
+        List<NodeInfo> infos = mapper.getDescendantsInfo(rootId);
+        infos.add(rootInfo);
+        return infos;
+    }
+
+    /**
+     * Removes a document node and its children.
+     * <p>
+     * Assumes a full flush was done.
+     */
+    public void removeNode(SimpleFragment hierFragment, List<NodeInfo> nodeInfos) {
+        Serializable rootId = hierFragment.getId();
+
+        // get root info before deletion. may be a version or proxy
+        SimpleFragment versionFragment;
+        if (Model.PROXY_TYPE.equals(hierFragment.getString(Model.MAIN_PRIMARY_TYPE_KEY))) {
+            versionFragment = null;
+        } else if (Boolean.TRUE.equals(hierFragment.get(Model.MAIN_IS_VERSION_KEY))) {
+            versionFragment = (SimpleFragment) get(new RowId(Model.VERSION_TABLE_NAME, rootId), true);
+        } else {
+            versionFragment = null;
+        }
 
         // remove with descendants, and generate cache invalidations
-        List<NodeInfo> infos = mapper.remove(rootInfo);
+        mapper.remove(rootId, nodeInfos);
 
         // remove from context and selections
-        for (NodeInfo info : infos) {
+        for (NodeInfo info : nodeInfos) {
             Serializable id = info.id;
             for (String fragmentName : model.getTypeFragments(new IdWithTypes(id, info.primaryType, null))) {
                 RowId rowId = new RowId(fragmentName, id);
@@ -1027,11 +1155,30 @@ public class PersistenceContext {
     }
 
     private List<Serializable> fragmentsIds(List<? extends Fragment> fragments) {
-        List<Serializable> ids = new ArrayList<Serializable>(fragments.size());
-        for (Fragment fragment : fragments) {
-            ids.add(fragment.getId());
+        return fragments.stream().map(Fragment::getId).collect(Collectors.toList());
+    }
+
+    // called only when proxies enabled
+    public Set<Serializable> getTargetProxies(Set<Serializable> ids) {
+        // we don't read and create full selections to avoid trashing the selection cache
+        // and because we're only interested in their ids
+        Set<Serializable> proxyIds = new HashSet<>();
+        // find what selections we already know about and for which ones we will have to ask the database
+        List<Serializable> todo = new ArrayList<>();
+        for (Serializable id : ids) {
+            Selection selection = targetProxies.getSelectionOrNull(id);
+            Set<Serializable> selectionProxyIds = selection == null ? null : selection.getIds();
+            if (selectionProxyIds == null) {
+                todo.add(id);
+            } else {
+                proxyIds.addAll(selectionProxyIds);
+            }
         }
-        return ids;
+        if (!todo.isEmpty()) {
+            // ask the database
+            proxyIds.addAll(targetProxies.getSelectionIds(todo));
+        }
+        return proxyIds;
     }
 
     /*
@@ -1068,8 +1215,8 @@ public class PersistenceContext {
      * @param fetch {@code true} if we can use the database, {@code false} if only caches should be used
      */
     public PathAndId getPathOrMissingParentId(SimpleFragment hierFragment, boolean fetch) {
-        LinkedList<String> list = new LinkedList<String>();
-        Serializable parentId = null;
+        LinkedList<String> list = new LinkedList<>();
+        Serializable parentId;
         while (true) {
             String name = hierFragment.getString(Model.HIER_CHILD_NAME_KEY);
             if (name == null) {
@@ -1107,7 +1254,7 @@ public class PersistenceContext {
                 path = name;
             }
         } else {
-            path = StringUtils.join(list, "/");
+            path = String.join("/", list);
         }
         return new PathAndId(path, null);
     }
@@ -1265,7 +1412,8 @@ public class PersistenceContext {
         Serializable pid = parentId;
         do {
             if (pid.equals(id)) {
-                throw new DocumentExistsException("Cannot " + op + " a node under itself: " + parentId + " is under " + id);
+                throw new DocumentExistsException(
+                        "Cannot " + op + " a node under itself: " + parentId + " is under " + id);
             }
             SimpleFragment p = getHier(pid, false);
             if (p == null) {
@@ -1345,7 +1493,7 @@ public class PersistenceContext {
         // invalidate child in other sessions' children Selection
         markInvalidated(copyResult.invalidations);
         // read new proxies in this session (updates Selections)
-        List<RowId> rowIds = new ArrayList<RowId>();
+        List<RowId> rowIds = new ArrayList<>();
         for (Serializable proxyId : copyResult.proxyIds) {
             rowIds.add(new RowId(Model.PROXY_TABLE_NAME, proxyId));
         }
@@ -1380,18 +1528,15 @@ public class PersistenceContext {
         }
         if (label == null) {
             // use version major + minor as label
-            try {
-                Serializable major = node.getSimpleProperty(Model.MAIN_MAJOR_VERSION_PROP).getValue();
-                Serializable minor = node.getSimpleProperty(Model.MAIN_MINOR_VERSION_PROP).getValue();
-                if (major == null || minor == null) {
-                    label = "";
-                } else {
-                    label = major + "." + minor;
-                }
-            } catch (IllegalArgumentException e) {
-                log.error("Cannot get version", e);
-                label = "";
+            Serializable major = node.getSimpleProperty(Model.MAIN_MAJOR_VERSION_PROP).getValue();
+            Serializable minor = node.getSimpleProperty(Model.MAIN_MINOR_VERSION_PROP).getValue();
+            if (major == null) {
+                major = "0";
             }
+            if (minor == null) {
+                minor = "0";
+            }
+            label = major + "." + minor;
         }
 
         /*

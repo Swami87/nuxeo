@@ -39,19 +39,17 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.Lock;
 import org.nuxeo.ecm.core.api.PropertyException;
-import org.nuxeo.ecm.core.api.model.Delta;
+import org.nuxeo.ecm.core.api.model.DocumentPart;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.api.model.impl.ComplexProperty;
-import org.nuxeo.ecm.core.api.model.impl.ScalarProperty;
 import org.nuxeo.ecm.core.api.model.impl.primitives.BlobProperty;
-import org.nuxeo.ecm.core.blob.BlobManager;
-import org.nuxeo.ecm.core.blob.BlobManager.BlobInfo;
+import org.nuxeo.ecm.core.blob.BlobInfo;
+import org.nuxeo.ecm.core.blob.DocumentBlobManager;
 import org.nuxeo.ecm.core.model.Document;
 import org.nuxeo.ecm.core.schema.SchemaManager;
 import org.nuxeo.ecm.core.schema.TypeConstants;
@@ -98,6 +96,9 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
     public static final String DC_PREFIX = "dc:";
 
     public static final String DC_ISSUED = "dc:issued";
+
+    // used instead of ecm:changeToken when change tokens are disabled
+    public static final String DC_MODIFIED = "dc:modified";
 
     public static final String RELATED_TEXT_RESOURCES = "relatedtextresources";
 
@@ -180,10 +181,12 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
      *
      * @param state the parent state
      * @param name the child name
-     * @param values the values
      * @param field the list element type
+     * @param xpath the xpath of this list
+     * @param values the values
      */
-    protected abstract void updateList(T state, String name, List<Object> values, Field field) throws PropertyException;
+    protected abstract void updateList(T state, String name, Field field, String xpath, List<Object> values)
+            throws PropertyException;
 
     /**
      * Update a list.
@@ -274,17 +277,21 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         if (!isVersion()) {
             throw new PropertyException("Cannot write readonly property: " + name);
         }
-        if (!name.startsWith(DC_PREFIX)) {
+        if (!name.startsWith(DC_PREFIX) && !getTopLevelSchema(property).isVersionWritabe()) {
             throw new PropertyException("Cannot set property on a version: " + name);
         }
-        // ignore if value is unchanged (only for dublincore)
-        // dublincore contains only scalars and arrays
+        // ignore write if value can quickly be detected as unchanged
         Object value = property.getValueForWrite();
         Object oldValue;
-        if (property.getType().isSimpleType()) {
+        Type type = property.getType();
+        if (type.isSimpleType()) {
             oldValue = state.getSingle(name);
-        } else {
+        } else if (type.isListType() && ((ListType) type).getFieldType().isSimpleType()) {
             oldValue = state.getArray(name);
+        } else {
+            // complex property or complex list, no quick way to detect changes
+            // do write
+            return false;
         }
         if (!ArrayUtils.isEquals(value, oldValue)) {
             // do write
@@ -292,6 +299,21 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         }
         // ignore attempt to write identical value
         return true;
+    }
+
+    /**
+     * Gets the {@link Schema} at the top-level of the type hierarchy for this {@link Property}.
+     *
+     * @since 9.3
+     */
+    protected Schema getTopLevelSchema(Property property) {
+        for (;;) {
+            Type type = property.getType();
+            if (type instanceof Schema) {
+                return (Schema) type;
+            }
+            property = property.getParent();
+        }
     }
 
     protected BlobInfo getBlobInfo(T state) throws PropertyException {
@@ -455,7 +477,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
 
     protected Blob getValueBlob(T state) throws PropertyException {
         BlobInfo blobInfo = getBlobInfo(state);
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         try {
             return blobManager.readBlob(blobInfo, getRepositoryName());
         } catch (IOException e) {
@@ -516,7 +538,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
                 field = ((ListType) type).getField();
                 if (i == segments.length - 1) {
                     // last segment
-                    setValueComplex(state, field, value);
+                    setValueComplex(state, field, xpath, value);
                 } else {
                     // not last segment
                     parentType = (ComplexType) field.getType();
@@ -526,7 +548,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
 
             if (i == segments.length - 1) {
                 // last segment
-                setValueField(state, field, value);
+                setValueField(state, field, xpath, value);
             } else {
                 // not last segment
                 if (type.isSimpleType()) {
@@ -551,7 +573,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         }
     }
 
-    protected void setValueField(T state, Field field, Object value) throws PropertyException {
+    protected void setValueField(T state, Field field, String xpath, Object value) throws PropertyException {
         Type type = field.getType();
         String name = field.getName().getPrefixedName(); // normalize from map key
         name = internalName(name);
@@ -562,7 +584,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         } else if (type.isComplexType()) {
             // complex property
             T childState = getChildForWrite(state, name, type);
-            setValueComplex(childState, field, value);
+            setValueComplex(childState, field, xpath, value);
         } else {
             // array or list
             ListType listType = (ListType) type;
@@ -581,25 +603,24 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
                 }
                 @SuppressWarnings("unchecked")
                 List<Object> values = value == null ? Collections.emptyList() : (List<Object>) value;
-                updateList(state, name, values, listType.getField());
+                updateList(state, name, listType.getField(), xpath, values);
             }
         }
     }
 
-    // pass field instead of just type for better error messages
-    protected void setValueComplex(T state, Field field, Object value) throws PropertyException {
+    protected void setValueComplex(T state, Field field, String xpath, Object value) throws PropertyException {
         ComplexType complexType = (ComplexType) field.getType();
         if (TypeConstants.isContentType(complexType)) {
             if (value != null && !(value instanceof Blob)) {
-                throw new PropertyException("Expected Blob value for: " + field.getName().getPrefixedName() + ", got "
-                        + value.getClass().getName() + " instead");
+                throw new PropertyException(
+                        "Expected Blob value for: " + xpath + ", got " + value.getClass().getName() + " instead");
             }
-            setValueBlob(state, (Blob) value);
+            setValueBlob(state, (Blob) value, xpath);
             return;
         }
         if (value != null && !(value instanceof Map)) {
-            throw new PropertyException("Expected Map value for: " + field.getName().getPrefixedName() + ", got "
-                    + value.getClass().getName() + " instead");
+            throw new PropertyException(
+                    "Expected Map value for: " + xpath + ", got " + value.getClass().getName() + " instead");
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> map = value == null ? Collections.emptyMap() : (Map<String, Object>) value;
@@ -608,20 +629,19 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
             String name = f.getName().getPrefixedName();
             keys.remove(name);
             value = map.get(name);
-            setValueField(state, f, value);
+            setValueField(state, f, xpath + '/' + name, value);
         }
         if (!keys.isEmpty()) {
-            throw new PropertyException(
-                    "Unknown key: " + keys.iterator().next() + " for " + field.getName().getPrefixedName());
+            throw new PropertyException("Unknown key: " + keys.iterator().next() + " for " + xpath);
         }
     }
 
-    protected void setValueBlob(T state, Blob blob) throws PropertyException {
+    protected void setValueBlob(T state, Blob blob, String xpath) throws PropertyException {
         BlobInfo blobInfo = new BlobInfo();
         if (blob != null) {
-            BlobManager blobManager = Framework.getService(BlobManager.class);
+            DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
             try {
-                blobInfo.key = blobManager.writeBlob(blob, this);
+                blobInfo.key = blobManager.writeBlob(blob, this, xpath);
             } catch (IOException e) {
                 throw new PropertyException("Cannot get blob info for: " + blob, e);
             }
@@ -654,9 +674,6 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
             if (type.isSimpleType()) {
                 // simple property
                 Object value = state.getSingle(name);
-                if (value instanceof Delta) {
-                    value = ((Delta) value).getFullValue();
-                }
                 property.init((Serializable) value);
             } else if (type.isComplexType()) {
                 // complex property
@@ -688,9 +705,24 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         }
     }
 
+    protected static class BlobWriteInfo<T extends StateAccessor> {
+
+        public final T state;
+
+        public final Blob blob;
+
+        public final String xpath;
+
+        public BlobWriteInfo(T state, Blob blob, String xpath) {
+            this.state = state;
+            this.blob = blob;
+            this.xpath = xpath;
+        }
+    }
+
     protected static class BlobWriteContext<T extends StateAccessor> implements WriteContext {
 
-        public final Map<BaseDocument<T>, List<Pair<T, Blob>>> blobWriteInfosPerDoc = new HashMap<>();
+        public final Map<BaseDocument<T>, List<BlobWriteInfo<T>>> blobWriteInfos = new HashMap<>();
 
         public final Set<String> xpaths = new HashSet<>();
 
@@ -704,12 +736,9 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         /**
          * Records a blob update.
          */
-        public void recordBlob(T state, Blob blob, BaseDocument<T> doc) {
-            List<Pair<T, Blob>> list = blobWriteInfosPerDoc.get(doc);
-            if (list == null) {
-                blobWriteInfosPerDoc.put(doc, list = new ArrayList<>());
-            }
-            list.add(Pair.of(state, blob));
+        public void recordBlob(BaseDocument<T> doc, T state, Blob blob, String xpath) {
+            BlobWriteInfo<T> info = new BlobWriteInfo<T>(state, blob, xpath);
+            blobWriteInfos.computeIfAbsent(doc, k -> new ArrayList<>()).add(info);
         }
 
         @Override
@@ -721,16 +750,14 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         @Override
         public void flush(Document baseDoc) {
             // first, write all updated blobs
-            for (Entry<BaseDocument<T>, List<Pair<T, Blob>>> en : blobWriteInfosPerDoc.entrySet()) {
-                BaseDocument<T> doc = en.getKey();
-                for (Pair<T, Blob> pair : en.getValue()) {
-                    T state = pair.getLeft();
-                    Blob blob = pair.getRight();
-                    doc.setValueBlob(state, blob);
+            for (Entry<BaseDocument<T>, List<BlobWriteInfo<T>>> es : blobWriteInfos.entrySet()) {
+                BaseDocument<T> doc = es.getKey();
+                for (BlobWriteInfo<T> info : es.getValue()) {
+                    doc.setValueBlob(info.state, info.blob, info.xpath);
                 }
             }
             // then inform the blob manager about the changed xpaths
-            BlobManager blobManager = Framework.getService(BlobManager.class);
+            DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
             blobManager.notifyChanges(baseDoc, xpaths);
         }
     }
@@ -747,18 +774,19 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
      */
     protected boolean writeComplexProperty(T state, ComplexProperty complexProperty, WriteContext writeContext)
             throws PropertyException {
-        return writeComplexProperty(state, complexProperty, null, writeContext);
+        boolean writeAll = ((DocumentPart) complexProperty).getClearComplexPropertyBeforeSet();
+        return writeComplexProperty(state, complexProperty, null, writeAll, writeContext);
     }
 
     /**
      * Writes state from a complex property.
      * <p>
-     * Writes only properties that are dirty.
+     * Writes only properties that are dirty, unless writeAll is true in which case everything is written.
      *
      * @return {@code true} if something changed
      */
-    protected boolean writeComplexProperty(T state, ComplexProperty complexProperty, String xpath, WriteContext wc)
-            throws PropertyException {
+    protected boolean writeComplexProperty(T state, ComplexProperty complexProperty, String xpath, boolean writeAll,
+            WriteContext wc) throws PropertyException {
         @SuppressWarnings("unchecked")
         BlobWriteContext<T> writeContext = (BlobWriteContext<T>) wc;
         if (complexProperty instanceof BlobProperty) {
@@ -766,14 +794,15 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
             if (value != null && !(value instanceof Blob)) {
                 throw new PropertyException("Cannot write a non-Blob value: " + value);
             }
-            writeContext.recordBlob(state, (Blob) value, this);
+            writeContext.recordBlob(this, state, (Blob) value, xpath);
             return true;
         }
         boolean changed = false;
         for (Property property : complexProperty) {
             // write dirty properties, but also phantoms with non-null default values
             // this is critical for DeltaLong updates to work, they need a non-null initial value
-            if (property.isDirty() || (property.isPhantom() && property.getField().getDefaultValue() != null)) {
+            if (writeAll || property.isDirty()
+                    || (property.isPhantom() && property.getField().getDefaultValue() != null)) {
                 // do the write
             } else {
                 continue;
@@ -792,14 +821,10 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
                 // simple property
                 Serializable value = property.getValueForWrite();
                 state.setSingle(name, value);
-                if (value instanceof Delta) {
-                    value = ((Delta) value).getFullValue();
-                    ((ScalarProperty) property).internalSetValue(value);
-                }
             } else if (type.isComplexType()) {
                 // complex property
                 T childState = getChildForWrite(state, name, type);
-                writeComplexProperty(childState, (ComplexProperty) property, xp, writeContext);
+                writeComplexProperty(childState, (ComplexProperty) property, xp, writeAll, writeContext);
             } else {
                 ListType listType = (ListType) type;
                 if (listType.getFieldType().isSimpleType()) {
@@ -852,8 +877,9 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
                     for (Property childProperty : property.getChildren()) {
                         T childState = childStates.get(i);
                         String xpi = xp + '/' + i;
+                        boolean moved = childProperty.isMoved();
                         boolean c = writeComplexProperty(childState, (ComplexProperty) childProperty, xpi,
-                                writeContext);
+                                writeAll || moved, writeContext);
                         if (c) {
                             writeContext.recordChange(xpi);
                         }
@@ -998,7 +1024,7 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
         @Override
         public void setBlob(Blob blob) throws PropertyException {
             markDirty.run();
-            setValueBlob(state, blob);
+            setValueBlob(state, blob, getXPath());
         }
     }
 
@@ -1116,5 +1142,85 @@ public abstract class BaseDocument<T extends StateAccessor> implements Document 
      * @since 7.4
      */
     protected abstract Lock removeDocumentLock(String owner);
+
+    // also used as a regexp for split
+    public static final String TOKEN_SEP = "-";
+
+    /**
+     * Builds the user-visible change token from low-level change token and system change token information.
+     *
+     * @param sysChangeToken the system change token
+     * @param changeToken the change token
+     * @return the user-visible change token
+     * @since 9.2
+     */
+    public static String buildUserVisibleChangeToken(Long sysChangeToken, Long changeToken) {
+        if (sysChangeToken == null || changeToken == null) {
+            return null;
+        }
+        return sysChangeToken.toString() + TOKEN_SEP + changeToken.toString();
+    }
+
+    /**
+     * Validates that the passed user-visible change token is compatible with the current change token.
+     *
+     * @param sysChangeToken the system change token
+     * @param changeToken the change token
+     * @param userVisibleChangeToken the user-visible change token
+     * @return {@code false} if the change token is not valid
+     * @since 9.2
+     */
+    public static boolean validateUserVisibleChangeToken(Long sysChangeToken, Long changeToken,
+            String userVisibleChangeToken) {
+        if (sysChangeToken == null || changeToken == null) {
+            return true;
+        }
+        // we only compare the change token, not the system change token, to allow background system updates
+        String[] parts = userVisibleChangeToken.split(TOKEN_SEP);
+        if (parts.length != 2) {
+            return false; // invalid format
+        }
+        return parts[1].equals(changeToken.toString());
+    }
+
+    /**
+     * Validates that the passed user-visible change token is compatible with the current legacy change token.
+     *
+     * @param modified the {@code dc:modified} timestamp
+     * @param userVisibleChangeToken the user-visible change token
+     * @return {@code false} if the change token is not valid
+     * @since 9.2
+     */
+    protected boolean validateLegacyChangeToken(Calendar modified, String userVisibleChangeToken) {
+        if (modified == null) {
+            return true;
+        }
+        return userVisibleChangeToken.equals(String.valueOf(modified.getTimeInMillis()));
+    }
+
+    /**
+     * Gets the legacy change token for the given timestamp.
+     *
+     * @param modified the {@code dc:modified} timestamp
+     * @return the legacy change token
+     * @since 9.2
+     */
+    protected String getLegacyChangeToken(Calendar modified) {
+        if (modified == null) {
+            return null;
+        }
+        return String.valueOf(modified.getTimeInMillis());
+    }
+
+    /**
+     * Updates a change token to its new value.
+     *
+     * @param changeToken the change token (not {@code null})
+     * @return the updated change token
+     * @since 9.2
+     */
+    public static Long updateChangeToken(Long changeToken) {
+        return Long.valueOf(changeToken.longValue() + 1);
+    }
 
 }

@@ -36,11 +36,11 @@ import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.test.annotations.Granularity;
 import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
 import org.nuxeo.ecm.restapi.server.jaxrs.adapters.BOAdapter;
+import org.nuxeo.jaxrs.test.CloseableClientResponse;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.Jetty;
 
-import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.core.util.MultivaluedMapImpl;
 
 /**
@@ -59,36 +59,37 @@ public class AdapterBindingTest extends BaseTest {
         DocumentModel note = RestServerInit.getNote(1, session);
 
         // When i browse the adapter
-        ClientResponse response = getResponse(RequestType.GET, "/id/" + note.getId() + "/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter");
+        try (CloseableClientResponse response = getResponse(RequestType.GET,
+                "/id/" + note.getId() + "/@" + BOAdapter.NAME + "/BusinessBeanAdapter")) {
 
-        // Then i receive a formatted response
-        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        JsonNode node = mapper.readTree(response.getEntityInputStream());
-        assertEquals("BusinessBeanAdapter", node.get("entity-type").getValueAsText());
-        assertEquals(note.getPropertyValue("note:note"), node.get("value").get("note").getValueAsText());
-
+            // Then i receive a formatted response
+            assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+            JsonNode node = mapper.readTree(response.getEntityInputStream());
+            assertEquals("BusinessBeanAdapter", node.get("entity-type").getValueAsText());
+            assertEquals(note.getPropertyValue("note:note"), node.get("value").get("note").getValueAsText());
+        }
     }
 
     @Test
     public void iCanSaveAnAdapter() throws Exception {
         // Given a note and a modified business object representation
         DocumentModel note = RestServerInit.getNote(1, session);
-        String ba = String.format("{\"entity-type\":\"BusinessBeanAdapter\",\"value\":{\"type\""
-                + ":\"Note\",\"id\":\"%s\","
-                + "\"note\":\"Note 1\",\"title\":\"Note 1\",\"description\":\"description\"}}", note.getId());
+        String ba = String.format(
+                "{\"entity-type\":\"BusinessBeanAdapter\",\"value\":{\"type\"" + ":\"Note\",\"id\":\"%s\","
+                        + "\"note\":\"Note 1\",\"title\":\"Note 1\",\"description\":\"description\"}}",
+                note.getId());
         assertTrue(StringUtils.isBlank((String) note.getPropertyValue("dc:description")));
 
         // When i do a put request on it
-        ClientResponse response = getResponse(RequestType.PUT, "/id/" + note.getId() + "/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter", ba);
-        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+        try (CloseableClientResponse response = getResponse(RequestType.PUT,
+                "/id/" + note.getId() + "/@" + BOAdapter.NAME + "/BusinessBeanAdapter", ba)) {
+            assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
 
-        // Then it modifies the description
-        fetchInvalidations();
-        note = session.getDocument(note.getRef());
-        assertEquals("description", note.getAdapter(BusinessBeanAdapter.class).getDescription());
-
+            // Then it modifies the description
+            fetchInvalidations();
+            note = session.getDocument(note.getRef());
+            assertEquals("description", note.getAdapter(BusinessBeanAdapter.class).getDescription());
+        }
     }
 
     @Test
@@ -100,13 +101,14 @@ public class AdapterBindingTest extends BaseTest {
         assertTrue(session.getChildren(folder.getRef()).isEmpty());
 
         // When i do a put request on it
-        ClientResponse response = getResponse(RequestType.POST, "/id/" + folder.getId() + "/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter/note2", ba);
-        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+        try (CloseableClientResponse response = getResponse(RequestType.POST,
+                "/id/" + folder.getId() + "/@" + BOAdapter.NAME + "/BusinessBeanAdapter/note2", ba)) {
+            assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
 
-        // Then it modifies the description
-        fetchInvalidations();
-        assertFalse(session.getChildren(folder.getRef()).isEmpty());
+            // Then it modifies the description
+            fetchInvalidations();
+            assertFalse(session.getChildren(folder.getRef()).isEmpty());
+        }
     }
 
     @Test
@@ -115,8 +117,8 @@ public class AdapterBindingTest extends BaseTest {
         DocumentModel folder = RestServerInit.getFolder(1, session);
 
         // When i adapt the children of the folder with a BusinessBeanAdapter
-        JsonNode node = getResponseAsJson(RequestType.GET, "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter");
+        JsonNode node = getResponseAsJson(RequestType.GET,
+                "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME + "/BusinessBeanAdapter");
 
         // Then i receive a list of businessBeanAdapter
         assertEquals("adapters", node.get("entity-type").getValueAsText());
@@ -127,7 +129,6 @@ public class AdapterBindingTest extends BaseTest {
         JsonNode jsonNote = entries.get(0);
         assertEquals("BusinessBeanAdapter", jsonNote.get("entity-type").getValueAsText());
         assertEquals("Note", jsonNote.get("value").get("type").getValueAsText());
-
     }
 
     @Test
@@ -142,8 +143,8 @@ public class AdapterBindingTest extends BaseTest {
         queryParams.putSingle("sortOrder", "DESC");
 
         // When i adapt the children of the folder with a BusinessBeanAdapter
-        JsonNode node = getResponseAsJson(RequestType.GET, "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter", queryParams);
+        JsonNode node = getResponseAsJson(RequestType.GET,
+                "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME + "/BusinessBeanAdapter", queryParams);
 
         // Then i receive a list of businessBeanAdapter
         assertEquals("adapters", node.get("entity-type").getValueAsText());
@@ -160,8 +161,8 @@ public class AdapterBindingTest extends BaseTest {
         queryParams.putSingle("sortBy", "dc:description,dc:title");
         queryParams.putSingle("sortOrder", "asc,desc");
 
-        node = getResponseAsJson(RequestType.GET, "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME
-                + "/BusinessBeanAdapter", queryParams);
+        node = getResponseAsJson(RequestType.GET,
+                "/id/" + folder.getId() + "/@children/@" + BOAdapter.NAME + "/BusinessBeanAdapter", queryParams);
 
         // Then i receive a list of businessBeanAdapter
         assertEquals("adapters", node.get("entity-type").getValueAsText());

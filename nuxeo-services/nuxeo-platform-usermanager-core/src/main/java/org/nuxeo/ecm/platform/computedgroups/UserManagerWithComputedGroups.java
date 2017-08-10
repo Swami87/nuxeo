@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.nuxeo.common.collections.ScopedMap;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
@@ -120,6 +119,18 @@ public class UserManagerWithComputedGroups extends UserManagerImpl {
     }
 
     @Override
+    public NuxeoGroup getGroup(String groupName, DocumentModel context) {
+        NuxeoGroup grp = super.getGroup(groupName, context);
+        if (activateComputedGroup() && (grp == null || getService().allowGroupOverride())) {
+            NuxeoGroup computed = getService().getComputedGroup(groupName);
+            if (computed != null) {
+                grp = computed;
+            }
+        }
+        return grp;
+    }
+
+    @Override
     public List<String> getGroupIds() {
         List<String> ids = super.getGroupIds();
         if (activateComputedGroup()) {
@@ -187,8 +198,7 @@ public class UserManagerWithComputedGroups extends UserManagerImpl {
         groupDoc.setProperty(schemaName, id, grp.getName());
         groupDoc.setProperty(schemaName, getGroupIdField(), grp.getName());
 
-        final ScopedMap contextData = groupDoc.getContextData();
-        contextData.putScopedValue("virtual", Boolean.TRUE);
+        groupDoc.putContextData("virtual", Boolean.TRUE);
 
         return groupDoc;
     }

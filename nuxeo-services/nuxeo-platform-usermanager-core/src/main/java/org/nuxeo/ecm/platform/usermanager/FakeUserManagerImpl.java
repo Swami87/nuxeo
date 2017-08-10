@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,12 @@
  *
  * Contributors:
  *     Florent Guillaume
- *
- * $Id: FakeUserManagerImpl.java 28010 2007-12-07 19:23:44Z fguillaume $
  */
-
 package org.nuxeo.ecm.platform.usermanager;
 
 import java.io.Serializable;
 import java.security.Principal;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,9 +81,10 @@ public class FakeUserManagerImpl implements UserManager {
     final Map<String, VirtualUserDescriptor> virtualUsers;
 
     public FakeUserManagerImpl() {
-        virtualUsers = new HashMap<String, VirtualUserDescriptor>();
+        virtualUsers = new HashMap<>();
     }
 
+    @Override
     public String getUserListingMode() {
         return userListingMode;
     }
@@ -95,6 +93,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.userListingMode = userListingMode;
     }
 
+    @Override
     public String getGroupListingMode() {
         return groupListingMode;
     }
@@ -103,6 +102,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.groupListingMode = groupListingMode;
     }
 
+    @Override
     public String getDefaultGroup() {
         return defaultGroup;
     }
@@ -111,6 +111,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.defaultGroup = defaultGroup;
     }
 
+    @Override
     public String getUserSortField() {
         return userSortField;
     }
@@ -127,6 +128,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.userDirectoryName = userDirectoryName;
     }
 
+    @Override
     public String getUserDirectoryName() {
         return userDirectoryName;
     }
@@ -135,12 +137,13 @@ public class FakeUserManagerImpl implements UserManager {
         this.userEmailField = userEmailField;
     }
 
+    @Override
     public String getUserEmailField() {
         return userEmailField;
     }
 
     public void setUserSearchFields(Set<String> userSearchFields) {
-        this.userSearchFields = new LinkedHashMap<String, MatchType>();
+        this.userSearchFields = new LinkedHashMap<>();
         for (String searchField : userSearchFields) {
             this.userSearchFields.put(searchField, MatchType.SUBSTRING);
         }
@@ -150,10 +153,12 @@ public class FakeUserManagerImpl implements UserManager {
         this.userSearchFields = userSearchFields;
     }
 
+    @Override
     public Set<String> getUserSearchFields() {
         return userSearchFields.keySet();
     }
 
+    @Override
     public Set<String> getGroupSearchFields() {
         return groupSearchFields.keySet();
     }
@@ -162,6 +167,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.groupDirectoryName = groupDirectoryName;
     }
 
+    @Override
     public String getGroupDirectoryName() {
         return groupDirectoryName;
     }
@@ -170,6 +176,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.groupMembersField = groupMembersField;
     }
 
+    @Override
     public String getGroupMembersField() {
         return groupMembersField;
     }
@@ -178,6 +185,7 @@ public class FakeUserManagerImpl implements UserManager {
         this.groupSubGroupsField = groupSubGroupsField;
     }
 
+    @Override
     public String getGroupSubGroupsField() {
         return groupSubGroupsField;
     }
@@ -186,22 +194,27 @@ public class FakeUserManagerImpl implements UserManager {
         this.groupParentGroupsField = groupParentGroupsField;
     }
 
+    @Override
     public String getGroupParentGroupsField() {
         return groupParentGroupsField;
     }
 
+    @Override
     public Boolean areGroupsReadOnly() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public Boolean areUsersReadOnly() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public boolean checkUsernamePassword(String username, String password) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public boolean validatePassword(String password) {
         if (userPasswordPattern == null) {
             return true;
@@ -212,42 +225,44 @@ public class FakeUserManagerImpl implements UserManager {
     }
 
     @Override
-    public void updatePassword(String username, String oldPassword, String
-            newPassword) {
-        throw new UnsupportedOperationException();
-    }
-
     public List<String> getGroupsInGroup(String parentId) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public NuxeoPrincipal getPrincipal(String username) {
         NuxeoPrincipalImpl principal = new NuxeoPrincipalImpl(SecurityConstants.ADMINISTRATOR, false, true);
-        principal.setGroups(Arrays.asList(SecurityConstants.ADMINISTRATORS));
+        principal.setGroups(Collections.singletonList(SecurityConstants.ADMINISTRATORS));
         principal.setEmail("admin@example.com");
         return principal;
     }
 
+    @Override
     public List<String> getTopLevelGroups() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public List<String> getUsersInGroup(String groupId) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public List<String> getUsersInGroupAndSubGroups(String groupId) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModelList searchGroups(String pattern) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public List<NuxeoPrincipal> searchPrincipals(String pattern) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public Pattern getUserPasswordPattern() {
         return userPasswordPattern;
     }
@@ -267,6 +282,7 @@ public class FakeUserManagerImpl implements UserManager {
         }
     }
 
+    @Override
     public String getAnonymousUserId() {
         if (anonymousUser == null) {
             return null;
@@ -284,6 +300,7 @@ public class FakeUserManagerImpl implements UserManager {
         return null;
     }
 
+    @Override
     public void setConfiguration(UserManagerDescriptor descriptor) {
         setDefaultGroup(descriptor.defaultGroup);
         defaultAdministratorIds = descriptor.defaultAdministratorIds;
@@ -304,144 +321,127 @@ public class FakeUserManagerImpl implements UserManager {
         setVirtualUsers(descriptor.virtualUsers);
     }
 
+    @Override
     public DocumentModel getBareUserModel() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModel createGroup(DocumentModel groupModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModel createUser(DocumentModel userModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void deleteGroup(DocumentModel groupModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void deleteGroup(String groupId) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void deleteUser(DocumentModel userModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void deleteUser(String userId) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModel getBareGroupModel() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public NuxeoGroup getGroup(String groupName) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public List<String> getGroupIds() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public List<String> getUserIds() {
         throw new UnsupportedOperationException();
     }
 
-    public DocumentModelList searchGroups(Map<String, Serializable> filter, Set<String> fulltext)
-            {
+    @Override
+    public DocumentModelList searchGroups(Map<String, Serializable> filter, Set<String> fulltext) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModelList searchUsers(Map<String, Serializable> filter, Set<String> fulltext) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModelList searchUsers(String pattern) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void updateGroup(DocumentModel groupModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public void updateUser(DocumentModel userModel) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModel getGroupModel(String groupName) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DocumentModel getUserModel(String userName) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public String getGroupIdField() {
         return "groupname";
     }
 
+    @Override
     public String getGroupLabelField() {
         return "grouplabel";
     }
 
+    @Override
     public String getGroupSchemaName() {
         return "group";
     }
 
+    @Override
     public String getUserIdField() {
         return "username";
     }
 
+    @Override
     public String getUserSchemaName() {
         return "user";
     }
 
-    public void createGroup(NuxeoGroup group) {
-        throw new UnsupportedOperationException();
-    }
-
-    public void createPrincipal(NuxeoPrincipal principal) {
-        throw new UnsupportedOperationException();
-    }
-
-    public void deleteGroup(NuxeoGroup group) {
-        throw new UnsupportedOperationException();
-    }
-
-    public void deletePrincipal(NuxeoPrincipal principal) {
-        throw new UnsupportedOperationException();
-    }
-
-    public List<NuxeoGroup> getAvailableGroups() {
-        throw new UnsupportedOperationException();
-    }
-
-    public List<NuxeoPrincipal> getAvailablePrincipals() {
-        throw new UnsupportedOperationException();
-    }
-
-    public DocumentModel getModelForUser(String name) {
-        throw new UnsupportedOperationException();
-    }
-
-    public List<NuxeoPrincipal> searchByMap(Map<String, Serializable> filter, Set<String> pattern)
-            {
-        throw new UnsupportedOperationException();
-    }
-
-    public void updateGroup(NuxeoGroup group) {
-        throw new UnsupportedOperationException();
-    }
-
-    public void updatePrincipal(NuxeoPrincipal principal) {
-        throw new UnsupportedOperationException();
-    }
-
+    @Override
     public List<String> getAdministratorsGroups() {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public String[] getUsersForPermission(String perm, ACP acp) {
         throw new UnsupportedOperationException();
     }
@@ -452,11 +452,22 @@ public class FakeUserManagerImpl implements UserManager {
     }
 
     @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return false;
+    public void handleEvent(Event event) {
     }
 
     @Override
-    public void handleEvent(Event event) {
+    public List<String> getAncestorGroups(String groupId) {
+        throw new UnsupportedOperationException();
     }
+
+    @Override
+    public void notifyUserChanged(String userName, String eventId) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void notifyGroupChanged(String groupName, String eventId, List<String> ancestorGroupNames) {
+        throw new UnsupportedOperationException();
+    }
+
 }

@@ -35,6 +35,7 @@ import javax.faces.context.ExternalContext;
 import javax.faces.context.FacesContext;
 import javax.faces.event.ActionEvent;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
@@ -49,7 +50,6 @@ import org.jboss.seam.annotations.remoting.WebRemote;
 import org.jboss.seam.core.Events;
 import org.jboss.seam.faces.FacesMessages;
 import org.jboss.seam.international.StatusMessage;
-import org.nuxeo.common.utils.Base64;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -217,7 +217,7 @@ public class FileManageActionsBean implements FileManageActions {
             Boolean UseBase64) {
         byte[] bcontent;
         if (UseBase64.booleanValue()) {
-            bcontent = Base64.decode(content);
+            bcontent = Base64.decodeBase64(content);
         } else {
             bcontent = content.getBytes();
         }
@@ -297,7 +297,7 @@ public class FileManageActionsBean implements FileManageActions {
 
             DocumentModel createdDoc;
             try {
-                createdDoc = getFileManagerService().createFolder(documentManager, fullName, path);
+                createdDoc = getFileManagerService().createFolder(documentManager, fullName, path, true);
             } catch (NuxeoException | IOException t) {
                 Throwable unwrappedError = ExceptionHelper.unwrapException(t);
                 if (ExceptionHelper.isSecurityError(unwrappedError)) {
@@ -536,7 +536,11 @@ public class FileManageActionsBean implements FileManageActions {
         UploadedFile uploadedFile = uploadEvent.getUploadedFile();
         try (InputStream in = uploadedFile.getInputStream()) {
             FileBlob blob = new FileBlob(in, uploadedFile.getContentType(), null, tmpDir);
-            blob.setFilename(uploadedFile.getName());
+
+            // NXP-21171: With Firefox 50 and its new File system API, a bug occurs with the filename containing
+            // a slash. As it is not supposed to happen, sanitize the filename.
+            blob.setFilename(FileUtils.getCleanFileName(uploadedFile.getName()));
+
             return blob;
         }
     }
@@ -559,9 +563,8 @@ public class FileManageActionsBean implements FileManageActions {
                 for (NxUploadedFile uploadItem : nxuploadFiles) {
                     Blob blob = uploadItem.getBlob();
                     FileUtils.configureFileBlob(blob);
-                    HashMap<String, Object> fileMap = new HashMap<String, Object>(2);
+                    HashMap<String, Object> fileMap = new HashMap<String, Object>(1);
                     fileMap.put("file", blob);
-                    fileMap.put("filename", blob.getFilename());
                     if (!files.contains(fileMap)) {
                         files.add(fileMap);
                     }

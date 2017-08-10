@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,11 @@
 package org.nuxeo.ecm.core.storage.sql.coremodel;
 
 import java.io.Serializable;
-import java.text.DateFormat;
-import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -45,6 +42,7 @@ import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.api.VersionModel;
 import org.nuxeo.ecm.core.api.security.ACE;
 import org.nuxeo.ecm.core.api.security.ACL;
@@ -149,11 +147,6 @@ public class SQLSession implements Session {
     }
 
     @Override
-    public boolean isStateSharedByAllThreadSessions() {
-        return session.isStateSharedByAllThreadSessions();
-    }
-
-    @Override
     public String getRepositoryName() {
         return repository.getName();
     }
@@ -164,6 +157,16 @@ public class SQLSession implements Session {
 
     protected Serializable idFromString(String id) {
         return session.getModel().idFromString(id);
+    }
+
+    @Override
+    public ScrollResult scroll(String query, int batchSize, int keepAliveSeconds) {
+        return session.scroll(query, batchSize, keepAliveSeconds);
+    }
+
+    @Override
+    public ScrollResult scroll(String scrollId) {
+        return session.scroll(scrollId);
     }
 
     @Override
@@ -275,7 +278,7 @@ public class SQLSession implements Session {
     public List<Document> getProxies(Document document, Document parent) {
         List<Node> proxyNodes = session.getProxies(((SQLDocument) document).getNode(),
                 parent == null ? null : ((SQLDocument) parent).getNode());
-        List<Document> proxies = new ArrayList<Document>(proxyNodes.size());
+        List<Document> proxies = new ArrayList<>(proxyNodes.size());
         for (Node proxyNode : proxyNodes) {
             proxies.add(newDocument(proxyNode));
         }
@@ -294,32 +297,13 @@ public class SQLSession implements Session {
     @Override
     public Document importDocument(String uuid, Document parent, String name, String typeName,
             Map<String, Serializable> properties) {
-        assert Model.PROXY_TYPE == CoreSession.IMPORT_PROXY_TYPE;
         boolean isProxy = typeName.equals(Model.PROXY_TYPE);
-        Map<String, Serializable> props = new HashMap<String, Serializable>();
+        Map<String, Serializable> props = new HashMap<>();
         Long pos = null; // TODO pos
         if (!isProxy) {
             // version & live document
             props.put(Model.MISC_LIFECYCLE_POLICY_PROP, properties.get(CoreSession.IMPORT_LIFECYCLE_POLICY));
             props.put(Model.MISC_LIFECYCLE_STATE_PROP, properties.get(CoreSession.IMPORT_LIFECYCLE_STATE));
-            // compat with old lock import
-            @SuppressWarnings("deprecation")
-            String key = (String) properties.get(CoreSession.IMPORT_LOCK);
-            if (key != null) {
-                String[] values = key.split(":");
-                if (values.length == 2) {
-                    String owner = values[0];
-                    Calendar created = new GregorianCalendar();
-                    try {
-                        created.setTimeInMillis(
-                                DateFormat.getDateInstance(DateFormat.MEDIUM).parse(values[1]).getTime());
-                    } catch (ParseException e) {
-                        // use current date
-                    }
-                    props.put(Model.LOCK_OWNER_PROP, owner);
-                    props.put(Model.LOCK_CREATED_PROP, created);
-                }
-            }
 
             Serializable importLockOwnerProp = properties.get(CoreSession.IMPORT_LOCK_OWNER);
             if (importLockOwnerProp != null) {
@@ -443,6 +427,12 @@ public class SQLSession implements Session {
         return session.queryAndFetch(query, queryType, queryFilter, distinctDocuments, params);
     }
 
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, String queryType,
+            QueryFilter queryFilter, boolean distinctDocuments, long countUpTo, Object[] params) {
+        return session.queryProjection(query, queryType, queryFilter, distinctDocuments, countUpTo, params);
+    }
+
     /*
      * ----- called by SQLDocument -----
      */
@@ -494,7 +484,7 @@ public class SQLSession implements Session {
 
     // called by SQLQueryResult iterator
     protected List<Document> getDocumentsById(List<Serializable> ids) {
-        List<Document> docs = new ArrayList<Document>(ids.size());
+        List<Document> docs = new ArrayList<>(ids.size());
         List<Node> nodes = session.getNodesByIds(ids);
         for (int index = 0; index < ids.size(); ++index) {
             Node eachNode = nodes.get(index);
@@ -554,7 +544,7 @@ public class SQLSession implements Session {
 
     protected List<Document> getChildren(Node node) {
         List<Node> nodes = session.getChildren(node, null, false);
-        List<Document> children = new ArrayList<Document>(nodes.size());
+        List<Document> children = new ArrayList<>(nodes.size());
         for (Node n : nodes) {
             try {
                 children.add(newDocument(n));
@@ -635,7 +625,7 @@ public class SQLSession implements Session {
     protected List<Document> getVersions(String versionSeriesId) {
         Serializable vid = idFromString(versionSeriesId);
         List<Node> versionNodes = session.getVersions(vid);
-        List<Document> versions = new ArrayList<Document>(versionNodes.size());
+        List<Document> versions = new ArrayList<>(versionNodes.size());
         for (Node versionNode : versionNodes) {
             versions.add(newDocument(versionNode));
         }
@@ -782,7 +772,7 @@ public class SQLSession implements Session {
 
     // unit tested
     protected static ACLRow[] acpToAclRows(ACP acp) {
-        List<ACLRow> aclrows = new LinkedList<ACLRow>();
+        List<ACLRow> aclrows = new LinkedList<>();
         for (ACL acl : acp.getACLs()) {
             String name = acl.getName();
             if (name.equals(ACL.INHERITED_ACL)) {
@@ -798,8 +788,8 @@ public class SQLSession implements Session {
 
     // unit tested
     protected static ACLRow[] updateAclRows(ACLRow[] aclrows, ACP acp) {
-        List<ACLRow> newaclrows = new LinkedList<ACLRow>();
-        Map<String, ACL> aclmap = new HashMap<String, ACL>();
+        List<ACLRow> newaclrows = new LinkedList<>();
+        Map<String, ACL> aclmap = new HashMap<>();
         for (ACL acl : acp.getACLs()) {
             String name = acl.getName();
             if (ACL.INHERITED_ACL.equals(name)) {
@@ -820,8 +810,8 @@ public class SQLSession implements Session {
                 // start next round
                 name = aclrow.name;
                 ACL acl = aclmap.remove(name);
-                aces = acl == null ? Collections.<ACE> emptyList() : new LinkedList<ACE>(Arrays.asList(acl.getACEs()));
-                aceKeys = new HashSet<String>();
+                aces = acl == null ? Collections.<ACE> emptyList() : new LinkedList<>(Arrays.asList(acl.getACEs()));
+                aceKeys = new HashSet<>();
                 for (ACE ace : aces) {
                     aceKeys.add(getACEkey(ace));
                 }
@@ -899,6 +889,14 @@ public class SQLSession implements Session {
     @Override
     public Map<String, String> getBinaryFulltext(String id) {
         return session.getBinaryFulltext(idFromString(id));
+    }
+
+    public boolean isChangeTokenEnabled() {
+        return session.isChangeTokenEnabled();
+    }
+
+    public void markUserChange(Serializable id) {
+        session.markUserChange(id);
     }
 
 }

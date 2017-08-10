@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,14 @@
  *     Sun Seng David TAN
  *     Florent Guillaume
  *     Antoine Taillefer
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.pages;
 
 import static org.junit.Assert.assertNotNull;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.nuxeo.functionaltests.AbstractTest;
 import org.nuxeo.functionaltests.AjaxRequestManager;
@@ -36,8 +38,8 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
 import org.openqa.selenium.support.ui.Select;
-import org.openqa.selenium.support.ui.WebDriverWait;
 
 /**
  * Base functions for all pages.
@@ -79,39 +81,37 @@ public abstract class AbstractPage {
     }
 
     /**
-     * Gets the info feedback message.
-     *
-     * @return the message if any or an empty string.
-     * @deprecated since 5.8
-     */
-    @Deprecated
-    public String getFeedbackMessage() {
-        String ret;
-        try {
-            ret = findElementWithTimeout(By.xpath("//li[@class=\"errorFeedback\"]")).getText();
-        } catch (NoSuchElementException e) {
-            ret = "";
-        }
-        return ret.trim();
-    }
-
-    /**
      * Returns the error feedback message.
      * <p>
-     * If there are more than one error message, always return the second one (not interested by 'Please correct errors'
+     * If there are more than one error message, always return the last one (not interested by 'Please correct errors'
      * message).
      *
      * @since 5.8
      */
     public String getErrorFeedbackMessage() {
+        return getFeedbackMessage("errorFeedback");
+    }
+
+    /**
+     * Returns the info feedback message.
+     * <p>
+     * If there are more than one info message, always return the last one.
+     *
+     * @since 8.3
+     */
+    public String getInfoFeedbackMessage() {
+        return getFeedbackMessage("infoFeedback");
+    }
+
+    protected String getFeedbackMessage(String styleClass) {
         String ret = "";
         try {
             List<WebElement> elements = findElementsWithTimeout(
-                    By.xpath("//div[contains(@class, 'errorFeedback')]/div[@class='ambiance-title']"));
+                    By.xpath("//div[contains(@class, '" + styleClass + "')]/div[@class='ambiance-title']"));
             if (elements.size() == 1) {
                 ret = elements.get(0).getText();
             } else if (elements.size() > 1) {
-                ret = elements.get(1).getText();
+                ret = elements.get(elements.size() - 1).getText();
             }
         } catch (NoSuchElementException e) {
             ret = "";
@@ -128,16 +128,41 @@ public abstract class AbstractPage {
     }
 
     /**
-     * Returns the fancy box content web element
+     * Returns the fancy box content web element.
      *
      * @since 5.7
      */
-    public WebElement getFancyBoxContent() {
+    public static WebElement getFancyBoxContent() {
         // make sure the fancybox content is loaded
         WebElement fancyBox = findElementWithTimeout(By.id("fancybox-content"));
-        WebDriverWait wait = new WebDriverWait(driver, AbstractTest.LOAD_TIMEOUT_SECONDS);
+        FluentWait<WebDriver> wait = Locator.getFluentWait();
         wait.until(ExpectedConditions.visibilityOf(fancyBox));
         return fancyBox;
+    }
+
+    /**
+     * Closes current fancy box.
+     *
+     * @since 8.3
+     */
+    public static void closeFancyBox() {
+        AjaxRequestManager arm = new AjaxRequestManager(AbstractTest.driver);
+        arm.begin();
+        findElementWaitUntilEnabledAndClick(By.id("fancybox-close"));
+        arm.end();
+        waitForFancyBoxClosed();
+    }
+
+    /**
+     * Waits for the fancybox to be fully closed.
+     *
+     * @since 8.3
+     */
+    public static void waitForFancyBoxClosed() {
+        // make sure the fancybox content is not loaded anymore
+        FluentWait<WebDriver> wait = Locator.getFluentWait();
+        wait.withTimeout(AbstractTest.AJAX_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(By.id("fancybox-overlay")));
     }
 
     /**
@@ -170,7 +195,6 @@ public abstract class AbstractPage {
      * Finds the first {@link WebElement} using the given method, with a timeout.
      *
      * @param by the locating mechanism
-     * @param timeout the timeout in milliseconds
      * @return the first matching element on the current page, if found
      * @throws NoSuchElementException when not found
      */
@@ -198,12 +222,46 @@ public abstract class AbstractPage {
     }
 
     /**
-     * Waits until an element is enabled, with a timeout.
+     * Waits until an element is enabled, with a default timeout.
      *
      * @param element the element
      */
     public static void waitUntilEnabled(WebElement element) throws NotFoundException {
         Locator.waitUntilEnabled(element);
+    }
+
+    /**
+     * Waits until an element is enabled, with a timeout.
+     *
+     * @param element the element
+     * @param waitUntilEnabledTimeout the timeout in milliseconds
+     * @since 8.3
+     */
+    public static void waitUntilEnabled(WebElement element, int waitUntilEnabledTimeout) throws NotFoundException {
+        Locator.waitUntilEnabled(element, waitUntilEnabledTimeout);
+    }
+
+    /**
+     * Waits until an element is enabled, with a default timeout. Then clicks on the element.
+     *
+     * @param element the element
+     * @since 8.3
+     */
+    public static void waitUntilEnabledAndClick(WebElement element) throws NotFoundException {
+        Locator.waitUntilEnabledAndClick(element);
+    }
+
+    /**
+     * Waits until an element is enabled, with a timeout. Then clicks on the element.
+     *
+     * @param element the element
+     * @param waitUntilEnabledTimeout the timeout in milliseconds
+     * @since 8.3
+     */
+
+    public static void waitUntilEnabledAndClick(WebElement element, int waitUntilEnabledTimeout)
+            throws NotFoundException {
+        Locator.waitUntilEnabledAndClick(element, waitUntilEnabledTimeout);
     }
 
     /**
@@ -241,10 +299,12 @@ public abstract class AbstractPage {
      * @param findElementTimeout the find element timeout in milliseconds
      * @param waitUntilEnabledTimeout the wait until enabled timeout in milliseconds
      * @throws NotFoundException if the element is not found or not enabled
+     * @deprecated since 8.3, use {@link Locator#findElementWaitUntilEnabledAndClick(WebElement, By, int, int)}
      */
+    @Deprecated
     public static void findElementWaitUntilEnabledAndClick(By by, int findElementTimeout, int waitUntilEnabledTimeout)
             throws NotFoundException {
-        Locator.waitUntilElementEnabledAndClick(by, findElementTimeout, waitUntilEnabledTimeout);
+        Locator.findElementWaitUntilEnabledAndClick(by, findElementTimeout, waitUntilEnabledTimeout);
     }
 
     /**
@@ -256,6 +316,20 @@ public abstract class AbstractPage {
      */
     public static void findElementWaitUntilEnabledAndClick(By by) throws NotFoundException {
         Locator.findElementWaitUntilEnabledAndClick(by);
+    }
+
+    /**
+     * Finds the first {@link WebElement} using the given method, with the default timeout, inside an optional
+     * {@code parentElement}. Then waits until the element is enabled, with the default timeout. Then clicks on the
+     * element.
+     *
+     * @param parentElement the parent element (can be null)
+     * @param by the locating mechanism
+     * @throws NotFoundException if the element is not found or not enabled
+     * @since 9.1
+     */
+    public static void findElementWaitUntilEnabledAndClick(WebElement parentElement, By by) throws NotFoundException {
+        Locator.findElementWaitUntilEnabledAndClick(parentElement, by);
     }
 
     /**
@@ -308,10 +382,10 @@ public abstract class AbstractPage {
             if (useAjax) {
                 AjaxRequestManager arm = new AjaxRequestManager(driver);
                 arm.begin();
-                tabElement.click();
+                waitUntilEnabledAndClick(tabElement);
                 arm.end();
             } else {
-                tabElement.click();
+                waitUntilEnabledAndClick(tabElement);
             }
         }
     }

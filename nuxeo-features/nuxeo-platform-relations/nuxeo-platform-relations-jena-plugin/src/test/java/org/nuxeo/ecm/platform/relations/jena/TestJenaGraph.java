@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,17 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: TestJenaGraph.java 25624 2007-10-02 15:14:38Z atchertchian $
  */
-
 package org.nuxeo.ecm.platform.relations.jena;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -34,10 +40,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.Before;
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.platform.relations.api.Graph;
 import org.nuxeo.ecm.platform.relations.api.Node;
@@ -74,29 +79,31 @@ public class TestJenaGraph extends NXRuntimeTestCase {
     private QNameResource references;
 
     @Override
-    @Before
     public void setUp() throws Exception {
-        super.setUp();
         deployBundle("org.nuxeo.runtime.management");
         deployBundle("org.nuxeo.ecm.core.schema");
         deployBundle("org.nuxeo.ecm.core.api");
         deployBundle("org.nuxeo.ecm.relations");
         deployBundle("org.nuxeo.ecm.relations.jena");
         deployContrib("org.nuxeo.ecm.relations.jena.tests", "jena-test-bundle.xml");
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
         RelationManager service = Framework.getService(RelationManager.class);
         Graph graph = service.getGraphByName("myrelations");
         assertNotNull(graph);
         assertEquals(JenaGraph.class, graph.getClass());
         this.graph = (JenaGraph) graph;
-        statements = new ArrayList<Statement>();
+        statements = new ArrayList<>();
         doc1 = new ResourceImpl("http://www.ecm.org/uid/DOC200600013_02.01");
         doc2 = new ResourceImpl("http://www.ecm.org/uid/DOC200600015_01.00");
         namespace = "http://purl.org/dc/terms/";
         isBasedOn = new QNameResourceImpl(namespace, "IsBasedOn");
         references = new QNameResourceImpl(namespace, "References");
         statements.add(new StatementImpl(doc2, isBasedOn, doc1));
-        statements.add(new StatementImpl(doc1, references, new ResourceImpl(
-                "http://www.wikipedia.com/Enterprise_Content_Management")));
+        statements.add(new StatementImpl(doc1, references,
+                new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management")));
         statements.add(new StatementImpl(doc2, references, new LiteralImpl("NXRuntime")));
         Collections.sort(statements);
     }
@@ -116,7 +123,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
     @Test
     public void testSetOptions() {
-        Map<String, String> options = new HashMap<String, String>();
+        Map<String, String> options = new HashMap<>();
         options.put("backend", "dummy");
         try {
             graph.setOptions(options);
@@ -147,7 +154,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
     @Test
     public void testSetNamespaces() {
-        Map<String, String> namespaces = new HashMap<String, String>();
+        Map<String, String> namespaces = new HashMap<>();
         namespaces.put("dummy", "http://dummy");
 
         boolean forceReload = false;
@@ -191,7 +198,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
         assertSame(0L, graph.size());
         graph.add(statements);
         assertSame(3L, graph.size());
-        List<Statement> stmts = new ArrayList<Statement>();
+        List<Statement> stmts = new ArrayList<>();
         stmts.add(new StatementImpl(doc2, references, new LiteralImpl("NXRuntime")));
         graph.remove(stmts);
         assertSame(2L, graph.size());
@@ -199,7 +206,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
     @Test
     public void testGetStatements() {
-        List<Statement> stmts = new ArrayList<Statement>();
+        List<Statement> stmts = new ArrayList<>();
         assertEquals(stmts, graph.getStatements());
         graph.add(statements);
         stmts = graph.getStatements();
@@ -209,7 +216,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
     @Test
     public void testGetStatementsPattern() {
-        List<Statement> expected = new ArrayList<Statement>();
+        List<Statement> expected = new ArrayList<>();
         assertEquals(expected, graph.getStatements());
         graph.add(statements);
 
@@ -220,36 +227,37 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         stmts = graph.getStatements(new StatementImpl(doc1, null, null));
         Collections.sort(stmts);
-        expected = new ArrayList<Statement>();
-        expected.add(new StatementImpl(doc1, references, new ResourceImpl(
-                "http://www.wikipedia.com/Enterprise_Content_Management")));
+        expected = new ArrayList<>();
+        expected.add(new StatementImpl(doc1, references,
+                new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management")));
         assertEquals(expected, stmts);
 
         stmts = graph.getStatements(new StatementImpl(null, references, null));
         Collections.sort(stmts);
-        expected = new ArrayList<Statement>();
-        expected.add(new StatementImpl(doc1, references, new ResourceImpl(
-                "http://www.wikipedia.com/Enterprise_Content_Management")));
+        expected = new ArrayList<>();
+        expected.add(new StatementImpl(doc1, references,
+                new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management")));
         expected.add(new StatementImpl(doc2, references, new LiteralImpl("NXRuntime")));
         assertEquals(expected, stmts);
 
         stmts = graph.getStatements(new StatementImpl(doc2, null, doc1));
         Collections.sort(stmts);
-        expected = new ArrayList<Statement>();
+        expected = new ArrayList<>();
         expected.add(new StatementImpl(doc2, isBasedOn, doc1));
         assertEquals(expected, stmts);
 
         // test with unknown nodes
-        expected = new ArrayList<Statement>();
-        stmts = graph.getStatements(new StatementImpl(new ResourceImpl("http://subject"), new ResourceImpl(
-                "http://propertty"), new ResourceImpl("http://object")));
+        expected = new ArrayList<>();
+        stmts = graph.getStatements(new StatementImpl(new ResourceImpl("http://subject"),
+                new ResourceImpl("http://propertty"), new ResourceImpl("http://object")));
         assertEquals(expected, stmts);
 
-        stmts = graph.getStatements(new StatementImpl(new ResourceImpl("http://subject"), null, new LiteralImpl(
-                "literal")));
+        stmts = graph.getStatements(
+                new StatementImpl(new ResourceImpl("http://subject"), null, new LiteralImpl("literal")));
         assertEquals(expected, stmts);
 
-        stmts = graph.getStatements(new StatementImpl(new ResourceImpl("http://subject"), null, new BlankImpl("blank")));
+        stmts = graph.getStatements(
+                new StatementImpl(new ResourceImpl("http://subject"), null, new BlankImpl("blank")));
         assertEquals(expected, stmts);
     }
 
@@ -261,14 +269,14 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getSubjects(references, new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management"));
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         Collections.sort(expected);
         assertEquals(expected, res);
 
         res = graph.getSubjects(references, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         expected.add(doc2);
         Collections.sort(expected);
@@ -276,14 +284,14 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getSubjects(null, doc1);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc2);
         Collections.sort(expected);
         assertEquals(expected, res);
 
         res = graph.getSubjects(null, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         expected.add(doc2);
         Collections.sort(expected);
@@ -298,14 +306,14 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getPredicates(doc2, doc1);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(isBasedOn);
         Collections.sort(expected);
         assertEquals(expected, res);
 
         res = graph.getPredicates(doc2, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(isBasedOn);
         expected.add(references);
         Collections.sort(expected);
@@ -313,14 +321,14 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getPredicates(null, doc1);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(isBasedOn);
         Collections.sort(expected);
         assertEquals(expected, res);
 
         res = graph.getPredicates(null, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(isBasedOn);
         expected.add(references);
         Collections.sort(expected);
@@ -335,14 +343,14 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getObjects(doc2, isBasedOn);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         Collections.sort(expected);
         assertEquals(expected, res);
 
         res = graph.getObjects(doc2, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         expected.add(new LiteralImpl("NXRuntime"));
         Collections.sort(expected);
@@ -350,7 +358,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getObjects(null, references);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management"));
         expected.add(new LiteralImpl("NXRuntime"));
         Collections.sort(expected);
@@ -358,7 +366,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
 
         res = graph.getObjects(null, null);
         Collections.sort(res);
-        expected = new ArrayList<Node>();
+        expected = new ArrayList<>();
         expected.add(doc1);
         expected.add(new ResourceImpl("http://www.wikipedia.com/Enterprise_Content_Management"));
         expected.add(new LiteralImpl("NXRuntime"));
@@ -387,7 +395,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
     @Test
     public void testSize() {
         assertSame(0L, graph.size());
-        List<Statement> stmts = new ArrayList<Statement>();
+        List<Statement> stmts = new ArrayList<>();
         stmts.add(new StatementImpl(doc1, isBasedOn, new LiteralImpl("foo")));
         graph.add(stmts);
         assertSame(1L, graph.size());
@@ -410,7 +418,7 @@ public class TestJenaGraph extends NXRuntimeTestCase {
         String queryString = "SELECT ?subj ?pred ?obj " + "WHERE {" + "      ?subj ?pred ?obj " + "       }";
         QueryResult res = graph.query(queryString, "sparql", null);
         assertSame(3, res.getCount());
-        List<String> variableNames = new ArrayList<String>();
+        List<String> variableNames = new ArrayList<>();
         variableNames.add("subj");
         variableNames.add("pred");
         variableNames.add("obj");
@@ -458,9 +466,11 @@ public class TestJenaGraph extends NXRuntimeTestCase {
         graph.add(statements);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         graph.write(out, null, null);
-        InputStream written = new ByteArrayInputStream(out.toByteArray());
-        InputStream expected = new FileInputStream(getTestFile());
-        assertEquals(FileUtils.read(expected).replaceAll("\r?\n", ""), FileUtils.read(written).replaceAll("\r?\n", ""));
+        try (InputStream written = new ByteArrayInputStream(out.toByteArray());
+                InputStream expected = new FileInputStream(getTestFile())) {
+            assertEquals(IOUtils.toString(expected, Charsets.UTF_8).replaceAll("\r?\n", ""),
+                    IOUtils.toString(written, Charsets.UTF_8).replaceAll("\r?\n", ""));
+        }
     }
 
     @Test
@@ -469,12 +479,12 @@ public class TestJenaGraph extends NXRuntimeTestCase {
         File file = Framework.createTempFile("test", ".rdf");
         String path = file.getPath();
         graph.write(path, null, null);
-        InputStream written = new FileInputStream(new File(path));
-        InputStream expected = new FileInputStream(getTestFile());
-
-        String expectedString = FileUtils.read(expected).replaceAll("\r?\n", "");
-        String writtenString = FileUtils.read(written).replaceAll("\r?\n", "");
-        assertEquals(expectedString, writtenString);
+        try (InputStream written = new FileInputStream(new File(path));
+                InputStream expected = new FileInputStream(getTestFile())) {
+            String expectedString = IOUtils.toString(expected, Charsets.UTF_8).replaceAll("\r?\n", "");
+            String writtenString = IOUtils.toString(written, Charsets.UTF_8).replaceAll("\r?\n", "");
+            assertEquals(expectedString, writtenString);
+        }
     }
 
     // XXX AT: test serialization of the graph because the RelationServiceBean

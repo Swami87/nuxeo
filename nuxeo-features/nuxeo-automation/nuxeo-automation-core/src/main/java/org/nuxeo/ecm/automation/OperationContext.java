@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,17 +21,20 @@
 package org.nuxeo.ecm.automation;
 
 import java.security.Principal;
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.nuxeo.ecm.automation.core.impl.InvokableMethod;
-import org.nuxeo.ecm.automation.core.trace.Trace;
+import org.nuxeo.ecm.automation.core.Constants;
+import org.nuxeo.ecm.automation.core.scripting.Expression;
+import org.nuxeo.ecm.automation.core.trace.TracerFactory;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.transaction.TransactionHelper;
@@ -56,14 +59,7 @@ import org.nuxeo.runtime.transaction.TransactionHelper;
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
-public class OperationContext implements Map<String, Object> {
-
-    private static final Log log = LogFactory.getLog(OperationContext.class);
-
-    /**
-     * The context variables map
-     */
-    protected Map<String, Object> vars;
+public class OperationContext extends AbstractMap<String,Object> implements  AutoCloseable {
 
     /**
      * Whether to save the session at the end of the chain execution. The default is true.
@@ -72,10 +68,12 @@ public class OperationContext implements Map<String, Object> {
 
     protected final transient List<CleanupHandler> cleanupHandlers;
 
+    protected final Map<String, Object> vars;
+
     /**
      * Each stack use a key the type of the objects in the stack: document, documents, blob or blobs
      */
-    protected final transient Map<String, List<Object>> stacks;
+    protected final transient Map<String, Deque<Object>> stacks = new HashMap<>();
 
     /**
      * A logins stack manage multiple logins and sessions in a single chain execution
@@ -95,38 +93,22 @@ public class OperationContext implements Map<String, Object> {
     /**
      * @since 5.7.3 Collect operation invokes.
      */
-    protected ChainCallback chainCallback;
+    protected OperationCallback callback;
 
     public OperationContext() {
-        this(null, null);
-    }
-
-    public OperationContext(OperationContext ctx) {
-        if (ctx.loginStack == null) {
-            this.loginStack = new LoginStack(ctx.getCoreSession());
-        } else {
-            this.loginStack = ctx.loginStack;
-        }
-        this.vars = ctx.vars;
-        this.cleanupHandlers = ctx.cleanupHandlers;
-        this.stacks = ctx.stacks;
-        this.commit = ctx.commit;
-        this.input = ctx.input;
-        this.trace = ctx.trace;
-        this.chainCallback = ctx.chainCallback;
+        this(null);
     }
 
     public OperationContext(CoreSession session) {
-        this(session, null);
+        this(session, new HashMap<>());
     }
 
-    public OperationContext(CoreSession session, Map<String, Object> vars) {
-        stacks = new HashMap<String, List<Object>>();
-        cleanupHandlers = new ArrayList<CleanupHandler>();
+    protected OperationContext(CoreSession session, Map<String, Object> bindings) {
+        vars = bindings;
+        cleanupHandlers = new ArrayList<>();
         loginStack = new LoginStack(session);
-        trace = new ArrayList<String>();
-        chainCallback = new ChainCallback();
-        this.vars = vars != null ? vars : new HashMap<String, Object>();
+        trace = new ArrayList<>();
+        callback = Framework.getService(TracerFactory.class).newTracer();
     }
 
     public void setCoreSession(CoreSession session) {
@@ -162,37 +144,69 @@ public class OperationContext implements Map<String, Object> {
         return input;
     }
 
-    public Object peek(String type) {
-        List<Object> stack = stacks.get(type);
-        if (stack == null) {
-            return null;
-        }
-        return stack.isEmpty() ? null : stack.get(stack.size() - 1);
+    /**
+     * Push the whole map into the context.
+     *
+     * @since 9.1
+     */
+    public void push(Map<String, ?> map) {
+        map.forEach(this::push);
     }
 
-    public void push(String type, Object obj) {
-        List<Object> stack = stacks.get(type);
+    /**
+     * Pop all entries from the context giving the provided map keys.
+     *
+     * @param map
+     *
+     * @since 9.1
+     */
+    public void pop(Map<String, ?> map) {
+        map.forEach((k, v) -> pop(k));
+    }
+
+    public Object push(String type, Object obj) {
+        Deque<Object> stack = stacks.get(type);
         if (stack == null) {
-            stack = new ArrayList<Object>();
+            if (vars.containsKey(type)) {
+                throw new IllegalStateException(type + " is not a stack");
+            }
+            stack = new LinkedList<>();
             stacks.put(type, stack);
         }
-        stack.add(obj);
+        Object current = stack.peek();
+        stack.push(obj);
+        vars.put(type, obj);
+        return current;
+    }
+
+    public Object peek(String type) {
+        return vars.get(type);
     }
 
     public Object pop(String type) {
-        List<Object> stack = stacks.get(type);
+        Deque<Object> stack = stacks.get(type);
         if (stack == null) {
             return null;
         }
-        return stack.isEmpty() ? null : stack.remove(stack.size() - 1);
+        vars.remove(type);
+        Object obj = stack.pop();
+        if (stack.isEmpty()) {
+            stacks.remove(type);
+        }
+        return obj;
     }
 
     public Object pull(String type) {
-        List<Object> stack = stacks.get(type);
+        Deque<Object> stack = stacks.get(type);
         if (stack == null) {
             return null;
         }
-        return stack.isEmpty() ? null : stack.remove(0);
+        Object obj = stack.removeLast();
+        if (stack.isEmpty()) {
+            vars.remove(type);
+            stacks.remove(type);
+        }
+        return obj;
     }
 
     public <T> T getAdapter(Class<T> type) {
@@ -207,35 +221,6 @@ public class OperationContext implements Map<String, Object> {
         }
     }
 
-    /**
-     * since 5.7.3 #addTrace is no longer useful for tracing. Use chain call backs to do it.
-     */
-    @Deprecated
-    public void addTrace(String trace) {
-        this.trace.add(trace);
-    }
-
-    /**
-     * since 5.7.3 #getTrace is no longer useful for tracing. Use chain call backs to do it.
-     */
-    @Deprecated
-    public List<String> getTrace() {
-        return trace;
-    }
-
-    /**
-     * since 5.7.3 #getFormattedTrace is no longer useful for tracing. Use chain call backs to do it.
-     */
-    @Deprecated
-    public String getFormattedTrace() {
-        String crlf = System.getProperty("line.separator");
-        StringBuilder buf = new StringBuilder();
-        for (String t : trace) {
-            buf.append("> ").append(t).append(crlf);
-        }
-        return buf.toString();
-    }
-
     public void addCleanupHandler(CleanupHandler handler) {
         cleanupHandlers.add(handler);
     }
@@ -244,12 +229,15 @@ public class OperationContext implements Map<String, Object> {
         cleanupHandlers.remove(handler);
     }
 
-    public void dispose() throws OperationException {
+    @Override
+    public void close() throws OperationException {
+        if (getCoreSession() != null && isCommit()) {
+            // auto save session if any.
+            getCoreSession().save();
+        }
         trace.clear();
         loginStack.clear();
-        for (CleanupHandler handler : cleanupHandlers) {
-            handler.cleanup();
-        }
+        cleanupHandlers.forEach(CleanupHandler::cleanup);
     }
 
     /**
@@ -268,135 +256,138 @@ public class OperationContext implements Map<String, Object> {
     /** the map API */
 
     @Override
-    public int size() {
-        return vars.size();
-    }
-
-    @Override
-    public boolean isEmpty() {
-        return vars.isEmpty();
-    }
-
-    @Override
     public boolean containsKey(Object key) {
-        return vars.containsKey(key);
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-        return vars.containsValue(value);
+        if (Constants.VAR_RUNTIME_CHAIN.equals(key)) {
+            return true;
+        }
+        return super.containsKey(key);
     }
 
     @Override
     public Object get(Object key) {
-        return vars.get(key);
+        if (Constants.VAR_RUNTIME_CHAIN.equals(key)) {
+            return this;
+        }
+        return resolve(vars.get(key));
     }
 
     @Override
     public Object put(String key, Object value) {
-        return vars.put(key, value);
+        if (Constants.VAR_RUNTIME_CHAIN.equals(key)) {
+            throw new IllegalArgumentException(Constants.VAR_RUNTIME_CHAIN + " is reserved, not writable");
+        }
+        return resolve(vars.put(key, value));
     }
 
     @Override
     public Object remove(Object key) {
-        return vars.remove(key);
+        if (Constants.VAR_RUNTIME_CHAIN.equals(key)) {
+            throw new IllegalArgumentException(Constants.VAR_RUNTIME_CHAIN + " is reserved, not writable");
+        }
+        return resolve(vars.remove(key));
     }
+
 
     @Override
-    public void putAll(Map<? extends String, ? extends Object> m) {
-        vars.putAll(m);
-    }
+    public Set<Map.Entry<String, Object>> entrySet() {
+        return new AbstractSet<Map.Entry<String,Object>>() {
 
-    @Override
-    public void clear() {
-        vars.clear();
-    }
+            @Override
+            public Iterator<Entry<String, Object>> iterator() {
+                Iterator<Entry<String,Object>> iterator = vars.entrySet().iterator();
+                return new Iterator<Entry<String,Object>>() {
 
-    @Override
-    public Set<String> keySet() {
-        return vars.keySet();
-    }
+                    @Override
+                    public boolean hasNext() {
+                        return iterator.hasNext();
+                    }
 
-    @Override
-    public Collection<Object> values() {
-        return vars.values();
-    }
+                    @Override
+                    public Entry<String, Object> next() {
+                        Entry<String,Object> entry = iterator.next();
+                        return new Entry<String,Object>() {
 
-    @Override
-    public Set<java.util.Map.Entry<String, Object>> entrySet() {
-        return vars.entrySet();
-    }
+                            @Override
+                            public String getKey() {
+                                return entry.getKey();
+                            }
 
-    /**
-     * ChainCallback store all automation traces for execution
-     *
-     * @since 5.7.3
-     */
-    protected static class ChainCallback implements OperationCallback {
+                            @Override
+                            public Object getValue() {
+                                return resolve(entry.getValue());
+                            }
 
-        public OperationCallback operationCallback;
+                            @Override
+                            public Object setValue(Object value) {
+                                Object previous = entry.setValue(value);
+                                return resolve(previous);
+                            }
 
-        protected void set(OperationCallback callback) {
-            operationCallback = callback;
-        }
+                        };
+                    }
 
-        @Override
-        public void onChain(OperationType chain) {
-            operationCallback.onChain(chain);
-        }
+                };
+            }
 
-        @Override
-        public void onOperation(OperationContext context, OperationType type, InvokableMethod method,
-                Map<String, Object> parms) {
-            operationCallback.onOperation(context, type, method, parms);
-        }
-
-        @Override
-        public void onError(OperationException error) {
-            operationCallback.onError(error);
-        }
-
-        @Override
-        public void onOutput(Object output) {
-            operationCallback.onOutput(output);
-        }
-
-        @Override
-        public Trace getTrace() {
-            return operationCallback.getTrace();
-        }
-
-        @Override
-        public String getFormattedText() {
-            throw new UnsupportedOperationException("#getFormattedText is not available for: " + this);
-        }
-
+            @Override
+            public int size() {
+                return vars.size();
+            }
+        };
     }
 
     /**
      * @since 5.7.3
      */
-    public OperationCallback getChainCallback() {
-        return chainCallback.operationCallback;
+    public OperationCallback getCallback() {
+        return callback;
     }
 
     /**
      * @since 5.7.3
      */
-    public void addChainCallback(OperationCallback chainCallback) {
-        this.chainCallback.set(chainCallback);
+    public void setCallback(OperationCallback chainCallback) {
+        callback = chainCallback;
     }
 
     /**
      * @since 5.7.3
-     * @param isolate define if keeps context variables for the subcontext
+     * @param isolate
+     *            define if keeps context variables for the subcontext
+     * @param input
+     *            an input object
      * @return a subcontext
      */
-    public OperationContext getSubContext(Boolean isolate, Object input) {
-        Map<String, Object> vars = isolate ? new HashMap<String, Object>(getVars()) : getVars();
+    public OperationContext getSubContext(boolean isolate, Object input) {
+        Map<String, Object> vars = isolate ? new HashMap<>(getVars()) : getVars();
         OperationContext subctx = new OperationContext(getCoreSession(), vars);
         subctx.setInput(input);
-        subctx.addChainCallback(getChainCallback());
+        subctx.setCallback(callback);
         return subctx;
     }
+
+    /**
+     * @since 9.1
+     * @param isolate
+     *            define if keeps context variables for the subcontext
+     * @return a subcontext
+     */
+    public OperationContext getSubContext(boolean isolate) {
+        return getSubContext(isolate, getInput());
+    }
+
+    /**
+     * Evaluate the expression against this context if needed
+     * @param obj
+     * @return the resolved value
+     *
+     * @since 9.1
+     */
+    public Object resolve(Object obj) {
+        if (!(obj instanceof Expression)) {
+            return obj;
+        }
+        return ((Expression) obj).eval(this);
+    }
+
 }

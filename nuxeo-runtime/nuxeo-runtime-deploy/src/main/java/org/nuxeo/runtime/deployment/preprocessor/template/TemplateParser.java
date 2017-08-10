@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  *
  * $Id$
  */
-
 package org.nuxeo.runtime.deployment.preprocessor.template;
 
 import java.io.BufferedInputStream;
@@ -28,7 +27,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
-import org.nuxeo.common.utils.FileUtils;
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 
 /**
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
@@ -40,31 +40,19 @@ public class TemplateParser {
     }
 
     public static Template parse(File file) throws IOException {
-        InputStream in = null;
-        try {
-            in = new BufferedInputStream(new FileInputStream(file));
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))){
             return parse(in);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static Template parse(URL url) throws IOException {
-        InputStream in = null;
-        try {
-            in = new BufferedInputStream(url.openStream());
+        try (InputStream in = new BufferedInputStream(url.openStream())){
             return parse(in);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static Template parse(InputStream in) throws IOException {
-        String s = FileUtils.read(in);
+        String s = IOUtils.toString(in, Charsets.UTF_8);
         return parse(s.toCharArray());
     }
 

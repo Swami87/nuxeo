@@ -72,6 +72,7 @@
     <action id="addSelectedToCollectionAction" order="40" label="label.addToCollection"
       type="fancybox" icon="/icons/add_to_collection.png" accessKey="j">
       <category>CURRENT_SELECTION_LIST</category>
+      <category>ORDERABLE_CURRENT_SELECTION_LIST</category>
       <filter-id>canAddSelectedToCollection</filter-id>
       <properties>
         <property name="include">/incl/add_selection_to_collection.xhtml</property>
@@ -84,6 +85,10 @@
 
     <action id="exportViewZipBlobExport">
       <filter-id>can_zip_export</filter-id>
+    </action>
+
+    <action id="TAB_VIEW">
+      <filter-id>denyForCollection</filter-id>
     </action>
 
   </extension>
@@ -145,6 +150,12 @@
     <filter id="can_zip_export" append="true" >
       <rule grant="false">
         <type>Collections</type>
+        <type>Collection</type>
+      </rule>
+    </filter>
+
+    <filter id="denyForCollection">
+      <rule grant="false">
         <type>Collection</type>
       </rule>
     </filter>

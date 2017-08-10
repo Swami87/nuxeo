@@ -18,6 +18,8 @@
  */
 package org.nuxeo.functionaltests.pages.admincenter.usermanagement;
 
+import org.nuxeo.functionaltests.AjaxRequestManager;
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.forms.Select2WidgetElement;
 import org.openqa.selenium.NoSuchElementException;
@@ -31,7 +33,6 @@ import org.openqa.selenium.support.FindBy;
  * @since 7.2
  */
 public class GroupCreationFormPage extends UsersGroupsBasePage {
-
 
     @FindBy(id = "createGroupView:createGroup:nxl_group:nxw_group_name")
     WebElement nameInput;
@@ -68,12 +69,18 @@ public class GroupCreationFormPage extends UsersGroupsBasePage {
         if (subgroups != null) {
             new Select2WidgetElement(driver, subgroupsSelect, true).selectValues(subgroups);
         }
-        createButton.click();
+        AjaxRequestManager arm = new AjaxRequestManager(driver);
+        arm.begin();
+        Locator.waitUntilEnabledAndClick(createButton);
+        arm.end();
         return asPage(UsersGroupsBasePage.class);
     }
 
     public GroupsTabSubPage cancelCreation() {
-        cancelButton.click();
+        AjaxRequestManager arm = new AjaxRequestManager(driver);
+        arm.begin();
+        Locator.waitUntilEnabledAndClick(cancelButton);
+        arm.end();
         return asPage(GroupsTabSubPage.class);
     }
 }

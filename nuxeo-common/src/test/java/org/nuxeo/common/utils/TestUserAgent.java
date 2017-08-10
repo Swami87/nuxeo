@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Thomas Roger <troger@nuxeo.com>
  */
-
 package org.nuxeo.common.utils;
 
 import static org.junit.Assert.assertFalse;
@@ -24,9 +23,14 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.junit.Test;
 
 public class TestUserAgent {
+
+    private static final Log log = LogFactory.getLog(TestUserAgent.class);
 
     public static final String MSIE6_UA = "Mozilla/4.0 (compatible; MSIE 6.1;"
             + " Windows XP; .NET CLR 1.1.4322; .NET CLR 2.0.50727)";
@@ -54,21 +58,21 @@ public class TestUserAgent {
     @Test
     public void testSupportedBrowsers() throws Exception {
 
-        List<String> UAs = FileUtils.readLines(this.getClass().getClassLoader().getResourceAsStream(
-                "supportedBrowsers.txt"));
-        List<String> BadUAs = FileUtils.readLines(this.getClass().getClassLoader().getResourceAsStream(
-                "unsupportedBrowsers.txt"));
+        List<String> UAs = IOUtils
+                .readLines(this.getClass().getClassLoader().getResourceAsStream("supportedBrowsers.txt"));
+        List<String> BadUAs = IOUtils
+                .readLines(this.getClass().getClassLoader().getResourceAsStream("unsupportedBrowsers.txt"));
 
         for (String UA : UAs) {
             if (!UA.startsWith("#") && !UA.isEmpty()) {
-                System.out.println("Testing user agent : " + UA);
+                log.debug("Testing user agent : " + UA);
                 assertTrue(UserAgentMatcher.html5DndIsSupported(UA));
             }
         }
 
         for (String UA : BadUAs) {
             if (!UA.startsWith("#") && !UA.isEmpty()) {
-                System.out.println("Testing bad user agent : " + UA);
+                log.debug("Testing bad user agent : " + UA);
                 assertFalse(UserAgentMatcher.html5DndIsSupported(UA));
             }
         }

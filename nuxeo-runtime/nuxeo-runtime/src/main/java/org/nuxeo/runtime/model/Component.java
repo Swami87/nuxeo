@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.model;
 
 import org.nuxeo.runtime.service.TimestampedService;
@@ -59,11 +56,35 @@ public interface Component extends Extensible, TimestampedService {
      * @return the order, 1000 by default
      * @since 5.6
      */
-    int getApplicationStartedOrder();
+    default int getApplicationStartedOrder() {
+        return 1000;
+    }
 
     /**
-     * Notify the component that Nuxeo Framework finished starting all Nuxeo bundles.
+     * Notify the component that Nuxeo Framework finished starting all Nuxeo bundles. Implementors must migrate the code
+     * of the appicationStarted and move it to {@link Component#start(ComponentContext)} and
+     * {@link #stop(ComponentContext)} methods
+     *
+     * @deprecated since 9.2, since the introduction of {@link Component#start(ComponentContext)} and
+     *             {@link #stop(ComponentContext)} methods
      */
-    void applicationStarted(ComponentContext context);
+    @Deprecated
+    default void applicationStarted(ComponentContext context) {
+        // do nothing by default
+    }
+
+    /**
+     * Start the component. This method is called after all the components were resolved and activated
+     *
+     * @since 9.2
+     */
+    void start(ComponentContext context);
+
+    /**
+     * Stop the component.
+     *
+     * @since 9.2
+     */
+    void stop(ComponentContext context) throws InterruptedException;
 
 }

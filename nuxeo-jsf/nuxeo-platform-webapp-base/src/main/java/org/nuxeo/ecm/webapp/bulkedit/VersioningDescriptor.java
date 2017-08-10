@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Thomas Roger
  */
-
 package org.nuxeo.ecm.webapp.bulkedit;
 
 import java.io.Serializable;
@@ -26,7 +25,9 @@ import org.nuxeo.common.xmap.annotation.XObject;
 
 /**
  * @since 5.7.3
+ * @deprecated since 9.1 automatic versioning mechanism has been moved to versioning service
  */
+@Deprecated
 @XObject("versioning")
 public class VersioningDescriptor implements Serializable {
 
@@ -42,4 +43,5 @@ public class VersioningDescriptor implements Serializable {
     public void setDefaultVersioningOption(String defaultVersioningOption) {
         this.defaultVersioningOption = defaultVersioningOption;
     }
+
 }

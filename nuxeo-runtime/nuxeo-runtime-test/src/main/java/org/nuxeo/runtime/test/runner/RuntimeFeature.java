@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.test.NXRuntimeTestCase;
+import org.nuxeo.runtime.test.runner.HotDeployer.ActionHandler;
 
 import com.google.inject.Binder;
 
@@ -47,13 +48,15 @@ public class RuntimeFeature extends SimpleFeature {
 
     protected RuntimeDeployment deployment;
 
+    protected HotDeployer deployer;
+
     /**
      * Providers contributed by other features to override the default service provider used for a nuxeo service.
      */
     protected final Map<Class<?>, ServiceProvider<?>> serviceProviders;
 
     public RuntimeFeature() {
-        serviceProviders = new HashMap<Class<?>, ServiceProvider<?>>();
+        serviceProviders = new HashMap<>();
     }
 
     public <T> void addServiceProvider(ServiceProvider<T> provider) {
@@ -68,12 +71,22 @@ public class RuntimeFeature extends SimpleFeature {
     public void initialize(FeaturesRunner runner) throws Exception {
         harness = new NXRuntimeTestCase(runner.getTargetTestClass());
         deployment = RuntimeDeployment.onTest(runner);
+        deployer = new HotDeployer(runner, harness);
+    }
+
+    public HotDeployer registerHandler(ActionHandler handler) {
+        return deployer.addHandler(handler);
+    }
+
+    public boolean unregisterHandler(ActionHandler handler) {
+        return deployer.removeHandler(handler);
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Override
     public void configure(FeaturesRunner runner, Binder binder) {
         binder.bind(RuntimeHarness.class).toInstance(getHarness());
+        binder.bind(HotDeployer.class).toInstance(deployer);
         for (String svc : Framework.getRuntime().getComponentManager().getServices()) {
             try {
                 Class clazz = Thread.currentThread().getContextClassLoader().loadClass(svc);
@@ -150,6 +163,7 @@ public class RuntimeFeature extends SimpleFeature {
 
     @Override
     public void beforeRun(FeaturesRunner runner) throws Exception {
+        // this will make a snapshot of the component registry and will start the components
         harness.fireFrameworkStarted();
     }
 

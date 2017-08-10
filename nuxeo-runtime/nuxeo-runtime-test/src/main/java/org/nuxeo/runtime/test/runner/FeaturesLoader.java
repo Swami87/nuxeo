@@ -29,7 +29,6 @@ import java.util.Map;
 
 import org.junit.internal.AssumptionViolatedException;
 import org.junit.runners.model.TestClass;
-
 import com.google.inject.Binder;
 import com.google.inject.Module;
 
@@ -115,7 +114,7 @@ class FeaturesLoader {
     }
 
     protected <T> List<T> reversed(List<T> list) {
-        List<T> reversed = new ArrayList<T>(list);
+        List<T> reversed = new ArrayList<>(list);
         Collections.reverse(reversed);
         return reversed;
     }
@@ -127,8 +126,12 @@ class FeaturesLoader {
                 callable.call(each);
             } catch (AssumptionViolatedException cause) {
                 throw cause;
-            } catch (Exception cause) {
+            } catch (Throwable cause) {
                 errors.addSuppressed(cause);
+                if (cause instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Interrupted on invoke features", errors);
+                }
             }
         }
         if (errors.getSuppressed().length > 0) {
@@ -177,6 +180,9 @@ class FeaturesLoader {
     }
 
     public <T extends RunnerFeature> T getFeature(Class<T> aType) {
+        if (!index.containsKey(aType)) {
+            return null;
+        }
         return aType.cast(index.get(aType).feature);
     }
 

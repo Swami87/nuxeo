@@ -21,13 +21,11 @@ package org.nuxeo.ecm.core.redis;
 import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.nuxeo.ecm.core.redis.RedisFeature.Mode;
 import org.nuxeo.ecm.core.redis.contribs.RedisClusterInvalidator;
-import org.nuxeo.ecm.core.redis.contribs.RedisInvalidations;
 import org.nuxeo.ecm.core.storage.sql.Invalidations;
 import org.nuxeo.ecm.core.storage.sql.RepositoryImpl;
 import org.nuxeo.ecm.core.storage.sql.RowId;
-import org.nuxeo.ecm.core.storage.sql.coremodel.SQLRepositoryService;
-import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
@@ -35,12 +33,19 @@ import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
+import javax.inject.Inject;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 /**
  * @since 7.4
  */
 @RunWith(FeaturesRunner.class)
-@Features({CoreFeature.class, RedisFeature.class})
+@Features(RedisFeature.class)
 public class TestRedisClusterInvalidator {
+
+    @Inject
+    protected RedisFeature redisFeature;
 
     @Test
     public void testInitializeAndClose() throws Exception {
@@ -50,20 +55,15 @@ public class TestRedisClusterInvalidator {
 
     private RedisClusterInvalidator createRedisClusterInvalidator(String node) {
         assumeTrueRedisServer();
-        RepositoryImpl repository = getDefaultRepository();
+        RepositoryImpl repository = mock(RepositoryImpl.class);
+        when(repository.getName()).thenReturn("test");
         RedisClusterInvalidator rci = new RedisClusterInvalidator();
         rci.initialize(node, repository);
         return rci;
     }
 
-    private RepositoryImpl getDefaultRepository() {
-        SQLRepositoryService repositoryService = Framework.getService(SQLRepositoryService.class);
-        return repositoryService.getRepositoryImpl(repositoryService.getRepositoryNames().get(0));
-    }
-
     private void assumeTrueRedisServer() {
-        Assume.assumeTrue("Require a true Redis server with pubsub support",
-                "server".equals(Framework.getProperty("nuxeo.test.redis.mode")));
+        Assume.assumeTrue("Require a true Redis server with pubsub support", Mode.server == redisFeature.getMode());
     }
 
     @Test

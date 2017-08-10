@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.nuxeo.ecm.webengine</groupId>
     <artifactId>nuxeo-webengine-parent</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
 
   <artifactId>nuxeo-webengine-jaxrs</artifactId>
@@ -62,6 +62,10 @@
     <dependency>
       <groupId>org.freemarker</groupId>
       <artifactId>freemarker</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.nuxeo.ecm.platform</groupId>
+      <artifactId>nuxeo-platform-web-common</artifactId>
     </dependency>
   </dependencies>
 

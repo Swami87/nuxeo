@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -39,9 +40,7 @@ import org.artofsolving.jodconverter.OfficeDocumentConverter;
 import org.artofsolving.jodconverter.StandardConversionTask;
 import org.artofsolving.jodconverter.document.DocumentFamily;
 import org.artofsolving.jodconverter.document.DocumentFormat;
-
 import org.nuxeo.common.Environment;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
@@ -56,7 +55,10 @@ import org.nuxeo.runtime.api.Framework;
 
 /**
  * Converter based on JOD which uses an external OpenOffice process to do actual conversions.
+ *
+ * @deprecated Since 8.4. Use 'soffice' with {@link org.nuxeo.ecm.platform.convert.plugins.CommandLineConverter} instead
  */
+@Deprecated
 public class JODBasedConverter implements ExternalConverter {
 
     protected static final String TMP_PATH_PARAMETER = "TmpDirectory";
@@ -186,7 +188,15 @@ public class JODBasedConverter implements ExternalConverter {
         // This plugin do deal only with one input source.
         String sourceMimetype = inputBlob.getMimeType();
 
-        boolean pdfa1 = parameters != null && Boolean.TRUE.equals(parameters.get(PDFA1_PARAM));
+        boolean pdfa1 = false;
+        if (parameters != null) {
+            Serializable pdfa1Val = parameters.get(PDFA1_PARAM);
+            if (pdfa1Val instanceof Boolean) {
+                pdfa1 = ((Boolean) pdfa1Val).booleanValue();
+            } else if (pdfa1Val instanceof String) {
+                pdfa1 = Boolean.parseBoolean((String) pdfa1Val);
+            }
+        }
 
         File sourceFile = null;
         File outFile = null;
@@ -210,7 +220,7 @@ public class JODBasedConverter implements ExternalConverter {
             // Copy in a file to be able to read it several time
             sourceFile = Framework.createTempFile("NXJOOoConverterDocumentIn", ext);
             InputStream stream = inputBlob.getStream();
-            FileUtils.copyToFile(stream, sourceFile);
+            FileUtils.copyInputStreamToFile(stream, sourceFile);
             stream.close();
 
             DocumentFormat sourceFormat = null;

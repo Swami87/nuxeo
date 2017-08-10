@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.content.template.service;
 
 import org.nuxeo.common.xmap.annotation.XNode;
@@ -45,19 +42,6 @@ public class ACEDescriptor {
 
     public String getPermission() {
         return permission;
-    }
-
-    @Deprecated
-    // use getPrincipal() instead
-    public String getUserName() {
-        return principal;
-    }
-
-    @XNode("@userName")
-    @Deprecated
-    // keep for BBB with old config files
-    public void setUserName(String userName) {
-        principal = userName;
     }
 
     public String getPrincipal() {

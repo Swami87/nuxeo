@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -413,8 +413,7 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
         boolean projectionOnFulltextScore = false;
         boolean sortOnFulltextScore = false;
         SelectList elements = selectClause.getSelectList();
-        for (int i = 0; i < elements.size(); i++) {
-            Operand op = elements.get(i);
+        for (Operand op : elements.values()) {
             if (op instanceof Reference) {
                 Reference ref = (Reference) op;
                 if (ref.name.equals(NXQL.ECM_FULLTEXT_SCORE)) {
@@ -463,16 +462,8 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
     }
 
     public boolean hasWildcardProjection() {
-        SelectList elements = selectClause.getSelectList();
-        for (int i = 0; i < elements.size(); i++) {
-            Operand op = elements.get(i);
-            if (op instanceof Reference) {
-                if (((Reference) op).name.contains("*")) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return selectClause.getSelectList().values().stream().anyMatch(
+                operand -> operand instanceof Reference && ((Reference) operand).name.contains("*"));
     }
 
     @Override
@@ -504,7 +495,7 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
             parsed.isDateCast = true;
         }
 
-        ValueInfo valueInfo = canonicalReferenceValueInfos.computeIfAbsent(parsed.canonRef, k -> {
+        return canonicalReferenceValueInfos.computeIfAbsent(parsed.canonRef, k -> {
             List<IterInfo> iterInfos = toplevelIterInfos;
             List<ValueInfo> valueInfos = toplevelValueInfos;
             List<String> prefix = new ArrayList<>(3); // canonical prefix
@@ -544,7 +535,6 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
             valueInfos.add(parsed);
             return parsed;
         });
-        return valueInfo;
     }
 
     /**
@@ -750,7 +740,7 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
             if (value != null && !(value instanceof State)) {
                 throw new QueryParseException("Invalid property " + step + " (no State but " + value.getClass() + ")");
             }
-            return value == null ? null : ((State) value).get((String) step);
+            return value == null ? null : ((State) value).get(step);
         } else if (step instanceof Integer) {
             // explicit list index
             int index = ((Integer) step).intValue();
@@ -828,12 +818,12 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
          */
         Set<String> matchPrimaryTypes;
         if (include) {
-            matchPrimaryTypes = new HashSet<String>();
+            matchPrimaryTypes = new HashSet<>();
             for (String mixin : mixins) {
                 matchPrimaryTypes.addAll(getMixinDocumentTypes(mixin));
             }
         } else {
-            matchPrimaryTypes = new HashSet<String>(getDocumentTypes());
+            matchPrimaryTypes = new HashSet<>(getDocumentTypes());
             for (String mixin : mixins) {
                 matchPrimaryTypes.removeAll(getMixinDocumentTypes(mixin));
             }
@@ -841,7 +831,7 @@ public class DBSExpressionEvaluator extends ExpressionEvaluator {
         /*
          * Instance mixins that match.
          */
-        Set<String> matchMixinTypes = new HashSet<String>();
+        Set<String> matchMixinTypes = new HashSet<>();
         for (String mixin : mixins) {
             if (!isNeverPerInstanceMixin(mixin)) {
                 matchMixinTypes.add(mixin);

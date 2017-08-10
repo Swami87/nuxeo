@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,11 +33,6 @@ public class ThreadEventListener implements EventListener {
 
     public ThreadEventListener(ThreadEventHandler anHandler) {
         handler = anHandler;
-    }
-
-    @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return true;
     }
 
     @Override

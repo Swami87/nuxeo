@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
  */
-
 package org.nuxeo.runtime.api;
 
 import java.io.File;
@@ -29,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.login.LoginContext;
@@ -38,7 +37,6 @@ import org.apache.commons.io.FileDeleteStrategy;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.nuxeo.common.Environment;
 import org.nuxeo.common.collections.ListenerList;
 import org.nuxeo.runtime.RuntimeService;
@@ -92,7 +90,9 @@ public final class Framework {
      *
      * @since 5.6
      * @see #handleDevError(Throwable)
+     * @deprecated since 9.1 This property is not documented and doesn't work.
      */
+    @Deprecated
     public static final String NUXEO_STRICT_RUNTIME_SYSTEM_PROP = "org.nuxeo.runtime.strict";
 
     /**
@@ -182,7 +182,7 @@ public final class Framework {
         }
     }
 
-    public static void shutdown() {
+    public static void shutdown() throws InterruptedException {
         if (runtime == null) {
             throw new IllegalStateException("runtime not exist");
         }
@@ -240,6 +240,49 @@ public final class Framework {
      */
     public static Object lookup(String key) {
         return null; // TODO
+    }
+
+    /**
+     * Runs the given {@link Runnable} while logged in as a system user.
+     *
+     * @param runnable what to run
+     * @since 8.4
+     */
+    public static void doPrivileged(Runnable runnable) {
+        try {
+            LoginContext loginContext = login();
+            try {
+                runnable.run();
+            } finally {
+                if (loginContext != null) { // may be null in tests
+                    loginContext.logout();
+                }
+            }
+        } catch (LoginException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Calls the given {@link Supplier} while logged in as a system user and returns its result.
+     *
+     * @param supplier what to call
+     * @return the supplier's result
+     * @since 8.4
+     */
+    public static <T> T doPrivileged(Supplier<T> supplier) {
+        try {
+            LoginContext loginContext = login();
+            try {
+                return supplier.get();
+            } finally {
+                if (loginContext != null) { // may be null in tests
+                    loginContext.logout();
+                }
+            }
+        } catch (LoginException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -413,9 +456,6 @@ public final class Framework {
      * <p>
      * For instance, it'll enable hot-reload if some packages are installed while the framework is running. It will also
      * reset some caches when that happens.
-     * <p>
-     * Before 5.6, when activating this mode, the Runtime Framework stopped on low-level errors, see
-     * {@link #handleDevError(Throwable)} but this behaviour has been removed.
      */
     public static boolean isDevModeSet() {
         return isBooleanPropertyTrue(NUXEO_DEV_SYSTEM_PROP);
@@ -485,7 +525,10 @@ public final class Framework {
      * when using hot reload.
      *
      * @param t the exception or null if none
+     * @deprecated since 9.1 DON'T USE THIS METHOD ANYMORE, its behavior is not documented. It also seems to not work.
+     *             If you want to stop server startup add messages to {@link RuntimeService#getErrors()}.
      */
+    @Deprecated
     public static void handleDevError(Throwable t) {
         if (isBooleanPropertyTrue(NUXEO_STRICT_RUNTIME_SYSTEM_PROP)) {
             System.err.println("Fatal error caught in strict " + "runtime mode => exiting.");
@@ -532,9 +575,6 @@ public final class Framework {
         }
     }
 
-    public static void main(String[] args) {
-    }
-
     /**
      * Creates an empty file in the framework temporary-file directory ({@code nuxeo.tmp.dir} vs {@code java.io.tmpdir}
      * ), using the given prefix and suffix to generate its name.
@@ -577,8 +617,8 @@ public final class Framework {
      */
     private static File getTempDir() {
         Environment env = Environment.getDefault();
-        File temp = env != null ? env.getTemp() : new File(System.getProperty("nuxeo.tmp.dir",
-                System.getProperty("java.io.tmpdir")));
+        File temp = env != null ? env.getTemp()
+                : new File(System.getProperty("nuxeo.tmp.dir", System.getProperty("java.io.tmpdir")));
         temp.mkdirs();
         return temp;
     }

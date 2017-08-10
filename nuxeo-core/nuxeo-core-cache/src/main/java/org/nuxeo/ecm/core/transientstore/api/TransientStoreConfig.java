@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,8 @@
  * limitations under the License.
  *
  * Contributors:
- * Nuxeo - initial API and implementation
+ *     Tiry
  */
-
 package org.nuxeo.ecm.core.transientstore.api;
 
 import org.nuxeo.common.xmap.XMap;
@@ -36,6 +35,9 @@ public class TransientStoreConfig {
 
     @XNode("@name")
     protected String name;
+
+    @XNode("@path")
+    protected String path;
 
     // target size that ideally should never be exceeded
     @XNode("targetMaxSizeMB")
@@ -112,6 +114,24 @@ public class TransientStoreConfig {
             }
         }
         return store;
+    }
+
+    /**
+     * Flush the cached store if any
+     *
+     * @since 9.2
+     */
+    public void flush() {
+        store = null;
+    }
+
+    /**
+     * Returns the directory where blobs will be stored.
+     *
+     * @since 9.1
+     */
+    public String getDataDir() {
+        return path;
     }
 
 }

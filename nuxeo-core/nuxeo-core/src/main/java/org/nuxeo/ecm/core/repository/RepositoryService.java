@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.transaction.Transaction;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.UnrestrictedSessionRunner;
 import org.nuxeo.ecm.core.api.local.LocalException;
-import org.nuxeo.ecm.core.api.local.LocalSession;
 import org.nuxeo.ecm.core.api.repository.RepositoryManager;
 import org.nuxeo.ecm.core.model.Repository;
 import org.nuxeo.ecm.core.model.Session;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentName;
@@ -72,56 +66,43 @@ public class RepositoryService extends DefaultComponent {
     }
 
     @Override
-    public void activate(ComponentContext context) {
-        Framework.addListener(new RuntimeServiceListener() {
-
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-                    return;
-                }
-                Framework.removeListener(this);
-                shutdown();
-            }
-        });
+    public void start(ComponentContext context) {
+        initRepositories();
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void stop(ComponentContext context) {
+        TransactionHelper.runInTransaction(this::shutdown);
+    }
+
+    /**
+     * Start a tx and initialize repositories content. This method is publicly exposed since it is needed by tests to
+     * initialize repositories after cleanups (see CoreFeature).
+     *
+     * @since 8.4
+     */
+    public void initRepositories() {
+        TransactionHelper.runInTransaction(this::doInitRepositories);
+    }
+
+    /**
+     * Initializes all repositories. Requires an active transaction.
+     *
+     * @since 9.2
+     */
+    protected void doInitRepositories() {
+        RepositoryManager repositoryManager = Framework.getLocalService(RepositoryManager.class);
+        for (String name : repositoryManager.getRepositoryNames()) {
+            openRepository(name);
+        }
+        // give up if no handler configured
         RepositoryInitializationHandler handler = RepositoryInitializationHandler.getInstance();
         if (handler == null) {
             return;
         }
-        RepositoryManager repositoryManager = Framework.getLocalService(RepositoryManager.class);
-        boolean started = false;
-        boolean ok = false;
-        { // open repositories without a tx active
-            Transaction tx = TransactionHelper.suspendTransaction();
-            try {
-                for (String name : repositoryManager.getRepositoryNames()) {
-                    openRepository(name);
-                }
-            } finally {
-                TransactionHelper.resumeTransaction(tx);
-            }
-        }
-        // initialize repositories with a tx active
-        try {
-            started = !TransactionHelper.isTransactionActive() && TransactionHelper.startTransaction();
-            for (String name : repositoryManager.getRepositoryNames()) {
-                initializeRepository(handler, name);
-            }
-            ok = true;
-        } finally {
-            if (started) {
-                try {
-                    if (!ok) {
-                        TransactionHelper.setTransactionRollbackOnly();
-                    }
-                } finally {
-                    TransactionHelper.commitOrRollbackTransaction();
-                }
-            }
+        // invoke handlers
+        for (String name : repositoryManager.getRepositoryNames()) {
+            initializeRepository(handler, name);
         }
     }
 
@@ -130,9 +111,6 @@ public class RepositoryService extends DefaultComponent {
         if (adapter.isAssignableFrom(getClass())) {
             return adapter.cast(this);
         }
-        if (adapter.isAssignableFrom(CoreSession.class)) {
-            return adapter.cast(LocalSession.createInstance());
-        }
         return null;
     }
 
@@ -140,7 +118,7 @@ public class RepositoryService extends DefaultComponent {
         new UnrestrictedSessionRunner(name) {
 
             @Override
-            public void run() {;
+            public void run() {
             }
 
         }.runUnrestricted();

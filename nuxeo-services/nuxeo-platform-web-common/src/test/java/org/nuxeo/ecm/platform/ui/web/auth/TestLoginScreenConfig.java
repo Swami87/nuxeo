@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.ecm.platform.ui.web.auth;
 
 import static org.apache.commons.lang.StringUtils.isNotBlank;
@@ -31,16 +30,19 @@ import static org.nuxeo.common.Environment.DISTRIBUTION_VERSION;
 import static org.nuxeo.common.Environment.PRODUCT_VERSION;
 
 import java.net.URL;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.Properties;
 
 import javax.ws.rs.core.MultivaluedMap;
 
-import org.junit.Before;
 import org.junit.Test;
 import org.nuxeo.ecm.platform.ui.web.auth.service.LoginScreenConfig;
+import org.nuxeo.ecm.platform.ui.web.auth.service.LoginStartupPage;
 import org.nuxeo.ecm.platform.ui.web.auth.service.LoginVideo;
 import org.nuxeo.ecm.platform.ui.web.auth.service.PluggableAuthenticationService;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.test.NXRuntimeTestCase;
 
 import com.sun.jersey.api.uri.UriComponent;
@@ -51,9 +53,8 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
 
     private static final String WEB_BUNDLE_TEST = "org.nuxeo.ecm.platform.web.common.test";
 
-    @Before
+    @Override
     public void setUp() throws Exception {
-        super.setUp();
 
         deployContrib(WEB_BUNDLE, "OSGI-INF/authentication-framework.xml");
         deployContrib(WEB_BUNDLE, "OSGI-INF/authentication-contrib.xml");
@@ -91,6 +92,29 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
         LoginVideo loginVideo = config.getVideos().get(0);
         assertTrue(isNotBlank(loginVideo.getType()));
         assertTrue(isNotBlank(loginVideo.getSrc()));
+
+        Map<String, LoginStartupPage> startupPages = config.getStartupPages();
+        assertNotNull(startupPages);
+        assertEquals(2, startupPages.size());
+        LoginStartupPage jsf = startupPages.get("jsf");
+        assertNotNull(jsf);
+        assertEquals(10, jsf.getPriority());
+        assertEquals("nxstartup.faces", jsf.getPath());
+        LoginStartupPage other = startupPages.get("other");
+        assertNotNull(other);
+        assertEquals(5, other.getPriority());
+        assertEquals("other.html", other.getPath());
+
+        // Highest priority wins
+        assertEquals("nxstartup.faces", LoginScreenHelper.getStartupPagePath());
+
+        // Get all the startup page paths
+        assertEquals(Arrays.asList("nxstartup.faces", "other.html"), LoginScreenHelper.getStartupPagePaths());
+
+        assertEquals("es_ES", config.getDefaultLocale());
+        assertEquals(2, config.getSupportedLocales().size());
+        assertTrue(config.getSupportedLocales().contains("es_ES"));
+        assertTrue(config.getSupportedLocales().contains("fr"));
     }
 
     @Test
@@ -123,8 +147,9 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
         assertNull(config.getDisableBackgroundSizeCover());
 
         assertEquals("XXXX", config.getProvider("google").getLink(null, null));
-        deployContrib(WEB_BUNDLE_TEST, "OSGI-INF/test-loginscreenconfig-merge.xml");
+        pushInlineDeployments(WEB_BUNDLE_TEST + ":OSGI-INF/test-loginscreenconfig-merge.xml");
 
+        authService = getAuthService();
         config = authService.getLoginScreenConfig();
         assertNotNull(config);
 
@@ -138,10 +163,38 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
         assertEquals("News", config.getProvider("google").getLink(null, null));
         assertEquals(Boolean.TRUE, config.getDisableBackgroundSizeCover());
 
-        assertFalse(config.hasVideos());
+        assertTrue(config.hasVideos());
 
         assertTrue(config.getVideoMuted());
         assertFalse(config.getVideoLoop());
+
+        Map<String, LoginStartupPage> startupPages = config.getStartupPages();
+        assertNotNull(startupPages);
+        assertEquals(3, startupPages.size());
+        LoginStartupPage jsf = startupPages.get("jsf");
+        assertNotNull(jsf);
+        assertEquals(10, jsf.getPriority());
+        assertEquals("nxstartup.faces", jsf.getPath());
+        LoginStartupPage other = startupPages.get("other");
+        assertNotNull(other);
+        assertEquals(8, other.getPriority());
+        assertEquals("merged.html", other.getPath());
+        LoginStartupPage web = startupPages.get("web");
+        assertNotNull(web);
+        assertEquals(100, web.getPriority());
+        assertEquals("ui/", web.getPath());
+
+        // Highest priority wins
+        assertEquals("ui/", LoginScreenHelper.getStartupPagePath());
+
+        // Get all the startup page paths
+        assertEquals(Arrays.asList("ui/", "nxstartup.faces", "merged.html"), LoginScreenHelper.getStartupPagePaths());
+
+        assertEquals("fr", config.getDefaultLocale());
+        assertEquals(3, config.getSupportedLocales().size());
+        assertTrue(config.getSupportedLocales().contains("es_ES"));
+        assertTrue(config.getSupportedLocales().contains("fr"));
+        assertTrue(config.getSupportedLocales().contains("de"));
     }
 
     @Test
@@ -152,8 +205,12 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
         LoginScreenConfig config = authService.getLoginScreenConfig();
         assertNotNull(config);
 
+        ComponentManager cmgr = Framework.getRuntime().getComponentManager();
+        cmgr.stop();
         undeployContrib(WEB_BUNDLE_TEST, "OSGI-INF/test-loginscreenconfig.xml");
+        cmgr.start();
 
+        authService = getAuthService();
         config = authService.getLoginScreenConfig();
         assertNull(config);
     }
@@ -183,6 +240,10 @@ public class TestLoginScreenConfig extends NXRuntimeTestCase {
         assertEquals("new", config.getProvider("google").getLink(null, null));
         assertEquals("BBB", config.getProvider("OuvertId").getLink(null, null));
 
+        LoginStartupPage defaultStartupPage = LoginScreenHelper.getDefaultStartupPage(config);
+        assertNotNull(defaultStartupPage);
+        assertEquals(10, defaultStartupPage.getPriority());
+        assertEquals("nxstartup.faces", defaultStartupPage.getPath());
     }
 
     @Test

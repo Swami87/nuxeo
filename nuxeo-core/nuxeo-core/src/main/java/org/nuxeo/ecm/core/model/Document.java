@@ -255,6 +255,31 @@ public interface Document {
     <T extends Serializable> T getSystemProp(String name, Class<T> type);
 
     /**
+     * Gets the current change token for this document.
+     *
+     * @return the change token
+     * @since 9.1
+     */
+    String getChangeToken();
+
+    /**
+     * Validates that the passed user-visible change token is compatible with the one for this document.
+     *
+     * @return {@code false} if the change token is not valid
+     * @since 9.2
+     */
+    boolean validateUserVisibleChangeToken(String changeToken);
+
+    /**
+     * Marks the document as being modified by a user change.
+     * <p>
+     * This causes an additional change token increment and check during save.
+     *
+     * @since 9.2
+     */
+    void markUserChange();
+
+    /**
      * Loads a {@link DocumentPart} from storage.
      * <p>
      * Reading data is done by {@link DocumentPart} because of per-proxy schemas.

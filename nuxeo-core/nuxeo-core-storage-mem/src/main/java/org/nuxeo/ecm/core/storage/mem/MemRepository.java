@@ -19,6 +19,7 @@
 package org.nuxeo.ecm.core.storage.mem;
 
 import static java.lang.Boolean.TRUE;
+import static org.nuxeo.ecm.core.query.sql.NXQL.ECM_UUID;
 import static org.nuxeo.ecm.core.storage.State.NOP;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_BLOB_DATA;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ID;
@@ -39,6 +40,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,8 +56,10 @@ import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.Lock;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
+import org.nuxeo.ecm.core.api.ScrollResultImpl;
 import org.nuxeo.ecm.core.api.model.Delta;
-import org.nuxeo.ecm.core.blob.BlobManager;
+import org.nuxeo.ecm.core.blob.DocumentBlobManager;
 import org.nuxeo.ecm.core.model.LockManager;
 import org.nuxeo.ecm.core.model.Repository;
 import org.nuxeo.ecm.core.query.sql.model.OrderByClause;
@@ -67,6 +71,7 @@ import org.nuxeo.ecm.core.storage.dbs.DBSDocument;
 import org.nuxeo.ecm.core.storage.dbs.DBSExpressionEvaluator;
 import org.nuxeo.ecm.core.storage.dbs.DBSRepositoryBase;
 import org.nuxeo.ecm.core.storage.dbs.DBSSession.OrderByComparator;
+import org.nuxeo.ecm.core.storage.dbs.DBSTransactionState.ChangeTokenUpdater;
 import org.nuxeo.runtime.api.Framework;
 
 /**
@@ -83,6 +88,8 @@ public class MemRepository extends DBSRepositoryBase {
 
     private static final Log log = LogFactory.getLog(MemRepository.class);
 
+    protected static final String NOSCROLL_ID = "noscroll";
+
     // for debug
     private final AtomicLong temporaryIdCounter = new AtomicLong(0);
 
@@ -92,8 +99,13 @@ public class MemRepository extends DBSRepositoryBase {
     protected Map<String, State> states;
 
     public MemRepository(ConnectionManager cm, MemRepositoryDescriptor descriptor) {
-        super(cm, descriptor.name, descriptor.getFulltextDescriptor());
+        super(cm, descriptor.name, descriptor);
         initRepository();
+    }
+
+    @Override
+    public List<IdType> getAllowedIdTypes() {
+        return Collections.singletonList(IdType.varchar);
     }
 
     @Override
@@ -151,7 +163,7 @@ public class MemRepository extends DBSRepositoryBase {
     }
 
     @Override
-    public void updateState(String id, StateDiff diff) {
+    public void updateState(String id, StateDiff diff, ChangeTokenUpdater changeTokenUpdater) {
         if (log.isTraceEnabled()) {
             log.trace("Mem: UPDATE " + id + ": " + diff);
         }
@@ -159,7 +171,20 @@ public class MemRepository extends DBSRepositoryBase {
         if (state == null) {
             throw new ConcurrentUpdateException("Missing: " + id);
         }
-        applyDiff(state, diff);
+        synchronized (state) {
+            // synchronization needed for atomic change token
+            if (changeTokenUpdater != null) {
+                for (Entry<String, Serializable> en : changeTokenUpdater.getConditions().entrySet()) {
+                    if (!Objects.equals(state.get(en.getKey()), en.getValue())) {
+                        throw new ConcurrentUpdateException((String) state.get(KEY_ID));
+                    }
+                }
+                for (Entry<String, Serializable> en : changeTokenUpdater.getUpdates().entrySet()) {
+                    applyDiff(state, en.getKey(), en.getValue());
+                }
+            }
+            applyDiff(state, diff);
+        }
     }
 
     @Override
@@ -349,6 +374,32 @@ public class MemRepository extends DBSRepositoryBase {
         return new PartialList<>(projections, totalSize);
     }
 
+    @Override
+    public ScrollResult scroll(DBSExpressionEvaluator evaluator, int batchSize, int keepAliveSeconds) {
+        if (log.isTraceEnabled()) {
+            log.trace("Mem: QUERY " + evaluator);
+        }
+        evaluator.parse();
+        List<String> ids = new ArrayList<>();
+        for (State state : states.values()) {
+            List<Map<String, Serializable>> matches = evaluator.matches(state);
+            if (!matches.isEmpty()) {
+                String id = matches.get(0).get(ECM_UUID).toString();
+                ids.add(id);
+            }
+        }
+        return new ScrollResultImpl(NOSCROLL_ID, ids);
+    }
+
+    @Override
+    public ScrollResult scroll(String scrollId) {
+        if (NOSCROLL_ID.equals(scrollId)) {
+            // Id are already in memory, they are returned as a single batch
+            return ScrollResultImpl.emptyResult();
+        }
+        throw new NuxeoException("Unknown or timed out scrollId");
+    }
+
     /**
      * Applies a {@link StateDiff} in-place onto a base {@link State}.
      * <p>
@@ -356,34 +407,41 @@ public class MemRepository extends DBSRepositoryBase {
      */
     public static void applyDiff(State state, StateDiff stateDiff) {
         for (Entry<String, Serializable> en : stateDiff.entrySet()) {
-            String key = en.getKey();
-            Serializable diffElem = en.getValue();
-            if (diffElem instanceof StateDiff) {
-                Serializable old = state.get(key);
-                if (old == null) {
-                    old = new State(true); // thread-safe
-                    state.put(key, old);
-                    // enter the next if
-                }
-                if (!(old instanceof State)) {
-                    throw new UnsupportedOperationException("Cannot apply StateDiff on non-State: " + old);
-                }
-                applyDiff((State) old, (StateDiff) diffElem);
-            } else if (diffElem instanceof ListDiff) {
-                state.put(key, applyDiff(state.get(key), (ListDiff) diffElem));
-            } else if (diffElem instanceof Delta) {
-                Delta delta = (Delta) diffElem;
-                Number oldValue = (Number) state.get(key);
-                Number value;
-                if (oldValue == null) {
-                    value = delta.getFullValue();
-                } else {
-                    value = delta.add(oldValue);
-                }
-                state.put(key, value);
-            } else {
-                state.put(key, StateHelper.deepCopy(diffElem, true)); // thread-safe
+            applyDiff(state, en.getKey(), en.getValue());
+        }
+    }
+
+    /**
+     * Applies a key/value diff in-place onto a base {@link State}.
+     * <p>
+     * Uses thread-safe datastructures.
+     */
+    protected static void applyDiff(State state, String key, Serializable value) {
+        if (value instanceof StateDiff) {
+            Serializable old = state.get(key);
+            if (old == null) {
+                old = new State(true); // thread-safe
+                state.put(key, old);
+                // enter the next if
             }
+            if (!(old instanceof State)) {
+                throw new UnsupportedOperationException("Cannot apply StateDiff on non-State: " + old);
+            }
+            applyDiff((State) old, (StateDiff) value);
+        } else if (value instanceof ListDiff) {
+            state.put(key, applyDiff(state.get(key), (ListDiff) value));
+        } else if (value instanceof Delta) {
+            Delta delta = (Delta) value;
+            Number oldValue = (Number) state.get(key);
+            Number newValue;
+            if (oldValue == null) {
+                newValue = delta.getFullValue();
+            } else {
+                newValue = delta.add(oldValue);
+            }
+            state.put(key, newValue);
+        } else {
+            state.put(key, StateHelper.deepCopy(value, true)); // thread-safe
         }
     }
 
@@ -531,7 +589,7 @@ public class MemRepository extends DBSRepositoryBase {
 
     @Override
     public void markReferencedBinaries() {
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         for (State state : states.values()) {
             for (List<String> path : binaryPaths) {
                 markReferencedBinaries(state, path, 0, blobManager);
@@ -539,7 +597,7 @@ public class MemRepository extends DBSRepositoryBase {
         }
     }
 
-    protected void markReferencedBinaries(State state, List<String> path, int start, BlobManager blobManager) {
+    protected void markReferencedBinaries(State state, List<String> path, int start, DocumentBlobManager blobManager) {
         for (int i = start; i < path.size(); i++) {
             String name = path.get(i);
             Serializable value = state.get(name);
@@ -567,7 +625,7 @@ public class MemRepository extends DBSRepositoryBase {
         }
     }
 
-    protected void markReferencedBinary(Object value, BlobManager blobManager) {
+    protected void markReferencedBinary(Object value, DocumentBlobManager blobManager) {
         if (!(value instanceof String)) {
             return;
         }

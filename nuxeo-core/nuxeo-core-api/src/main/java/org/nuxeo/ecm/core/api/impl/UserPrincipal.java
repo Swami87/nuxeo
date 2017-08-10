@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,15 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.core.api.impl;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
-import org.nuxeo.ecm.core.api.security.SecurityConstants;
 
 /**
  * NuxeoPrincipal stub implementation.
@@ -64,25 +59,6 @@ public class UserPrincipal implements NuxeoPrincipal, Serializable {
     protected DocumentModel model;
 
     protected String originatingUser;
-
-    /**
-     * @deprecated use {@link #UserPrincipal(String, List, boolean, boolean)} instead: this constructor assumes that
-     *             members of the "administrators" group is an administrator.
-     */
-    @Deprecated
-    public UserPrincipal(String username) {
-        this(username, new ArrayList<String>(), false, false);
-    }
-
-    /**
-     * @deprecated use {@link #UserPrincipal(String, List, boolean, boolean)} instead: this constructor assumes that
-     *             members of the "administrators" group is an administrator.
-     */
-    @Deprecated
-    public UserPrincipal(String username, List<String> groups) {
-        // BBB: members of group 'administrators' are considered administrators
-        this(username, groups, false, groups != null && groups.contains(SecurityConstants.ADMINISTRATORS));
-    }
 
     public UserPrincipal(String username, List<String> groups, boolean anonymous, boolean administrator) {
         userName = username;

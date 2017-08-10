@@ -32,7 +32,7 @@
     <genericPageProvider name="nxql_search"
                          class="org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider">
       <property name="coreSession">#{documentManager}</property>
-      <property name="maxResults">-1</property>
+      <property name="maxResults">10000</property>
       <pattern quoteParameters="false" escapeParameters="false">?</pattern>
       <parameter>#{documentSearchActions.nxqlQuery}</parameter>
       <pageSize>20</pageSize>
@@ -135,7 +135,7 @@
     <genericPageProvider name="aggregates_1"
                          class="org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider">
       <property name="coreSession">#{documentManager}</property>
-      <property name="maxResults">-1</property>
+      <property name="maxResults">10000</property>
       <pageSize>20</pageSize>
       <pattern>SELECT * FROM Document</pattern>
       <aggregates>
@@ -157,7 +157,7 @@
             <property name="size">5</property>
           </properties>
         </aggregate>
-        <aggregate id="size" type="range" parameter="common:size">
+        <aggregate id="size" type="range" parameter="file:content/length">
           <field schema="advanced_search" name="size_agg"/>
           <ranges>
             <range key="small" to="2048"/>
@@ -177,12 +177,13 @@
             <dateRange key="last_month" fromDate="now-3w"/>
           </dateRanges>
         </aggregate>
-        <aggregate id="size_histo" type="histogram" parameter="common:size">
+        <aggregate id="size_histo" type="histogram" parameter="file:content/length">
           <field schema="advanced_search" name="size_histo_agg"/>
           <properties>
             <property name="interval">1024</property>
             <property name="extendedBoundsMin">0</property>
             <property name="extendedBoundsMax">1234567</property>
+            <property name="minDocCount">1</property>
             <property name="order">key asc</property>
           </properties>
         </aggregate>
@@ -193,6 +194,7 @@
             <property name="format">dd-MM-yyy</property>
             <property name="extendedBoundsMin">now-1m</property>
             <property name="extendedBoundsMax">now</property>
+            <property name="minDocCount">1</property>
             <property name="timeZone">-02:00</property>
             <property name="preZone">-00:42</property>
             <!-- property name="order">count desc</property-->
@@ -236,7 +238,7 @@
     <genericPageProvider name="aggregates_2"
                          class="org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider">
       <property name="coreSession">#{documentManager}</property>
-      <property name="maxResults">-1</property>
+      <property name="maxResults">10000</property>
       <pageSize>20</pageSize>
       <pattern>SELECT * FROM Document</pattern>
       <aggregates>
@@ -254,6 +256,28 @@
         </aggregate>
         <aggregate id="nature" type="terms" parameter="dc:nature">
           <field schema="advanced_search" name="nature_agg"/>
+          <properties>
+            <property name="size">5</property>
+          </properties>
+        </aggregate>
+      </aggregates>
+    </genericPageProvider>
+
+    <genericPageProvider name="aggregates_3"
+                         class="org.nuxeo.elasticsearch.provider.ElasticSearchNxqlPageProvider">
+      <property name="coreSession">#{documentManager}</property>
+      <property name="maxResults">10000</property>
+      <pageSize>20</pageSize>
+      <pattern>SELECT * FROM Document WHERE ecm:isVersion = 0</pattern>
+      <aggregates>
+        <aggregate id="subjects" type="terms" parameter="dc:subjects">
+          <field schema="advanced_search" name="subjects_agg"/>
+          <properties>
+            <property name="size">5</property>
+          </properties>
+        </aggregate>
+        <aggregate id="coverage" type="terms" parameter="dc:coverage">
+          <field schema="advanced_search" name="coverage_agg"/>
           <properties>
             <property name="size">5</property>
           </properties>

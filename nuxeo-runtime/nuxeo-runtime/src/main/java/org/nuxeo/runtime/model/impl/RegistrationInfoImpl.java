@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.runtime.model.impl;
 
 import java.net.URL;
@@ -116,6 +115,11 @@ public class RegistrationInfoImpl implements RegistrationInfo {
     URL xmlFileUrl;
 
     /**
+     * @since 9.2
+     */
+    String sourceId;
+
+    /**
      * This is used by the component persistence service to identify registration that was dynamically created and
      * persisted by users.
      */
@@ -140,8 +144,6 @@ public class RegistrationInfoImpl implements RegistrationInfo {
 
     /**
      * Attach to a manager - this method must be called after all registration fields are initialized.
-     *
-     * @param manager
      */
     public void attach(ComponentManagerImpl manager) {
         if (this.manager != null) {
@@ -150,8 +152,8 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         this.manager = manager;
     }
 
-    public void setContext(RuntimeContext rc) {
-        this.context = rc;
+    public void setContext(RuntimeContext context) {
+        this.context = context;
     }
 
     @Override
@@ -235,7 +237,7 @@ public class RegistrationInfoImpl implements RegistrationInfo {
 
     @Override
     public Set<ComponentName> getAliases() {
-        return aliases == null ? Collections.<ComponentName> emptySet() : aliases;
+        return aliases == null ? Collections.emptySet() : aliases;
     }
 
     @Override
@@ -285,7 +287,7 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         if (state == UNREGISTERED) {
             return;
         }
-        if (state == ACTIVATED || state == RESOLVED || state == START_FAILURE ) {
+        if (state == ACTIVATED || state == RESOLVED || state == START_FAILURE) {
             unresolve();
         }
         state = UNREGISTERED;
@@ -300,12 +302,15 @@ public class RegistrationInfoImpl implements RegistrationInfo {
             String msg = "Failed to instantiate component: " + implementation;
             log.error(msg, e);
             msg += " (" + e.toString() + ')';
-            Framework.getRuntime().getWarnings().add(msg);
-            Framework.handleDevError(e);
+            Framework.getRuntime().getErrors().add(msg);
             throw e;
         }
     }
 
+    /**
+     * @deprecated since 9.2 seems unused
+     */
+    @Deprecated
     public synchronized void restart() {
         deactivate();
         activate();
@@ -323,20 +328,48 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         return ((Component) ci).getApplicationStartedOrder();
     }
 
+    public synchronized void start() {
+        if (state != ACTIVATED) {
+            return;
+        }
+        state = STARTING;
+        manager.sendEvent(new ComponentEvent(ComponentEvent.STARTING_COMPONENT, this));
+        try {
+            if (component != null) {
+                Object ci = component.getInstance();
+                if (ci instanceof Component) {
+                    ((Component) ci).start(component);
+                }
+            }
+            state = STARTED;
+            manager.sendEvent(new ComponentEvent(ComponentEvent.COMPONENT_STARTED, this));
+        } catch (RuntimeException e) {
+            log.error(String.format("Component %s notification of application started failed: %s", component.getName(),
+                    e.getMessage()), e);
+            state = START_FAILURE;
+        }
+    }
+
     @Override
-    public void notifyApplicationStarted() {
+    public boolean isStarted() {
+        return state == STARTED;
+    }
+
+    public synchronized void stop() throws InterruptedException {
+        // TODO use timeout
+        if (state != STARTED) {
+            return;
+        }
+        state = STOPPING;
+        manager.sendEvent(new ComponentEvent(ComponentEvent.STOPPING_COMPONENT, this));
         if (component != null) {
             Object ci = component.getInstance();
             if (ci instanceof Component) {
-                try {
-                    ((Component) ci).applicationStarted(component);
-                } catch (RuntimeException e) {
-                    log.error(String.format("Component %s notification of application started failed: %s",
-                            component.getName(), e.getMessage()), e);
-                    state = START_FAILURE;
-                }
+                ((Component) ci).stop(component);
             }
         }
+        state = ACTIVATED;
+        manager.sendEvent(new ComponentEvent(ComponentEvent.COMPONENT_STOPPED, this));
     }
 
     public synchronized void activate() {
@@ -368,8 +401,7 @@ public class RegistrationInfoImpl implements RegistrationInfo {
                             + xt.getExtensionPoint() + " in component: " + xt.getComponent().getName();
                     log.error(msg, e);
                     msg += " (" + e.toString() + ')';
-                    Framework.getRuntime().getWarnings().add(msg);
-                    Framework.handleDevError(e);
+                    Framework.getRuntime().getErrors().add(msg);
                 }
             }
         }
@@ -392,14 +424,24 @@ public class RegistrationInfoImpl implements RegistrationInfo {
                             + xt.getExtensionPoint() + " in component: " + xt.getComponent().getName();
                     log.error(msg, e);
                     msg += " (" + e.toString() + ')';
-                    Framework.getRuntime().getWarnings().add(msg);
-                    Framework.handleDevError(e);
+                    Framework.getRuntime().getErrors().add(msg);
                 }
             }
         }
     }
 
     public synchronized void deactivate() {
+        deactivate(true);
+    }
+
+    /**
+     * Deactivate the component. If mustUnregisterExtensions is false then the call was made by the manager because all
+     * components are stopped (and deactivated) so the extension unregister should not be done (this will speedup the
+     * stop and also fix broken component which are not correctly defining dependencies.)
+     *
+     * @since 9.2
+     */
+    public synchronized void deactivate(boolean mustUnregisterExtensions) {
         if (state != ACTIVATED && state != START_FAILURE) {
             return;
         }
@@ -407,16 +449,18 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         state = DEACTIVATING;
         manager.sendEvent(new ComponentEvent(ComponentEvent.DEACTIVATING_COMPONENT, this));
 
-        // unregister contributed extensions if any
-        if (extensions != null) {
-            for (Extension xt : extensions) {
-                try {
-                    manager.unregisterExtension(xt);
-                } catch (RuntimeException e) {
-                    log.error(
-                            "Failed to unregister extension. Contributor: " + xt.getComponent() + " to "
-                                    + xt.getTargetComponent() + "; xpoint: " + xt.getExtensionPoint(), e);
-                    Framework.handleDevError(e);
+        if (mustUnregisterExtensions) {
+            // unregister contributed extensions if any
+            if (extensions != null) {
+                for (Extension xt : extensions) {
+                    try {
+                        manager.unregisterExtension(xt);
+                    } catch (RuntimeException e) {
+                        String message = "Failed to unregister extension. Contributor: " + xt.getComponent() + " to "
+                                + xt.getTargetComponent() + "; xpoint: " + xt.getExtensionPoint();
+                        log.error(message, e);
+                        Framework.getRuntime().getErrors().add(message);
+                    }
                 }
             }
         }
@@ -437,10 +481,9 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         // register services
         manager.registerServices(this);
 
+        // components are no more automatically activated when resolved. see ComponentManager#start()
         state = RESOLVED;
         manager.sendEvent(new ComponentEvent(ComponentEvent.COMPONENT_RESOLVED, this));
-        // TODO lazy activation
-        activate();
     }
 
     public synchronized void unresolve() {
@@ -451,9 +494,7 @@ public class RegistrationInfoImpl implements RegistrationInfo {
         // un-register services
         manager.unregisterServices(this);
 
-        if (state == ACTIVATED || state == START_FAILURE) {
-            deactivate();
-        }
+        // components are no more automatically deactivated when unresolved. see ComponentManager#stop()
         state = REGISTERED;
         manager.sendEvent(new ComponentEvent(ComponentEvent.COMPONENT_UNRESOLVED, this));
     }
@@ -517,6 +558,11 @@ public class RegistrationInfoImpl implements RegistrationInfo {
     @Override
     public URL getXmlFileUrl() {
         return xmlFileUrl;
+    }
+
+    @Override
+    public String getSourceId() {
+        return sourceId;
     }
 
     @Override

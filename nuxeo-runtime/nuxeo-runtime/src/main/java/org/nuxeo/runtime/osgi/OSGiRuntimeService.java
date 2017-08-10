@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  *     Florent Guillaume
  *     Julien Carsique
  */
-
 package org.nuxeo.runtime.osgi;
 
 import java.io.BufferedInputStream;
@@ -29,37 +28,31 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.nuxeo.common.Environment;
 import org.nuxeo.common.codec.CryptoProperties;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.TextTemplate;
 import org.nuxeo.runtime.AbstractRuntimeService;
 import org.nuxeo.runtime.RuntimeServiceException;
 import org.nuxeo.runtime.Version;
 import org.nuxeo.runtime.api.Framework;
-import org.nuxeo.runtime.api.ServicePassivator;
 import org.nuxeo.runtime.model.ComponentName;
-import org.nuxeo.runtime.model.RegistrationInfo;
 import org.nuxeo.runtime.model.RuntimeContext;
 import org.nuxeo.runtime.model.impl.ComponentPersistence;
 import org.nuxeo.runtime.model.impl.RegistrationInfoImpl;
-
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
@@ -199,23 +192,14 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
     @Override
     protected void doStart() {
         bundleContext.addFrameworkListener(this);
-        try {
-            loadConfig();
-        } catch (IOException e) {
-            throw new RuntimeServiceException(e);
-        }
-        // load configuration if any
         loadComponents(bundleContext.getBundle(), context);
     }
 
     @Override
     protected void doStop() {
+        // do not destroy context since component manager is already shutdown
         bundleContext.removeFrameworkListener(this);
-        try {
-            super.doStop();
-        } finally {
-            context.destroy();
-        }
+        super.doStop();
     }
 
     protected void loadComponents(Bundle bundle, RuntimeContext ctx) {
@@ -236,14 +220,12 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
                 } catch (IOException e) {
                     // just log error to know where is the cause of the exception
                     log.error("Error deploying resource: " + url);
-                    Framework.handleDevError(e);
                     throw new RuntimeServiceException("Cannot deploy: " + url, e);
                 }
             } else {
                 String message = "Unknown component '" + path + "' referenced by bundle '" + name + "'";
                 log.error(message + ". Check the MANIFEST.MF");
-                Framework.handleDevError(null);
-                warnings.add(message);
+                errors.add(message);
             }
         }
     }
@@ -270,12 +252,8 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
                 props.add(url);
             }
         }
-        Comparator<URL> comp = new Comparator<URL>() {
-            @Override
-            public int compare(URL o1, URL o2) {
-                return o1.getPath().compareTo(o2.getPath());
-            }
-        };
+        Comparator<URL> comp = (o1, o2) -> o1.getPath().compareTo(o2.getPath());
+
         Collections.sort(xmls, comp);
         for (URL url : props) {
             loadProperties(url);
@@ -286,6 +264,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         return true;
     }
 
+    @Override
     protected void loadConfig() throws IOException {
         Environment env = Environment.getDefault();
         if (env != null) {
@@ -297,15 +276,12 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
 
         File blacklistFile = new File(env.getConfig(), "blacklist");
         if (blacklistFile.isFile()) {
-            List<String> lines = FileUtils.readLines(blacklistFile);
-            Set<String> blacklist = new HashSet<>();
-            for (String line : lines) {
-                line = line.trim();
-                if (line.length() > 0) {
-                    blacklist.add(line);
-                }
-            }
-            manager.setBlacklist(new HashSet<>(lines));
+            Set<String> lines = FileUtils.readLines(blacklistFile)
+                                         .stream()
+                                         .map(String::trim)
+                                         .filter(line -> !line.isEmpty())
+                                         .collect(Collectors.toSet());
+            manager.setBlacklist(lines);
         }
 
         if (loadConfigurationFromProvider()) {
@@ -329,12 +305,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         // File dir = new File(configDir);
         String[] names = dir.list();
         if (names != null) {
-            Arrays.sort(names, new Comparator<String>() {
-                @Override
-                public int compare(String o1, String o2) {
-                    return o1.compareToIgnoreCase(o2);
-                }
-            });
+            Arrays.sort(names, String::compareToIgnoreCase);
             printDeploymentOrderInfo(names);
             for (String name : names) {
                 if (name.endsWith("-config.xml") || name.endsWith("-bundle.xml")) {
@@ -372,7 +343,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         if (log.isDebugEnabled()) {
             StringBuilder buf = new StringBuilder();
             for (String fileName : fileNames) {
-                buf.append("\n\t" + fileName);
+                buf.append("\n\t").append(fileName);
             }
             log.debug("Deployment order of configuration files: " + buf.toString());
         }
@@ -383,20 +354,12 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         File dir = Environment.getDefault().getConfig();
         String[] names = dir.list();
         if (names != null) {
-            Arrays.sort(names, new Comparator<String>() {
-                @Override
-                public int compare(String o1, String o2) {
-                    return o1.compareToIgnoreCase(o2);
-                }
-            });
+            Arrays.sort(names, String::compareToIgnoreCase);
             CryptoProperties props = new CryptoProperties(System.getProperties());
             for (String name : names) {
                 if (name.endsWith(".config") || name.endsWith(".ini") || name.endsWith(".properties")) {
-                    FileInputStream in = new FileInputStream(new File(dir, name));
-                    try {
+                    try (FileInputStream in = new FileInputStream(new File(dir, name))) {
                         props.load(in);
-                    } finally {
-                        in.close();
                     }
                 }
             }
@@ -419,11 +382,8 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
     }
 
     public void loadProperties(File file) throws IOException {
-        InputStream in = new BufferedInputStream(new FileInputStream(file));
-        try {
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
             loadProperties(in);
-        } finally {
-            in.close();
         }
     }
 
@@ -479,31 +439,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         }.processText(expression);
     }
 
-    protected void notifyComponentsOnStarted() {
-        List<RegistrationInfo> ris = new ArrayList<>(manager.getRegistrations());
-        Collections.sort(ris, new RIApplicationStartedComparator());
-        for (RegistrationInfo ri : ris) {
-            try {
-                ri.notifyApplicationStarted();
-            } catch (RuntimeException e) {
-                log.error("Failed to notify component '" + ri.getName() + "' on application started", e);
-            }
-        }
-    }
-
-    protected static class RIApplicationStartedComparator implements Comparator<RegistrationInfo> {
-        @Override
-        public int compare(RegistrationInfo r1, RegistrationInfo r2) {
-            int cmp = Integer.compare(r1.getApplicationStartedOrder(), r2.getApplicationStartedOrder());
-            if (cmp == 0) {
-                // fallback on name order, to be deterministic
-                cmp = r1.getName().getName().compareTo(r2.getName().getName());
-            }
-            return cmp;
-        }
-    }
-
-    public void fireApplicationStarted() {
+    protected void startComponents() {
         synchronized (this) {
             if (appStarted) {
                 return;
@@ -520,7 +456,11 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         // requirement
         // on this marker component
         deployFrameworkStartedComponent();
-        notifyComponentsOnStarted();
+        // ============ activate and start components =======
+        manager.start();
+        // create a snapshot of the started components - TODO should this be optional?
+        manager.snapshot();
+        // ==================================================
         // print the startup message
         printStatusMessage();
     }
@@ -532,7 +472,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         if (event.getType() != FrameworkEvent.STARTED) {
             return;
         }
-        ServicePassivator.proceed(Duration.ofSeconds(0), Duration.ofSeconds(0), false, this::fireApplicationStarted);
+        startComponents();
     }
 
     private void printStatusMessage() {
@@ -605,7 +545,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
             return getEclipseBundleFileUsingReflection(bundle);
         } else if (location.startsWith("file:")) { // nuxeo osgi adapter
             try {
-                file = FileUtils.urlToFile(location);
+                file = org.nuxeo.common.utils.FileUtils.urlToFile(location);
             } catch (MalformedURLException e) {
                 log.error("getBundleFile: Unable to create " + " for bundle: " + name + " as URI: " + location);
                 return null;
@@ -623,7 +563,7 @@ public class OSGiRuntimeService extends AbstractRuntimeService implements Framew
         }
     }
 
-    public static final boolean isJBoss4(Environment env) {
+    public static boolean isJBoss4(Environment env) {
         if (env == null) {
             return false;
         }

@@ -15,6 +15,10 @@
             "description": "Document Search"
         },
         {
+            "path": "/search.{format}",
+            "description": "Search documents and save searches"
+        },
+        {
             "path": "/blobAdapter.{format}",
             "description": "Get main document blob"
         },
@@ -29,6 +33,10 @@
         {
             "path": "/group.{format}",
             "description": "Access groups"
+        },
+        {
+            "path": "/me.{format}",
+            "description": "Access logged in user"
         },
         {
             "path": "/directory.{format}",
@@ -71,12 +79,32 @@
             "description": "Browse and complete task"
         },
         {
+            "path": "/facet.{format}",
+            "description": "Facet Configurations"
+        },
+        {
+            "path": "/docType.{format}",
+            "description": "Document Type Configurations"
+        },
+        {
+            "path": "/schema.{format}",
+            "description": "Schema Configurations"
+        },
+        {
+            "path": "/token.{format}",
+            "description": "Authentication token"
+        },
+        {
             "path": "/renditionAdapter.{format}",
             "description": "Rendition on a document"
         },
         {
             "path": "/convertAdapter.{format}",
             "description": "Convert Blobs"
+        },
+        {
+            "path": "/oauth2.{format}",
+            "description": "Retrieve OAuth2 authentication data for the current user"
         }
     ],
     "authorizations": {

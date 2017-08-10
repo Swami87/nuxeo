@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.ui.web.restAPI;
 
 import static org.jboss.seam.ScopeType.EVENT;
@@ -104,13 +101,9 @@ public class DownloadFileRestlet extends BaseNuxeoRestlet implements LiveEditCon
             } else {
                 String schemaName = getQueryParamValue(req, SCHEMA, DEFAULT_SCHEMA);
                 String blobFieldName = getQueryParamValue(req, BLOB_FIELD, DEFAULT_BLOB_FIELD);
-                String filenameFieldName = getQueryParamValue(req, FILENAME_FIELD, DEFAULT_FILENAME_FIELD);
-                filename = (String) dm.getProperty(schemaName, filenameFieldName);
                 blob = (Blob) dm.getProperty(schemaName, blobFieldName);
-                xpath = schemaName + ':' + blobFieldName;
-            }
-            if (StringUtils.isBlank(filename)) {
                 filename = StringUtils.defaultIfBlank(blob.getFilename(), "file");
+                xpath = schemaName + ':' + blobFieldName;
             }
 
             // trigger download

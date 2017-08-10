@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Bogdan Stefanescu
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.schema;
 
 import static org.junit.Assert.assertEquals;
@@ -29,10 +28,8 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.nuxeo.ecm.core.schema.types.ComplexType;
@@ -58,10 +55,12 @@ public class TestSchemaLoader extends NXRuntimeTestCase {
     private XSDLoader reader;
 
     @Override
-    @Before
     public void setUp() throws Exception {
-        super.setUp();
         deployBundle("org.nuxeo.ecm.core.schema");
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
         typeMgr = Framework.getLocalService(SchemaManager.class);
         reader = new XSDLoader((SchemaManagerImpl) typeMgr);
     }
@@ -110,7 +109,8 @@ public class TestSchemaLoader extends NXRuntimeTestCase {
 
     @Test
     public void testContribs() throws Exception {
-        deployContrib("org.nuxeo.ecm.core.schema.tests", "OSGI-INF/CoreTestExtensions.xml");
+        pushInlineDeployments("org.nuxeo.ecm.core.schema.tests:OSGI-INF/CoreTestExtensions.xml");
+
         DocumentType docType = typeMgr.getDocumentType("myDoc");
 
         assertNotNull(docType);
@@ -135,7 +135,6 @@ public class TestSchemaLoader extends NXRuntimeTestCase {
         assertEquals(Arrays.asList("schema1", "schema2"), Arrays.asList(docType.getSchemaNames()));
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testSequence() throws Exception {
         URL url = getResource("schema/testList.xsd");
@@ -148,14 +147,10 @@ public class TestSchemaLoader extends NXRuntimeTestCase {
         assertEquals(0, type.getMinCount());
         assertEquals("stringSequence", type.getName());
 
-        List<String> defaultValue = (List<String>) field.getDefaultValue();
-        assertEquals(3, defaultValue.size());
-        assertEquals("titi", defaultValue.get(0));
-        assertEquals("toto", defaultValue.get(1));
-        assertEquals("tata", defaultValue.get(2));
+        String[] defaultValue = (String[]) field.getDefaultValue();
+        assertEquals(Arrays.asList("titi", "toto", "tata"), Arrays.asList(defaultValue));
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testList() throws Exception {
         URL url = getResource("schema/testList.xsd");
@@ -169,11 +164,8 @@ public class TestSchemaLoader extends NXRuntimeTestCase {
         assertEquals(0, type.getMinCount());
         assertEquals("stringList", type.getName());
 
-        List<String> defaultValue = (List<String>) field.getDefaultValue();
-        assertEquals(3, defaultValue.size());
-        assertEquals("titi", defaultValue.get(0));
-        assertEquals("toto", defaultValue.get(1));
-        assertEquals("tata", defaultValue.get(2));
+        String[] defaultValue = (String[]) field.getDefaultValue();
+        assertEquals(Arrays.asList("titi", "toto", "tata"), Arrays.asList(defaultValue));
     }
 
     @Test

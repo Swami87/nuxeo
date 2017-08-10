@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.query.sql.model;
 
 /**
@@ -48,10 +47,7 @@ public class DefaultQueryVisitor implements IVisitor {
 
     @Override
     public void visitSelectClause(SelectClause node) {
-        SelectList elements = node.elements;
-        for (int i = 0; i < elements.size(); i++) {
-            elements.get(i).accept(this);
-        }
+        node.elements.forEach((alias, operand) -> operand.accept(this));
     }
 
     @Override

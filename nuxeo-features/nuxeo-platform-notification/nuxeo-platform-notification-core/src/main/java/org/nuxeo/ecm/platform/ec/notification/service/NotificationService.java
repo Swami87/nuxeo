@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2007-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.ec.notification.service;
 
 import java.io.Serializable;
@@ -30,18 +27,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.mail.MessagingException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
-import org.nuxeo.ecm.core.api.DataModel;
 import org.nuxeo.ecm.core.api.DocumentLocation;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
-import org.nuxeo.ecm.core.api.UnrestrictedSessionRunner;
 import org.nuxeo.ecm.core.api.event.CoreEventConstants;
 import org.nuxeo.ecm.core.api.event.DocumentEventCategories;
 import org.nuxeo.ecm.core.api.event.DocumentEventTypes;
@@ -49,6 +46,7 @@ import org.nuxeo.ecm.core.api.impl.DocumentLocationImpl;
 import org.nuxeo.ecm.core.event.Event;
 import org.nuxeo.ecm.core.event.EventProducer;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.ecm.core.query.sql.NXQL;
 import org.nuxeo.ecm.core.versioning.VersioningService;
 import org.nuxeo.ecm.platform.audit.service.NXAuditEventsService;
 import org.nuxeo.ecm.platform.dublincore.listener.DublinCoreListener;
@@ -92,7 +90,7 @@ public class NotificationService extends DefaultComponent implements Notificatio
     protected static final String NOTIFICATION_VETO_EP = "notificationListenerVeto";
 
     // FIXME: performance issue when putting URLs in a Map.
-    protected static final Map<String, URL> TEMPLATES_MAP = new HashMap<String, URL>();
+    protected static final Map<String, URL> TEMPLATES_MAP = new HashMap<>();
 
     protected EmailHelper emailHelper = new EmailHelper();
 
@@ -102,7 +100,7 @@ public class NotificationService extends DefaultComponent implements Notificatio
 
     protected DocumentViewCodecManager docLocator;
 
-    protected final Map<String, NotificationListenerHook> hookListeners = new HashMap<String, NotificationListenerHook>();
+    protected final Map<String, NotificationListenerHook> hookListeners = new HashMap<>();
 
     protected NotificationListenerVetoRegistry notificationVetoRegistry;
 
@@ -163,7 +161,7 @@ public class NotificationService extends DefaultComponent implements Notificatio
                 NotificationListenerHookDescriptor desc = (NotificationListenerHookDescriptor) contrib;
                 Class<? extends NotificationListenerHook> clazz = desc.hookListener;
                 try {
-                    NotificationListenerHook hookListener = (NotificationListenerHook) clazz.newInstance();
+                    NotificationListenerHook hookListener = clazz.newInstance();
                     registerHookListener(desc.name, hookListener);
                 } catch (ReflectiveOperationException e) {
                     log.error(e);
@@ -186,15 +184,15 @@ public class NotificationService extends DefaultComponent implements Notificatio
         generalSettings = desc;
         String serverPrefix = Framework.expandVars(generalSettings.serverPrefix);
         if (serverPrefix != null) {
-            generalSettings.serverPrefix = serverPrefix.endsWith("//") ? serverPrefix.substring(0,
-                    serverPrefix.length() - 1) : serverPrefix;
+            generalSettings.serverPrefix = serverPrefix.endsWith("//")
+                    ? serverPrefix.substring(0, serverPrefix.length() - 1) : serverPrefix;
         }
         generalSettings.eMailSubjectPrefix = Framework.expandVars(generalSettings.eMailSubjectPrefix);
         generalSettings.mailSessionJndiName = Framework.expandVars(generalSettings.mailSessionJndiName);
     }
 
     private static List<String> getNames(List<NotificationEventDescriptor> events) {
-        List<String> eventNames = new ArrayList<String>();
+        List<String> eventNames = new ArrayList<>();
         for (NotificationEventDescriptor descriptor : events) {
             eventNames.add(descriptor.name);
         }
@@ -226,20 +224,8 @@ public class NotificationService extends DefaultComponent implements Notificatio
         }
     }
 
-    public NotificationRegistry getNotificationRegistry() {
-        return notificationRegistry;
-    }
-
     public NotificationListenerVetoRegistry getNotificationListenerVetoRegistry() {
         return notificationVetoRegistry;
-    }
-
-    /**
-     * @deprecated since 7.3
-     * @see NotificationService#getSubscribers(String, DocumentModel)
-     */
-    public List<String> getSubscribers(String notification, String docId) {
-        return getSubscribers(notification, UnrestrictedDocFetcher.fetch(docId));
     }
 
     @Override
@@ -247,43 +233,35 @@ public class NotificationService extends DefaultComponent implements Notificatio
         return doc.getAdapter(SubscriptionAdapter.class).getNotificationSubscribers(notification);
     }
 
-    /**
-     * @deprecated since 7.3
-     * @see NotificationService#getSubscriptionsForUserOnDocument(String, DocumentModel)
-     */
-
-    public List<String> getSubscriptionsForUserOnDocument(String username, String docId) {
-        return getSubscriptionsForUserOnDocument(username, UnrestrictedDocFetcher.fetch(docId));
-    }
-
     @Override
     public List<String> getSubscriptionsForUserOnDocument(String username, DocumentModel doc) {
         return doc.getAdapter(SubscriptionAdapter.class).getUserSubscriptions(username);
     }
 
-    private void disableEvents(DocumentModel doc) {
+    protected void disableEvents(DocumentModel doc) {
         doc.putContextData(DublinCoreListener.DISABLE_DUBLINCORE_LISTENER, true);
         doc.putContextData(NotificationConstants.DISABLE_NOTIFICATION_SERVICE, true);
         doc.putContextData(NXAuditEventsService.DISABLE_AUDIT_LOGGER, true);
         doc.putContextData(VersioningService.DISABLE_AUTO_CHECKOUT, true);
-
     }
 
+    protected void restoreEvents(DocumentModel doc) {
+        doc.putContextData(DublinCoreListener.DISABLE_DUBLINCORE_LISTENER, null);
+        doc.putContextData(NotificationConstants.DISABLE_NOTIFICATION_SERVICE, null);
+        doc.putContextData(NXAuditEventsService.DISABLE_AUDIT_LOGGER, null);
+        doc.putContextData(VersioningService.DISABLE_AUTO_CHECKOUT, null);
+    }
+
+    @Override
     public void addSubscription(String username, String notification, DocumentModel doc, Boolean sendConfirmationEmail,
             NuxeoPrincipal principal, String notificationName) {
 
-        UnrestrictedSessionRunner runner = new UnrestrictedSessionRunner(doc.getRepositoryName()) {
-
-            @Override
-            public void run() {
-                doc.getAdapter(SubscriptionAdapter.class).addSubscription(username, notification);
-                disableEvents(doc);
-                session.saveDocument(doc);
-            }
-
-        };
-
-        runner.runUnrestricted();
+        CoreInstance.doPrivileged(doc.getRepositoryName(), (CoreSession session) -> {
+            doc.getAdapter(SubscriptionAdapter.class).addSubscription(username, notification);
+            disableEvents(doc);
+            session.saveDocument(doc);
+            restoreEvents(doc);
+        });
 
         // send event for email if necessary
         if (sendConfirmationEmail) {
@@ -291,18 +269,15 @@ public class NotificationService extends DefaultComponent implements Notificatio
         }
     }
 
+    @Override
     public void addSubscriptions(String username, DocumentModel doc, Boolean sendConfirmationEmail,
             NuxeoPrincipal principal) {
-        UnrestrictedSessionRunner runner = new UnrestrictedSessionRunner(doc.getRepositoryName()) {
-
-            @Override
-            public void run() {
-                doc.getAdapter(SubscriptionAdapter.class).addSubscriptionsToAll(username);
-                disableEvents(doc);
-                session.saveDocument(doc);
-            }
-        };
-        runner.runUnrestricted();
+        CoreInstance.doPrivileged(doc.getRepositoryName(), (CoreSession session) -> {
+            doc.getAdapter(SubscriptionAdapter.class).addSubscriptionsToAll(username);
+            disableEvents(doc);
+            session.saveDocument(doc);
+            restoreEvents(doc);
+        });
 
         // send event for email if necessary
         if (sendConfirmationEmail) {
@@ -310,26 +285,17 @@ public class NotificationService extends DefaultComponent implements Notificatio
         }
     }
 
-    public void removeSubscriptions(String username, List<String> notifications, String docId) {
-        removeSubscriptions(username, notifications, UnrestrictedDocFetcher.fetch(docId));
-    }
-
-    public void removeSubscriptions(String username, List<String> notifications, DocumentModel doc)
-            {
-        UnrestrictedSessionRunner runner = new UnrestrictedSessionRunner(doc.getRepositoryName()) {
-
-            @Override
-            public void run() {
-                SubscriptionAdapter sa = doc.getAdapter(SubscriptionAdapter.class);
-                for (String notification : notifications) {
-                    sa.removeUserNotificationSubscription(username, notification);
-                }
-                disableEvents(doc);
-                session.saveDocument(doc);
+    @Override
+    public void removeSubscriptions(String username, List<String> notifications, DocumentModel doc) {
+        CoreInstance.doPrivileged(doc.getRepositoryName(), (CoreSession session) -> {
+            SubscriptionAdapter sa = doc.getAdapter(SubscriptionAdapter.class);
+            for (String notification : notifications) {
+                sa.removeUserNotificationSubscription(username, notification);
             }
-        };
-        runner.runUnrestricted();
-
+            disableEvents(doc);
+            session.saveDocument(doc);
+            restoreEvents(doc);
+        });
     }
 
     protected EventProducer producer;
@@ -344,7 +310,7 @@ public class NotificationService extends DefaultComponent implements Notificatio
     private void raiseConfirmationEvent(NuxeoPrincipal principal, DocumentModel doc, String username,
             String notification) {
 
-        Map<String, Serializable> options = new HashMap<String, Serializable>();
+        Map<String, Serializable> options = new HashMap<>();
 
         // Name of the current repository
         options.put(CoreEventConstants.REPOSITORY_NAME, doc.getRepositoryName());
@@ -365,25 +331,8 @@ public class NotificationService extends DefaultComponent implements Notificatio
     }
 
     @Override
-    public void removeSubscription(String username, String notification, String docId) {
-        removeSubscription(username, notification, UnrestrictedDocFetcher.fetch(docId));
-    }
-
-    @Override
     public void removeSubscription(String username, String notification, DocumentModel doc) {
-        removeSubscriptions(username, Arrays.asList(new String[] { notification }), doc);
-    }
-
-    /**
-     * @param notification
-     * @param docId
-     * @return
-     * @deprecated
-     * @see NotificationService#getSubscribers(String, DocumentModel)
-     */
-    public List<String> getUsersSubscribedToNotificationOnDocument(String notification, String docId)
-            {
-        return getSubscribers(notification, docId);
+        removeSubscriptions(username, Arrays.asList(notification), doc);
     }
 
     private static void registerTemplate(TemplateDescriptor td) {
@@ -415,6 +364,7 @@ public class NotificationService extends DefaultComponent implements Notificatio
         return generalSettings.getMailSessionJndiName();
     }
 
+    @Override
     public Notification getNotificationByName(String selectedNotification) {
         List<Notification> listNotif = notificationRegistry.getNotifications();
         for (Notification notification : listNotif) {
@@ -425,15 +375,13 @@ public class NotificationService extends DefaultComponent implements Notificatio
         return null;
     }
 
-    public void sendNotification(String notificationName, Map<String, Object> infoMap, String userPrincipal)
-            {
+    @Override
+    public void sendNotification(String notificationName, Map<String, Object> infoMap, String userPrincipal) {
 
         Notification notif = getNotificationByName(notificationName);
 
         NuxeoPrincipal recipient = NotificationServiceHelper.getUsersService().getPrincipal(userPrincipal);
-        // XXX hack, principals have only one model
-        DataModel model = recipient.getModel().getDataModels().values().iterator().next();
-        String email = (String) model.getData("email");
+        String email = recipient.getEmail();
         String mailTemplate = notif.getTemplate();
 
         infoMap.put("mail.to", email);
@@ -464,9 +412,10 @@ public class NotificationService extends DefaultComponent implements Notificatio
         }
     }
 
+    @Override
     public void sendDocumentByMail(DocumentModel doc, String freemarkerTemplateName, String subject, String comment,
             NuxeoPrincipal sender, List<String> sendTo) {
-        Map<String, Object> infoMap = new HashMap<String, Object>();
+        Map<String, Object> infoMap = new HashMap<>();
         infoMap.put("document", doc);
         infoMap.put("subject", subject);
         infoMap.put("comment", comment);
@@ -475,10 +424,8 @@ public class NotificationService extends DefaultComponent implements Notificatio
         DocumentLocation docLoc = new DocumentLocationImpl(doc);
         DocumentView docView = new DocumentViewImpl(docLoc);
         docView.setViewId("view_documents");
-        infoMap.put(
-                "docUrl",
-                getDocLocator().getUrlFromDocumentView(docView, true,
-                        NotificationServiceHelper.getNotificationService().getServerUrlPrefix()));
+        infoMap.put("docUrl", getDocLocator().getUrlFromDocumentView(docView, true,
+                NotificationServiceHelper.getNotificationService().getServerUrlPrefix()));
 
         if (freemarkerTemplateName == null) {
             freemarkerTemplateName = "defaultNotifTemplate";
@@ -502,10 +449,12 @@ public class NotificationService extends DefaultComponent implements Notificatio
         return docLocator;
     }
 
+    @Override
     public List<Notification> getNotificationsForSubscriptions(String parentType) {
         return notificationRegistry.getNotificationsForSubscriptions(parentType);
     }
 
+    @Override
     public List<Notification> getNotificationsForEvents(String eventId) {
         return notificationRegistry.getNotificationsForEvent(eventId);
     }
@@ -532,17 +481,24 @@ public class NotificationService extends DefaultComponent implements Notificatio
     }
 
     @Override
-    public List<String> getUsersSubscribedToNotificationOnDocument(String notification, DocumentModel doc)
-            {
+    public List<String> getUsersSubscribedToNotificationOnDocument(String notification, DocumentModel doc) {
         return getSubscribers(notification, doc);
     }
 
     @Override
-    public List<DocumentModel> getSubscribedDocuments(String prefixedPrincipalName) {
-        String nxql = String.format("SELECT * FROM Document WHERE ecm:mixinType ='Notifiable' "
-                + "AND notif:notifications/*/subscribers/* = '%s'", prefixedPrincipalName);
+    public List<DocumentModel> getSubscribedDocuments(String prefixedPrincipalName, String repositoryName) {
+        String nxql = "SELECT * FROM Document WHERE ecm:mixinType = '" + SubscriptionAdapter.NOTIFIABLE_FACET + "' "
+                + "AND ecm:isCheckedInVersion = 0 " + "AND notif:notifications/*/subscribers/* = "
+                + NXQL.escapeString(prefixedPrincipalName);
 
-        return UnrestrictedDocFetcher.query(nxql);
+        return CoreInstance.doPrivileged(repositoryName,
+                (CoreSession s) -> s.query(nxql).stream().map(NotificationService::detachDocumentModel).collect(
+                        Collectors.toList()));
+    }
+
+    protected static DocumentModel detachDocumentModel(DocumentModel doc) {
+        doc.detach(true);
+        return doc;
     }
 
 }

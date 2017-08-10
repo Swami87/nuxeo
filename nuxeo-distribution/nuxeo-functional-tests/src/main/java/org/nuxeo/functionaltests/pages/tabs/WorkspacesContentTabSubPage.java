@@ -20,7 +20,7 @@
 package org.nuxeo.functionaltests.pages.tabs;
 
 import org.nuxeo.functionaltests.Required;
-import org.nuxeo.functionaltests.pages.forms.WorkspaceFormPage;
+import org.nuxeo.functionaltests.pages.forms.WorkspaceCreationFormPage;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
@@ -28,7 +28,11 @@ import org.openqa.selenium.support.FindBy;
 /**
  * @author Sun Seng David TAN <stan@nuxeo.com>
  */
-public class WorkspacesContentTabSubPage extends ContentTabSubPage {
+public class WorkspacesContentTabSubPage extends AbstractContentTabSubPage {
+
+    @Required
+    @FindBy(id = "cv_document_content_0_panel")
+    WebElement contentView;
 
     @Required
     @FindBy(id = "nxw_newWorkspace_form:nxw_newWorkspace")
@@ -38,9 +42,14 @@ public class WorkspacesContentTabSubPage extends ContentTabSubPage {
         super(driver);
     }
 
-    public WorkspaceFormPage getWorkspaceCreatePage() {
+    @Override
+    protected WebElement getContentViewElement() {
+        return contentView;
+    }
+
+    public WorkspaceCreationFormPage getWorkspaceCreatePage() {
         createNewWorkspaceLink.click();
-        return asPage(WorkspaceFormPage.class);
+        return asPage(WorkspaceCreationFormPage.class);
     }
 
 }

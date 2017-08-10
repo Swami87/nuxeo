@@ -94,6 +94,28 @@ public class DownloadablePackageOptions {
                 newIds.add(0, option.getParent().getId());
                 return checkSelectionValid(newIds);
             }
+            // force selection of implies
+            if (option.getPackage() != null && option.getPackage().getImpliedDeps() != null) {
+                List<String> newIds = new ArrayList<>();
+                newIds.addAll(ids);
+                boolean needRecheck = false;
+                for (String implied : option.getPackage().getImpliedDeps()) {
+                    if (!ids.contains(implied)) {
+                        if (findById(id, pkgOptions) != null) {
+                            if (option.isExclusive() && option.getSiblingPackages().contains(implied)) {
+                                log.error(String.format(
+                                        "Option %s cannot be exclusive and imply one of its sibling packages", id));
+                                continue;
+                            }
+                            newIds.add(implied);
+                            needRecheck = true;
+                        }
+                    }
+                }
+                if (needRecheck) {
+                    return checkSelectionValid(newIds);
+                }
+            }
             // check constraints
             if (option.isExclusive()) {
                 for (DownloadablePackageOption sib : option.getSiblingPackages()) {
@@ -178,6 +200,16 @@ public class DownloadablePackageOptions {
         sb.append("\"shortlabel\":\"" + option.getShortLabel() + "\",");
         sb.append("\"selected\":\"" + option.selected + "\",");
         sb.append("\"exclusive\":\"" + option.exclusive + "\",");
+        sb.append("\"description\":\"" + option.getDescription() + "\",");
+        sb.append("\"virtual\":\"" + option.isVirtual() + "\",");
+        sb.append("\"implies\": [");
+        for (int i = 0; i < option.getPackage().getImpliedDeps().size(); i++) {
+            sb.append("\"" + option.getPackage().getImpliedDeps().get(i).trim() + "\"");
+            if (i < option.getPackage().getImpliedDeps().size() - 1) {
+                sb.append(", ");
+            }
+        }
+        sb.append("],");
         sb.append("\"children\": [");
         List<DownloadablePackageOption> children = option.getChildrenPackages();
         for (int i = 0; i < children.size(); i++) {

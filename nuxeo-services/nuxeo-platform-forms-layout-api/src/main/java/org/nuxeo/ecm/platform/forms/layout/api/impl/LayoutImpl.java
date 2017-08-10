@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     <a href="mailto:at@nuxeo.com">Anahide Tchertchian</a>
- *
- * $Id: LayoutImpl.java 28478 2008-01-04 12:53:58Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.forms.layout.api.impl;
 
 import java.io.Serializable;
@@ -77,23 +74,6 @@ public class LayoutImpl implements Layout {
     }
 
     /**
-     * @deprecated since 5.5: use {@link #LayoutImpl(String, String, String, List, int, Map, String)}
-     */
-    @Deprecated
-    public LayoutImpl(String name, String mode, String template, List<LayoutRow> rows, int columns) {
-        this(name, mode, template, rows, columns, null);
-    }
-
-    /**
-     * @deprecated since 5.5: use {@link #LayoutImpl(String, String, String, List, int, Map, String)}
-     */
-    @Deprecated
-    public LayoutImpl(String name, String mode, String template, List<LayoutRow> rows, int columns,
-            Map<String, Serializable> properties) {
-        this(name, mode, template, rows, columns, properties, null);
-    }
-
-    /**
      * @since 5.5
      */
     public LayoutImpl(String name, String mode, String template, List<LayoutRow> rows, int columns,
@@ -104,7 +84,7 @@ public class LayoutImpl implements Layout {
         this.rows = rows.toArray(new LayoutRow[0]);
         this.columns = columns;
         this.properties = properties;
-        this.widgetMap = new HashMap<String, Widget>();
+        this.widgetMap = new HashMap<>();
         computeWidgetMap();
         this.definitionId = definitionId;
     }
@@ -120,7 +100,7 @@ public class LayoutImpl implements Layout {
         this.rows = new LayoutRow[0];
         this.columns = 0;
         this.properties = properties;
-        this.widgetMap = new HashMap<String, Widget>();
+        this.widgetMap = new HashMap<>();
         if (widgets != null) {
             this.widgetMap.putAll(widgets);
         }
@@ -206,7 +186,7 @@ public class LayoutImpl implements Layout {
 
     public void setProperty(String name, Serializable value) {
         if (properties == null) {
-            properties = new HashMap<String, Serializable>();
+            properties = new HashMap<>();
         }
         properties.put(name, value);
     }

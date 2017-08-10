@@ -20,46 +20,49 @@ package org.nuxeo.ecm.automation.server.jaxrs;
 
 import java.io.IOException;
 
-import org.nuxeo.ecm.automation.AutomationService;
-import org.nuxeo.ecm.automation.ConflictOperationException;
-import org.nuxeo.ecm.automation.OperationException;
-import org.nuxeo.ecm.automation.OperationNotFoundException;
-import org.nuxeo.ecm.automation.jaxrs.io.operations.ExecutionRequest;
-import org.nuxeo.ecm.automation.server.AutomationServer;
-import org.nuxeo.ecm.core.api.CoreSession;
-import org.nuxeo.ecm.core.api.NuxeoException;
-import org.nuxeo.ecm.platform.web.common.exceptionhandling.ExceptionHelper;
-import org.nuxeo.ecm.webengine.WebException;
-import org.nuxeo.ecm.webengine.jaxrs.session.SessionFactory;
-import org.nuxeo.runtime.api.Framework;
-
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.POST;
 import javax.ws.rs.core.Context;
 
+import org.nuxeo.ecm.automation.AutomationService;
+import org.nuxeo.ecm.automation.OperationContext;
+import org.nuxeo.ecm.automation.OperationException;
+import org.nuxeo.ecm.automation.OperationNotFoundException;
+import org.nuxeo.ecm.automation.jaxrs.io.operations.ExecutionRequest;
+import org.nuxeo.ecm.automation.server.AutomationServer;
+import org.nuxeo.ecm.core.api.ConcurrentUpdateException;
+import org.nuxeo.ecm.core.api.CoreSession;
+import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.platform.web.common.exceptionhandling.ExceptionHelper;
+import org.nuxeo.ecm.webengine.WebException;
+import org.nuxeo.ecm.webengine.model.impl.DefaultObject;
+import org.nuxeo.runtime.api.Framework;
+
 /**
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
-public abstract class ExecutableResource {
+public abstract class ExecutableResource extends DefaultObject {
+
+    @Context
+    protected AutomationService service;
 
     @Context
     protected HttpServletRequest request;
 
-    protected AutomationService service;
+    @Context
+    protected HttpServletResponse response;
 
-    protected ExecutableResource(AutomationService service) {
-        this.service = service;
-    }
+    @Context
+    protected CoreSession session;
 
-    public CoreSession getCoreSession() {
-        return SessionFactory.getSession(request);
+    protected OperationContext createContext(ExecutionRequest xreq) {
+        return xreq.createContext(request, response, session);
     }
 
     @POST
-    public Object doPost(@Context HttpServletRequest request, ExecutionRequest xreq) {
-        this.request = request;
+    public Object doPost(ExecutionRequest xreq) {
         try {
             AutomationServer srv = Framework.getLocalService(AutomationServer.class);
             if (!srv.accept(getId(), isChain(), request)) {
@@ -67,15 +70,9 @@ public abstract class ExecutableResource {
             }
             Object result = execute(xreq);
             int customHttpStatus = xreq.getRestOperationContext().getHttpStatus();
-            if (customHttpStatus >= 100) {
-                return ResponseHelper.getResponse(result, request, customHttpStatus);
-            }
-            return ResponseHelper.getResponse(result, request);
+            return ResponseHelper.getResponse(result, request, customHttpStatus);
         } catch (OperationException | NuxeoException | SecurityException | MessagingException | IOException cause) {
-            if (cause instanceof ConflictOperationException) {
-                throw WebException.newException("Failed to invoke operation: " + getId(), cause,
-                        HttpServletResponse.SC_CONFLICT);
-            } else if (cause instanceof OperationNotFoundException) {
+            if (cause instanceof OperationNotFoundException) {
                 throw WebException.newException("Failed to invoke operation: " + getId(), cause,
                         HttpServletResponse.SC_NOT_FOUND);
             } else {
@@ -83,6 +80,10 @@ public abstract class ExecutableResource {
                 if (unWrapException instanceof RestOperationException) {
                     int customHttpStatus = ((RestOperationException) unWrapException).getStatus();
                     throw WebException.newException("Failed to invoke operation: " + getId(), cause, customHttpStatus);
+                }
+                if (unWrapException instanceof ConcurrentUpdateException) {
+                    throw WebException.newException("Failed to invoke operation: " + getId(), unWrapException,
+                            HttpServletResponse.SC_CONFLICT);
                 }
                 throw WebException.newException("Failed to invoke operation: " + getId(), cause);
             }

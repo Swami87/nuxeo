@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,13 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.deployment.preprocessor.install.commands;
 
 import java.io.File;
 import java.io.IOException;
 
-import org.nuxeo.common.utils.FileUtils;
+import org.apache.commons.io.FileUtils;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.runtime.deployment.preprocessor.install.Command;
 import org.nuxeo.runtime.deployment.preprocessor.install.CommandContext;
@@ -49,12 +46,7 @@ public class DeleteCommand implements Command {
     public void exec(CommandContext ctx) throws IOException {
         File baseDir = ctx.getBaseDir();
         File file = new File(baseDir, ctx.expandVars(path.toString()));
-
-        if (file.isFile()) {
-            file.delete();
-        } else if (file.isDirectory()) {
-            FileUtils.deleteTree(file);
-        }
+        FileUtils.deleteQuietly(file);
     }
 
     @Override

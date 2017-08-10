@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
  * Contributors:
  *     Maxime Hilaire
  *     Thierry Martins
- *
  */
-
 package org.nuxeo.ecm.core.cache;
 
 import java.util.ArrayList;
@@ -28,8 +26,6 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
@@ -58,18 +54,17 @@ public class CacheServiceImpl extends DefaultComponent implements CacheService {
     /**
      * Contains the names of all caches which have not been registered from an extension
      */
-    protected final List<String> autoregisteredCacheNames = new ArrayList<String>();
-
+    protected final List<String> autoregisteredCacheNames = new ArrayList<>();
 
     @Override
-    public CacheAttributesChecker getCache(String name) {
+    public Cache getCache(String name) {
         return cacheRegistry.getCache(name);
     }
 
     @Override
     public void deactivate(ComponentContext context) {
         if (cacheRegistry.caches.size() > 0) {
-            Map<String, CacheDescriptor> descriptors = new HashMap<String, CacheDescriptor>(cacheRegistry.caches);
+            Map<String, CacheDescriptor> descriptors = new HashMap<>(cacheRegistry.caches);
             for (CacheDescriptor desc : descriptors.values()) {
                 cacheRegistry.contributionRemoved(desc.name, desc);
                 if (!autoregisteredCacheNames.remove(desc.name)) {
@@ -81,28 +76,22 @@ public class CacheServiceImpl extends DefaultComponent implements CacheService {
 
     @Override
     public int getApplicationStartedOrder() {
-        ComponentInstance repositoryComponent = (ComponentInstance) Framework.getRuntime().getComponentInstance(
+        ComponentInstance repositoryComponent = Framework.getRuntime().getComponentInstance(
                 "org.nuxeo.ecm.core.repository.RepositoryServiceComponent");
-        if (repositoryComponent == null) {
+        if (repositoryComponent == null || repositoryComponent.getInstance() == null) {
             return super.getApplicationStartedOrder();
         }
         return ((DefaultComponent) repositoryComponent.getInstance()).getApplicationStartedOrder() - 5;
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
-        Framework.addListener(new RuntimeServiceListener() {
-
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (RuntimeServiceEvent.RUNTIME_ABOUT_TO_START != event.id) {
-                    return;
-                }
-                Framework.removeListener(this);
-                cacheRegistry.stop();
-            }
-        });
+    public void start(ComponentContext context) {
         cacheRegistry.start();
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        cacheRegistry.stop();
     }
 
     @Override
@@ -150,7 +139,6 @@ public class CacheServiceImpl extends DefaultComponent implements CacheService {
     public void unregisterCache(CacheDescriptor descriptor) {
         cacheRegistry.removeContribution(descriptor);
     }
-
 
     @Override
     public <T> T getAdapter(Class<T> adapter) {

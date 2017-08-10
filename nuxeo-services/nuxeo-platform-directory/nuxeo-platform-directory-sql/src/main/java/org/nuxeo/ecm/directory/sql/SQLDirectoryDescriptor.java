@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,72 +15,28 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
+ *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.directory.sql;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.xmap.annotation.XNode;
 import org.nuxeo.common.xmap.annotation.XNodeList;
 import org.nuxeo.common.xmap.annotation.XObject;
 import org.nuxeo.ecm.directory.BaseDirectoryDescriptor;
-import org.nuxeo.ecm.directory.DirectoryException;
-import org.nuxeo.ecm.directory.InverseReference;
-import org.nuxeo.ecm.directory.Reference;
 
 @XObject(value = "directory")
 public class SQLDirectoryDescriptor extends BaseDirectoryDescriptor {
 
-    private static final Log log = LogFactory.getLog(SQLDirectoryDescriptor.class);
-
     public static final int QUERY_SIZE_LIMIT_DEFAULT = 0;
-
-    public static final boolean AUTO_INCREMENT_ID_FIELD_DEFAULT = false;
-
-    public static final char DEFAULT_CHARACTER_SEPARATOR = ',';
-
-    public static final String[] CREATE_TABLE_POLICIES = { "never", "on_missing_columns", "always", };
-
-    public static final String CREATE_TABLE_POLICY_DEFAULT = "never";
-
 
     @XNode("dataSource")
     public String dataSourceName;
 
-    @XNode("dbDriver")
-    public String dbDriver;
-
-    @XNode("dbUrl")
-    public String dbUrl;
-
-    @XNode("dbUser")
-    public String dbUser;
-
-    @XNode("dbPassword")
-    public String dbPassword;
-
-    @XNode("dataFile")
-    public String dataFileName;
-
-    @XNode(value = "dataFileCharacterSeparator", trim = false)
-    public String dataFileCharacterSeparator = ",";
-
-    public String createTablePolicy;
-
-    @XNode("autoincrementIdField")
-    public Boolean autoincrementIdField;
-
     @XNode("querySizeLimit")
     private Integer querySizeLimit;
 
-    @XNodeList(value = "references/tableReference", type = TableReference[].class, componentType = TableReference.class)
-    private TableReference[] tableReferences;
-
-    @XNodeList(value = "references/inverseReference", type = InverseReference[].class, componentType = InverseReference.class)
-    private InverseReference[] inverseReferences;
+    @XNodeList(value = "references/tableReference", type = TableReferenceDescriptor[].class, componentType = TableReferenceDescriptor.class)
+    private TableReferenceDescriptor[] tableReferences;
 
     @XNodeList(value = "filters/staticFilter", type = SQLStaticFilter[].class, componentType = SQLStaticFilter.class)
     private SQLStaticFilter[] staticFilters;
@@ -99,108 +55,8 @@ public class SQLDirectoryDescriptor extends BaseDirectoryDescriptor {
         this.dataSourceName = dataSourceName;
     }
 
-    public String getDbDriver() {
-        return dbDriver;
-    }
-
-    public String getDbPassword() {
-        return dbPassword;
-    }
-
-    public String getDbUrl() {
-        return dbUrl;
-    }
-
-    public String getDbUser() {
-        return dbUser;
-    }
-
-    public String getDataFileName() {
-        return dataFileName;
-    }
-
-    public char getDataFileCharacterSeparator() {
-        if (dataFileCharacterSeparator == null || dataFileCharacterSeparator.length() == 0) {
-            log.info("Character separator not well set will " + "take the default value, \""
-                    + DEFAULT_CHARACTER_SEPARATOR + "\"");
-            return DEFAULT_CHARACTER_SEPARATOR;
-        }
-
-        if (dataFileCharacterSeparator.length() > 1) {
-            log.warn("More than one character found for character separator, " + "will take the first one \""
-                    + dataFileCharacterSeparator.charAt(0) + "\"");
-        }
-
-        return dataFileCharacterSeparator.charAt(0);
-    }
-
-    public String getCreateTablePolicy() {
-        return createTablePolicy;
-    }
-
-    @XNode("createTablePolicy")
-    public void setCreateTablePolicy(String createTablePolicy) throws DirectoryException {
-        if (createTablePolicy == null) {
-            this.createTablePolicy = CREATE_TABLE_POLICY_DEFAULT;
-            return;
-        }
-        createTablePolicy = createTablePolicy.toLowerCase();
-        boolean validPolicy = false;
-        for (String policy : CREATE_TABLE_POLICIES) {
-            if (createTablePolicy.equals(policy)) {
-                validPolicy = true;
-                break;
-            }
-        }
-        if (!validPolicy) {
-            throw new DirectoryException("invalid value for createTablePolicy: " + createTablePolicy
-                    + ". It should be one of 'never', " + "'on_missing_columns',  or 'always'.");
-        }
-        this.createTablePolicy = createTablePolicy;
-    }
-
-    public Reference[] getInverseReferences() {
-        return inverseReferences;
-    }
-
-    public Reference[] getTableReferences() {
+    public TableReferenceDescriptor[] getTableReferences() {
         return tableReferences;
-    }
-
-    public boolean isAutoincrementIdField() {
-        return autoincrementIdField == null ? AUTO_INCREMENT_ID_FIELD_DEFAULT : autoincrementIdField.booleanValue();
-    }
-
-    public void setAutoincrementIdField(boolean autoincrementIdField) {
-        this.autoincrementIdField = Boolean.valueOf(autoincrementIdField);
-    }
-
-    public void setDbDriver(String dbDriver) {
-        this.dbDriver = dbDriver;
-    }
-
-    public void setDbPassword(String dbPassword) {
-        this.dbPassword = dbPassword;
-    }
-
-    public void setDbUrl(String dbUrl) {
-        this.dbUrl = dbUrl;
-    }
-
-    public void setDbUser(String dbUser) {
-        this.dbUser = dbUser;
-    }
-
-    public void setInverseReferences(InverseReference[] inverseReferences) {
-        this.inverseReferences = inverseReferences;
-    }
-
-    public void setDataFileName(String dataFile) {
-        this.dataFileName = dataFile;
-    }
-
-    public void setTableReferences(TableReference[] tableReferences) {
-        this.tableReferences = tableReferences;
     }
 
     public int getQuerySizeLimit() {
@@ -240,35 +96,8 @@ public class SQLDirectoryDescriptor extends BaseDirectoryDescriptor {
         if (other.dataSourceName != null) {
             dataSourceName = other.dataSourceName;
         }
-        if (other.dbDriver != null) {
-            dbDriver = other.dbDriver;
-        }
-        if (other.dbUrl != null) {
-            dbUrl = other.dbUrl;
-        }
-        if (other.dbUser != null) {
-            dbUser = other.dbUser;
-        }
-        if (other.dbPassword != null) {
-            dbPassword = other.dbPassword;
-        }
-        if (other.dataFileName != null) {
-            dataFileName = other.dataFileName;
-        }
-        if (other.dataFileCharacterSeparator != null) {
-            dataFileCharacterSeparator = other.dataFileCharacterSeparator;
-        }
-        if (other.createTablePolicy != null) {
-            createTablePolicy = other.createTablePolicy;
-        }
-        if (other.autoincrementIdField != null) {
-            autoincrementIdField = other.autoincrementIdField;
-        }
         if (other.querySizeLimit != null) {
             querySizeLimit = other.querySizeLimit;
-        }
-        if (other.inverseReferences != null && other.inverseReferences.length != 0) {
-            inverseReferences = other.inverseReferences;
         }
         if (other.tableReferences != null && other.tableReferences.length != 0) {
             tableReferences = other.tableReferences;
@@ -287,15 +116,9 @@ public class SQLDirectoryDescriptor extends BaseDirectoryDescriptor {
         SQLDirectoryDescriptor clone = (SQLDirectoryDescriptor) super.clone();
         // basic fields are already copied by super.clone()
         if (tableReferences != null) {
-            clone.tableReferences = new TableReference[tableReferences.length];
+            clone.tableReferences = new TableReferenceDescriptor[tableReferences.length];
             for (int i = 0; i < tableReferences.length; i++) {
                 clone.tableReferences[i] = tableReferences[i].clone();
-            }
-        }
-        if (inverseReferences != null) {
-            clone.inverseReferences = new InverseReference[inverseReferences.length];
-            for (int i = 0; i < inverseReferences.length; i++) {
-                clone.inverseReferences[i] = inverseReferences[i].clone();
             }
         }
         if (staticFilters != null) {

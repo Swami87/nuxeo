@@ -15,9 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
  */
-
 package org.nuxeo.ecm.platform.mimetype.detectors;
 
 import java.io.File;
@@ -26,14 +24,13 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import net.sf.jmimemagic.MagicDetector;
-
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.ZipUtils;
 import org.nuxeo.runtime.api.Framework;
+
+import net.sf.jmimemagic.MagicDetector;
 
 public class OOoMimetypeSniffer implements MagicDetector {
 
@@ -46,8 +43,8 @@ public class OOoMimetypeSniffer implements MagicDetector {
 
     @Override
     public String[] getHandledExtensions() {
-        return new String[] { "ods", "ots", "odt", "ott", "odp", "otp", "odg", "otg", "otm", "oth", "odi", "oti",
-                "odf", "otf", "odc", "otc", "sxw", "stw", "sxg", "sxc", "stc", "sxi", "sti", "sxd", "std", "sxm", };
+        return new String[] { "ods", "ots", "odt", "ott", "odp", "otp", "odg", "otg", "otm", "oth", "odi", "oti", "odf",
+                "otf", "odc", "otc", "sxw", "stw", "sxg", "sxc", "stc", "sxi", "sti", "sxd", "std", "sxm", };
     }
 
     @Override
@@ -58,12 +55,9 @@ public class OOoMimetypeSniffer implements MagicDetector {
                 "application/vnd.oasis.opendocument.presentation-template",
                 "application/vnd.oasis.opendocument.graphics", "application/vnd.oasis.opendocument.graphics-template",
                 "application/vnd.oasis.opendocument.text-master", "application/vnd.oasis.opendocument.text-web",
-                "application/vnd.oasis.opendocument.image",
-                "application/vnd.oasis.opendocument.image-template",
-                "application/vnd.oasis.opendocument.formula",
-                "application/vnd.oasis.opendocument.formula-template",
-                "application/vnd.oasis.opendocument.chart",
-                "application/vnd.oasis.opendocument.chart-template",
+                "application/vnd.oasis.opendocument.image", "application/vnd.oasis.opendocument.image-template",
+                "application/vnd.oasis.opendocument.formula", "application/vnd.oasis.opendocument.formula-template",
+                "application/vnd.oasis.opendocument.chart", "application/vnd.oasis.opendocument.chart-template",
                 // OOo 1.x file format
                 "application/vnd.sun.xml.writer", "application/vnd.sun.xml.writer.template",
                 "application/vnd.sun.xml.writer.global", "application/vnd.sun.xml.calc",
@@ -89,7 +83,7 @@ public class OOoMimetypeSniffer implements MagicDetector {
         File file = null;
         try {
             file = Framework.createTempFile("magicdetector", ".xml");
-            FileUtils.writeFile(file, data);
+            FileUtils.writeByteArrayToFile(file, data);
             mimetypes = guessOOo(file);
         } catch (IOException e) {
             log.error(e);
@@ -131,13 +125,13 @@ public class OOoMimetypeSniffer implements MagicDetector {
                 String path = tempFile.getAbsolutePath();
                 path += File.separator + "mimetype";
                 File mimetypeFile = new File(path);
-                mimetype = new String[] { FileUtils.readFile(mimetypeFile) };
+                mimetype = new String[] { FileUtils.readFileToString(mimetypeFile) };
             }
         } catch (IOException e) {
             // probably not a zip file
         } finally {
             if (tempFile != null) {
-                FileUtils.deleteTree(tempFile);
+                FileUtils.deleteQuietly(tempFile);
             }
         }
 

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,13 +12,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: IdUtils.java 19046 2007-05-21 13:03:50Z sfermigier $
  */
-
 package org.nuxeo.common.utils;
 
 import java.util.ArrayList;
@@ -83,7 +80,7 @@ public final class IdUtils {
         }
         String[] words = s.split(WORD_SPLITTING_REGEXP);
         // remove blank chars from words, did not get why they're not filtered
-        List<String> wordsList = new ArrayList<String>();
+        List<String> wordsList = new ArrayList<>();
         for (String word : words) {
             if (word != null && word.length() > 0) {
                 wordsList.add(word);
@@ -108,53 +105,19 @@ public final class IdUtils {
             id = sb.toString();
             id = id.substring(0, Math.min(id.length(), maxChars));
         } else {
-            id = StringUtils.join(wordsList.toArray(), wordSeparator);
+            id = String.join(wordSeparator, wordsList);
         }
 
         return id;
     }
 
     /**
-     * Generates an id from a non-null String.
-     * <p>
-     * Uses default values for wordSeparator: '-', lower: true, maxChars: 24.
-     *
-     * @deprecated use {@link #generatePathSegment} instead, or {@link #generateId(String, String, boolean, int)}
-     *             depending on the use cases
-     */
-    @Deprecated
-    public static String generateId(String s) {
-        return generateId(s, "-", true, 24);
-    }
-
-    public static final Pattern STUPID_REGEXP = Pattern.compile("^[- .,;?!:/\\\\'\"]*$");
-
-    /**
-     * Generates a Nuxeo path segment from a non-null String.
-     * <p>
-     * Basically all characters are kept, except for slashes and initial/trailing spaces.
-     *
-     * @deprecated use {@link PathSegmentService} instead
-     */
-    @Deprecated
-    public static String generatePathSegment(String s) {
-        s = s.trim();
-        if (STUPID_REGEXP.matcher(s).matches()) {
-            return generateStringId();
-        }
-        return s.replace("/", "-");
-    }
-
-    /**
      * Check if a given string has the pattern for UUID type 4
-     * 
+     *
      * @since 5.7
      */
     public static boolean isValidUUID(String uuid) {
-        if (Pattern.compile(UUID_TYPE_4_REGEXP).matcher(uuid).matches()) {
-            return true;
-        }
-        return false;
+        return Pattern.compile(UUID_TYPE_4_REGEXP).matcher(uuid).matches();
     }
 
 }

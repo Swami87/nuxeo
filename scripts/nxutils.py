@@ -30,19 +30,31 @@ import time
 import urllib2
 from zipfile import ZIP_DEFLATED, ZipFile
 from distutils.version import LooseVersion
+import warnings
 
 
 REQUIRED_GIT_VERSION = "1.8.4"
 SUPPORTED_GIT_ONLINE_URLS = "http://", "https://", "git://", "git@"
-DEFAULT_MP_CONF_URL = ("https://raw.github.com/nuxeo/"
-                       "integration-scripts/master/marketplace.ini")
+DEFAULT_MP_CONF_URL = "https://raw.github.com/nuxeo/integration-scripts/master/marketplace.ini"
 
 
 class ExitException(Exception):
     def __init__(self, return_code, message=None):
+        super(ExitException, self).__init__(message)
         self.return_code = return_code
         self.message = message
 
+def deprecated(func):
+    '''This is a decorator which can be used to mark functions
+    as deprecated. It will result in a warning being emitted
+    when the function is used.'''
+    def new_func(*args, **kwargs):
+        warnings.warn("Call to deprecated function {}.".format(func.__name__), category=DeprecationWarning)
+        return func(*args, **kwargs)
+    new_func.__name__ = func.__name__
+    new_func.__doc__ = func.__doc__
+    new_func.__dict__.update(func.__dict__)
+    return new_func
 
 # pylint: disable=R0902
 class Repository(object):
@@ -52,8 +64,7 @@ class Repository(object):
 
     def __init__(self, basedir, alias, dirmapping=True, is_nuxeoecm=True):
         assert_git_config()
-        (self.basedir, self.driveletter,
-         self.oldbasedir) = long_path_workaround_init(basedir, dirmapping)
+        (self.basedir, self.driveletter, self.oldbasedir) = long_path_workaround_init(basedir, dirmapping)
         self.mp_dir = os.path.join(self.basedir, "marketplace")
         if not os.path.isdir(self.mp_dir):
             os.mkdir(self.mp_dir)
@@ -72,6 +83,7 @@ class Repository(object):
         else:
             self.url_pattern = remote_url + "/module"
         self.modules = []
+        self.sub_modules = {}
         self.addons = []
         self.optional_addons = []
         self.is_nuxeoecm = is_nuxeoecm
@@ -80,42 +92,65 @@ class Repository(object):
         long_path_workaround_cleanup(self.driveletter, self.oldbasedir)
 
     # pylint: disable=C0103
+    @deprecated
     def eval_modules(self):
         """Set the list of Nuxeo addons in 'self.modules'."""
-        os.chdir(self.basedir)
-        self.modules = []
-        log("Using Maven introspection of the POM file"
-            " to find the list of modules...")
+        self.modules = self.retrieve_modules(self.basedir)
 
-        output = check_output("mvn -N help:effective-pom")
-        for line in output.split("\n"):
-            line = line.strip()
-            m = re.match("<module>(.*?)</module>", line)
-            if not m:
-                continue
-            self.modules.append(m.group(1))
-
+    @deprecated
     def eval_addons(self):
-        """Set the list of Nuxeo addons in 'self.addons' and
-        'self.optional_addons'."""
-        os.chdir(os.path.join(self.basedir, "addons"))
-        log("Using Maven introspection of the POM files"
-            " to find the list of addons...")
-        output = check_output("mvn -N help:effective-pom")
-        self.addons = self.parse_modules(output)
-        output = check_output("mvn -N help:effective-pom " +
-                              "-f pom-optionals.xml")
-        self.optional_addons = self.parse_modules(output)
+        """Set the list of Nuxeo addons in 'self.addons' and 'self.optional_addons'."""
+        addons_dir = os.path.join(self.basedir, "addons")
+        self.addons = self.retrieve_modules(addons_dir)
+        self.optional_addons = self.retrieve_modules(addons_dir, "pom-optionals.xml")
 
-    def parse_modules(self, pom):
-        """Extract modules names from a Maven POM"""
+    def execute_on_modules(self, function, with_optionals=False):
+        """Executes the given function on each first and second level modules of Nuxeo repository.
+
+        'function' the function to execute on module.
+        'with_optionals' weither or not we execute function on optionals (modules with pom-optionals.xml file)
+        """
+        cwd = os.getcwd()
+        os.chdir(self.basedir)
+        if not self.modules and self.is_nuxeoecm:
+            self.modules = self.retrieve_modules(self.basedir)
+        # First level
+        addons = ["addons", "addons-core"]
+        for module in self.modules:
+            function(module)
+            # Second level - addons
+            if module in addons:
+                if not self.is_online:
+                    self.url_pattern = self.url_pattern.replace("module", "%s/module" % module)
+                os.chdir(module)
+                if module not in self.sub_modules and self.is_nuxeoecm:
+                    module_dir = os.path.join(self.basedir, module)
+                    self.sub_modules[module] = self.retrieve_modules(module_dir)
+                    # Handle optionals
+                    if with_optionals:
+                        self.sub_modules[module] = self.sub_modules[module] + self.retrieve_modules(module_dir,
+                                                                                                    "pom-optionals.xml")
+                for sub_module in self.sub_modules[module]:
+                    function(sub_module)
+                os.chdir(self.basedir)
+                if not self.is_online:
+                    self.url_pattern = self.url_pattern.replace("%s/module" % module, "module")
+        os.chdir(cwd)
+
+    @staticmethod
+    def retrieve_modules(project_dir, pom_name = "pom.xml"):
+        """Retrieve all modules of input Maven project and return it."""
         modules = []
-        for line in pom.split("\n"):
-            line = line.strip()
-            m = re.match("<module>(.*?)</module>", line)
-            if not m:
-                continue
-            modules.append(m.group(1))
+        if os.path.exists(os.path.join(project_dir, pom_name)):
+            log("Modules list calculated from the POM file %s/%s" % (project_dir, pom_name))
+            cwd = os.getcwd()
+            os.chdir(project_dir)
+            f = open(pom_name, "r")
+            pom_content = f.read()
+            modules = re.findall("<module>(.*?)</module>", pom_content)
+            f.close()
+            os.chdir(cwd)
+            modules = sorted(set(modules))
         return modules
 
     def git_pull(self, module, version, fallback_branch=None):
@@ -146,18 +181,19 @@ class Repository(object):
         os.chdir(self.basedir)
         log("[.]")
         system(command)
-        if not self.modules and self.is_nuxeoecm:
-            self.eval_modules()
-        for module in self.modules:
-            os.chdir(os.path.join(self.basedir, module))
-            log("[%s]" % module)
-            system(command)
-        if not self.addons and self.is_nuxeoecm:
-            self.eval_addons()
-        for addon in self.addons + (self.optional_addons if with_optionals else []):
-            os.chdir(os.path.join(self.basedir, "addons", addon))
-            log("[%s]" % addon)
-            system(command)
+        self.execute_on_modules(lambda module: self.system_module(command, module), with_optionals)
+        os.chdir(cwd)
+
+    @staticmethod
+    def system_module(command, module):
+        """Execute the given command on given module.
+
+        'command': the command to execute.
+        'module': the module into execute command."""
+        cwd = os.getcwd()
+        os.chdir(module)
+        log("[%s]" % module)
+        system(command)
         os.chdir(cwd)
 
     def git_recurse(self, command, with_optionals=False):
@@ -170,23 +206,19 @@ class Repository(object):
         os.chdir(self.basedir)
         log("[.]")
         system(command)
-        if not self.modules and self.is_nuxeoecm:
-            self.eval_modules()
-        for module in self.modules:
-            module_path = os.path.join(self.basedir, module)
-            if not os.path.isdir(os.path.join(module_path, ".git")):
-                continue
-            os.chdir(module_path)
+        self.execute_on_modules(lambda module: self.git_module(command, module), with_optionals)
+        os.chdir(cwd)
+
+    @staticmethod
+    def git_module(command, module):
+        """Execute the given Shell command on the given module. It ignores non Git repositories.
+
+        'command': the command to execute.
+        'module': the Git sub-directory where to execute the command."""
+        cwd = os.getcwd()
+        os.chdir(module)
+        if os.path.isdir(".git"):
             log("[%s]" % module)
-            system(command)
-        if not self.addons and self.is_nuxeoecm:
-            self.eval_addons()
-        for addon in self.addons + (self.optional_addons if with_optionals else []):
-            module_path = os.path.join(self.basedir, "addons", addon)
-            if not os.path.isdir(os.path.join(module_path, ".git")):
-                continue
-            os.chdir(module_path)
-            log("[%s]" % addon)
             system(command)
         os.chdir(cwd)
 
@@ -208,25 +240,23 @@ class Repository(object):
         p = system("git archive %s" % version, wait=False)
         # pylint: disable=E1103
         system("tar -C %s -xf -" % archive_dir, stdin=p.stdout)
-        if not self.modules:
-            self.eval_modules()
-        for module in self.modules:
-            os.chdir(os.path.join(self.basedir, module))
-            log("[%s]" % module)
-            p = system("git archive --prefix=%s/ %s" % (module, version),
-                       wait=False)
-            system("tar -C %s -xf -" % archive_dir, stdin=p.stdout)
-        if not self.addons:
-            self.eval_addons()
-        for addon in self.addons + (self.optional_addons
-                                    if with_optionals else []):
-            os.chdir(os.path.join(self.basedir, "addons", addon))
-            log("[%s]" % addon)
-            p = system("git archive --prefix=addons/%s/ %s" % (addon, version),
-                       wait=False)
-            system("tar -C %s -xf -" % archive_dir, stdin=p.stdout)
+        self.execute_on_modules(lambda module: self.archive_module(archive_dir, version, module), with_optionals)
         make_zip(archive, archive_dir)
         shutil.rmtree(archive_dir)
+        os.chdir(cwd)
+
+    @staticmethod
+    def archive_module(archive_dir, version, module):
+        """Archive the sources of a the given Git sub-directory.
+
+        'archive_dir': full path of archive to generate.
+        'version': version to archive, defaults to current version.
+        'module': the Git sub-directory to archive."""
+        cwd = os.getcwd()
+        os.chdir(module)
+        log("[%s]" % module)
+        p = system("git archive --prefix=%s/ %s" % (module, version), wait=False)
+        system("tar -C %s -xf -" % archive_dir, stdin=p.stdout)
         os.chdir(cwd)
 
     def git_update(self, version, fallback_branch=None):
@@ -254,10 +284,12 @@ class Repository(object):
             log("Branch %s not found" % version)
         log("")
 
-    def get_mp_config(self, marketplace_conf):
+    def get_mp_config(self, marketplace_conf, user_defaults = {}):
         """Return the Marketplace packages configuration."""
-        mp_config = ConfigParser.SafeConfigParser(
-            defaults={'other_versions': None, 'prepared': 'False', 'performed': 'False', 'branched': 'False'})
+        defaults = {'other_versions': None, 'prepared': 'False', 'performed': 'False', 'branched': 'False',
+                    "profiles": '', "auto_increment_policy": "auto_patch"}
+        defaults.update(user_defaults)
+        mp_config = ConfigParser.SafeConfigParser(defaults=defaults)
         if marketplace_conf is None:
             no_remote = True
         else:
@@ -284,18 +316,21 @@ class Repository(object):
         log("Configuration saved: " + configfile_path)
         return mp_config
 
-    def clone_mp(self, marketplace_conf):
-        """Clone or update Nuxeo Marketplace package repositories.
+    def clone_mp(self, marketplace_conf, fallback_branch=None):
+        """Clone or update Nuxeo Package repositories.
 
-        Returns the Marketplace packages configuration."""
+        Returns the Nuxeo Packages configuration."""
         if marketplace_conf == '':
             marketplace_conf = DEFAULT_MP_CONF_URL
         if not marketplace_conf:
             return
         os.chdir(self.mp_dir)
-        mp_config = self.get_mp_config(marketplace_conf)
+        user_defaults={}
+        if self.is_nuxeoecm:
+            user_defaults["nuxeo-branch"] = self.get_current_version()
+        mp_config = self.get_mp_config(marketplace_conf, user_defaults)
         for marketplace in mp_config.sections():
-            self.git_pull(marketplace, mp_config.get(marketplace, "branch"))
+            self.git_pull(marketplace, mp_config.get(marketplace, "branch"), fallback_branch=fallback_branch)
         return mp_config
 
     def clone(self, version=None, fallback_branch=None, with_optionals=False,
@@ -315,32 +350,18 @@ class Repository(object):
         if version is None:
             version = self.get_current_version()
         self.git_update(version, fallback_branch)
-
         if self.is_nuxeoecm:
-            # Main modules
-            self.eval_modules()
-            for module in self.modules:
-                # Ignore modules which are not Git sub-repositories
-                if (not os.path.isdir(module) or
-                        os.path.isdir(os.path.join(module, ".git"))):
-                    self.git_pull(module, version, fallback_branch)
-            # Addons
-            os.chdir(os.path.join(self.basedir, "addons"))
-            self.eval_addons()
-            if not self.is_online:
-                self.url_pattern = self.url_pattern.replace("module",
-                                                            "addons/module")
-            for addon in self.addons + (self.optional_addons
-                                        if with_optionals else []):
-                self.git_pull(addon, version, fallback_branch)
-            if not self.is_online:
-                self.url_pattern = self.url_pattern.replace("addons/module",
-                                                            "module")
-            # Marketplace packages
-            self.clone_mp(marketplace_conf)
-            os.chdir(cwd)
+            self.execute_on_modules(lambda module: self.clone_module(module, version, fallback_branch), with_optionals)
+            self.clone_mp(marketplace_conf, fallback_branch)
+        os.chdir(cwd)
 
-    def get_current_version(self):
+    def clone_module(self, module, version, fallback_branch):
+        # Ignore modules which are not Git sub-repositories
+        if not os.path.isdir(module) or os.path.isdir(os.path.join(module, ".git")):
+            self.git_pull(module, version, fallback_branch)
+
+    @staticmethod
+    def get_current_version():
         """Return branch or tag version of current Git workspace."""
         t = check_output("git describe --all").split("/")
         return t[-1]
@@ -372,7 +393,7 @@ class Repository(object):
             profiles_param = ""
         system("mvn %s %s%s -Dnuxeo.tests.random.mode=BYPASS" % (
                commands, skip_tests_param, profiles_param), delay_stdout=False,
-               run=(not dryrun))
+               run=not dryrun)
 
 
 def log(message, out=sys.stdout):
@@ -386,8 +407,7 @@ def check_output(cmd):
     """Return Shell command output."""
     args = shlex.split(cmd)
     try:
-        p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              shell=platform.system() == "Windows")
     # pylint: disable=C0103
     except OSError, e:
@@ -402,15 +422,12 @@ def check_output(cmd):
     if retcode != 0:
         if err is None or err == "":
             err = out
-        raise ExitException(retcode,
-                            "Command '%s' returned non-zero exit code (%s)\n%s"
-                            % (cmd, retcode, err))
+        raise ExitException(retcode, "Command '%s' returned non-zero exit code (%s)\n%s" % (cmd, retcode, err))
     return out.strip()
 
 
 # pylint: disable=R0912,R0913
-def system(cmd, failonerror=True, delay_stdout=True, logOutput=True,
-           wait=True, run=True, stdin=subprocess.PIPE,
+def system(cmd, failonerror=True, delay_stdout=True, logOutput=True, wait=True, run=True, stdin=subprocess.PIPE,
            stdout=subprocess.PIPE, stderr=subprocess.PIPE):
     """Shell execution.
 
@@ -431,9 +448,7 @@ def system(cmd, failonerror=True, delay_stdout=True, logOutput=True,
             if logOutput:
                 # Merge stderr with stdout
                 stderr = subprocess.STDOUT
-            p = subprocess.Popen(args, stdin=stdin, stdout=stdout,
-                                 stderr=stderr,
-                                 shell=platform.system() == "Windows")
+            p = subprocess.Popen(args, stdin=stdin, stdout=stdout, stderr=stderr, shell=platform.system() == "Windows")
             if wait:
                 out, err = p.communicate()
                 if logOutput:
@@ -485,8 +500,7 @@ def system_with_retries(cmd, failonerror=True):
         elif retries > 10:
             return system(cmd, failonerror=failonerror)
         else:
-            log("Error executing %s - retrying in 10 seconds..." % cmd,
-                sys.stderr)
+            log("Error executing %s - retrying in 10 seconds..." % cmd, sys.stderr)
             time.sleep(10)
 
 

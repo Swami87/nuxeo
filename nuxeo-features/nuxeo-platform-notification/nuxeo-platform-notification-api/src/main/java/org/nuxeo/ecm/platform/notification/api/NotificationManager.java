@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2007-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: EJBPlacefulService.java 13110 2007-03-01 17:25:47Z rspivak $
  */
 package org.nuxeo.ecm.platform.notification.api;
 
@@ -26,6 +24,8 @@ import java.util.Set;
 
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
+import org.nuxeo.ecm.core.api.repository.RepositoryManager;
+import org.nuxeo.runtime.api.Framework;
 
 /**
  * @author <a href="mailto:npaslaru@nuxeo.com">Narcis Paslaru</a>
@@ -34,35 +34,13 @@ public interface NotificationManager {
 
     /**
      * Gets the users that subscribed to a notification on a certain document.
-     *
-     * @deprecated since 7.3 use {@link #getSubscribers(String, DocumentModel)}
-     */
-    @Deprecated
-    List<String> getSubscribers(String notification, String docId);
-
-    /**
-     * Gets the users that subscribed to a notification on a certain document.
      */
     List<String> getSubscribers(String notification, DocumentModel doc);
 
     /**
      * Gets the notifications for which a user subscribed for a certain document.
-     *
-     * @deprecated since 7.3 use {@link #getSubscriptionsForUserOnDocument(String, DocumentModel)}
-     */
-    @Deprecated
-    List<String> getSubscriptionsForUserOnDocument(String username, String docId);
-
-    /**
-     * Gets the notifications for which a user subscribed for a certain document.
      */
     List<String> getSubscriptionsForUserOnDocument(String username, DocumentModel doc);
-
-    /**
-     * @deprecated since 7.3 use {@link #getUsersSubscribedToNotificationOnDocument(String, DocumentModel)}
-     */
-    @Deprecated
-    List<String> getUsersSubscribedToNotificationOnDocument(String notification, String docId);
 
     /**
      * Gets all users and groups that subscribed to a notification on a document This is used in management of
@@ -83,34 +61,13 @@ public interface NotificationManager {
 
     /**
      * @since 5.6 Called when a user unsubscribes to all notifications.
-     * @deprecated since 7.3 use {@link #removeSubscriptions(String, List, DocumentModel)}
-     */
-    void removeSubscriptions(String username, List<String> notifications, String docId);
-
-    /**
-     * @since 5.6 Called when a user unsubscribes to all notifications.
      */
     void removeSubscriptions(String username, List<String> notifications, DocumentModel doc);
 
     /**
      * Called when a user cancels his notification.
-     *
-     * @deprecated since 7.3 use {@link #removeSubscription(String, String, DocumentModel)}
-     */
-    void removeSubscription(String username, String notification, String docId);
-
-    /**
-     * Called when a user cancels his notification.
      */
     void removeSubscription(String username, String notification, DocumentModel doc);
-
-    /**
-     * Returns the notification manager.
-     *
-     * @deprecated should never have to return the registry : use delegation
-     */
-    @Deprecated
-    NotificationRegistry getNotificationRegistry();
 
     /**
      * Returns a notification with all data loaded (label, etc).
@@ -150,10 +107,21 @@ public interface NotificationManager {
 
     /**
      * Returns the list of live docs the user is subscribed to.
-     * @param prefixedPrincipalName
-     * @return
+     *
      * @since 7.3
+     * @deprecated since 9.1, use {@link #getSubscribedDocuments(String, String)} instead
      */
-    List<DocumentModel> getSubscribedDocuments(String prefixedPrincipalName);
+    @Deprecated
+    default List<DocumentModel> getSubscribedDocuments(String prefixedPrincipalName) {
+        return getSubscribedDocuments(prefixedPrincipalName,
+                Framework.getService(RepositoryManager.class).getDefaultRepositoryName());
+    }
+
+    /**
+     * Returns the list of live docs the user is subscribed to in the given repository .
+     *
+     * @since 9.1
+     */
+    List<DocumentModel> getSubscribedDocuments(String prefixedPrincipalName, String respositoryName);
 
 }

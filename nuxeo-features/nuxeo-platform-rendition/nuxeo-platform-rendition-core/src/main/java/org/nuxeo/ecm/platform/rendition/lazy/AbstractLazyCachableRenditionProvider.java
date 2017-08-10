@@ -35,6 +35,7 @@ import org.nuxeo.ecm.core.transientstore.api.TransientStore;
 import org.nuxeo.ecm.core.transientstore.api.TransientStoreService;
 import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkManager;
+import org.nuxeo.ecm.core.work.api.WorkManager.Scheduling;
 import org.nuxeo.ecm.platform.rendition.Rendition;
 import org.nuxeo.ecm.platform.rendition.extension.AutomationRenderer;
 import org.nuxeo.ecm.platform.rendition.extension.RenditionProvider;
@@ -72,21 +73,43 @@ public abstract class AbstractLazyCachableRenditionProvider implements Rendition
             throw new NuxeoException("Unable to find Transient Store  " + CACHE_NAME);
         }
 
+        List<Blob> blobs = null;
         if (!ts.exists(key)) {
             Work work = getRenditionWork(key, doc, def);
             ts.putParameter(key, WORKERID_KEY, work.getId());
-            List<Blob> blobs = new ArrayList<Blob>();
+            blobs = new ArrayList<>();
             StringBlob emptyBlob = new StringBlob("");
             emptyBlob.setFilename("inprogress");
             emptyBlob.setMimeType("text/plain;" + LazyRendition.EMPTY_MARKER);
             blobs.add(emptyBlob);
             ts.putBlobs(key, blobs);
-            Framework.getService(WorkManager.class).schedule(work);
+            Framework.getService(WorkManager.class).schedule(work, Scheduling.IF_NOT_SCHEDULED);
+            blobs = ts.getBlobs(key);
         } else {
-            ts.release(key);
+            blobs = ts.getBlobs(key);
+            if (ts.isCompleted(key)) {
+                if (blobs != null && blobs.size() == 1) {
+                    Blob blob = blobs.get(0);
+                    String mimeType = blob.getMimeType();
+                    if (mimeType != null && mimeType.contains(LazyRendition.ERROR_MARKER)) {
+                        ts.remove(key);
+                    } else {
+                        ts.release(key);
+                    }
+                } else {
+                    ts.release(key);
+                }
+            } else {
+                Work work = getRenditionWork(key, doc, def);
+                String workId = work.getId();
+                WorkManager wm = Framework.getService(WorkManager.class);
+                if (wm.find(workId, null) == null) {
+                    wm.schedule(work, Scheduling.IF_NOT_SCHEDULED);
+                }
+            }
         }
 
-        return ts.getBlobs(key);
+        return blobs;
      }
 
     @Override
@@ -101,7 +124,10 @@ public abstract class AbstractLazyCachableRenditionProvider implements Rendition
         String modificationDatePropertyName = def.getSourceDocumentModificationDatePropertyName();
         Calendar modif = (Calendar) doc.getPropertyValue(modificationDatePropertyName);
         if (modif != null) {
-            sb.append(modif.getTimeInMillis());
+            long millis = modif.getTimeInMillis();
+            // the date may have been rounded by the storage layer, normalize it to the second
+            millis -= millis % 1000;
+            sb.append(millis);
             sb.append("::");
         }
         String variant = getVariant(doc, def);

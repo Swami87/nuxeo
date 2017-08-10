@@ -67,6 +67,13 @@ public interface PageProvider<T> extends Serializable {
     public static final long PAGE_LIMIT_UNKNOWN = -1;
 
     /**
+     * Highlight context data property name. Used to store highlights in document context data when fetching ES results
+     *
+     * @since 9.1
+     */
+    public static final String HIGHLIGHT_CTX_DATA = "highlight";
+
+    /**
      * Returns the provider identifier
      */
     String getName();
@@ -414,4 +421,33 @@ public interface PageProvider<T> extends Serializable {
      */
     boolean hasAggregateSupport();
 
+    /**
+     * @since 8.4
+     */
+    List<QuickFilter> getQuickFilters();
+
+    /**
+     * @since 8.4
+     */
+    void setQuickFilters(List<QuickFilter> quickFilters);
+
+    /**
+     * @since 8.4
+     */
+    void addQuickFilter(QuickFilter quickFilter);
+
+    /**
+     * @since 8.4
+     */
+    List<QuickFilter> getAvailableQuickFilters();
+
+    /**
+     * @since 9.1
+     */
+    List<String> getHighlights();
+
+    /**
+     * @since 9.1
+     */
+    void setHighlights(List<String> highlights);
 }

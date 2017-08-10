@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  */
 package org.nuxeo.ecm.platform.picture.api.adapters;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,13 +32,6 @@ import org.nuxeo.ecm.platform.picture.api.ImageInfo;
 public class NoPictureAdapter extends AbstractPictureAdapter {
 
     public static final String ORIGINAL_VIEW_NAME = "Original";
-
-    @Override
-    public boolean createPicture(Blob blob, String filename, String title,
-            ArrayList<Map<String, Object>> pictureConversions) throws IOException {
-        // create no views
-        return true;
-    }
 
     @Override
     public void doRotate(int angle) {
@@ -72,7 +64,7 @@ public class NoPictureAdapter extends AbstractPictureAdapter {
 
     @Override
     public boolean fillPictureViews(Blob blob, String filename, String title,
-            ArrayList<Map<String, Object>> pictureConversions) {
+            List<Map<String, Object>> pictureConversions) {
         return true;
     }
 

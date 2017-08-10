@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- *
- * $$Id$$
  */
-
 package org.nuxeo.common.utils;
 
 import java.io.BufferedInputStream;
@@ -34,10 +30,16 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 
 /**
  * @author bstefanescu
@@ -57,14 +59,8 @@ public final class ZipUtils {
     }
 
     public static void _putFileEntry(File file, String entryName, ZipOutputStream out) throws IOException {
-        FileInputStream in = null;
-        try {
-            in = new FileInputStream(file);
+        try (FileInputStream in = new FileInputStream(file)) {
             _zip(entryName, in, out);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
@@ -72,7 +68,7 @@ public final class ZipUtils {
         ZipEntry zentry = new ZipEntry(entryName);
         out.putNextEntry(zentry);
         // Transfer bytes from the input stream to the ZIP file
-        FileUtils.copy(in, out);
+        IOUtils.copy(in, out);
         out.closeEntry();
     }
 
@@ -125,81 +121,43 @@ public final class ZipUtils {
             }
         }
         String name = prefix != null ? prefix + file.getName() : file.getName();
-        ZipOutputStream zout = null;
-        try {
-            zout = new ZipOutputStream(out);
+        try (ZipOutputStream zout = new ZipOutputStream(out)) {
             _zip(name, file, zout);
-        } finally {
-            if (zout != null) {
-                zout.finish();
-            }
         }
     }
 
     public static void zip(File[] files, OutputStream out, String prefix) throws IOException {
-        ZipOutputStream zout = null;
-        try {
-            zout = new ZipOutputStream(out);
+        try (ZipOutputStream zout = new ZipOutputStream(out)) {
             _zip(files, zout, prefix);
-        } finally {
-            if (zout != null) {
-                zout.finish();
-            }
         }
     }
 
     public static void zip(File file, File zip) throws IOException {
-        OutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(zip));
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(zip))) {
             zip(file, out, null);
-        } finally {
-            if (out != null) {
-                out.close();
-            }
         }
     }
 
     public static void zip(File[] files, File zip) throws IOException {
-        OutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(zip));
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(zip))) {
             zip(files, out, null);
-        } finally {
-            if (out != null) {
-                out.close();
-            }
         }
     }
 
     public static void zip(File file, File zip, String prefix) throws IOException {
-        OutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(zip));
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(zip))) {
             zip(file, out, prefix);
-        } finally {
-            if (out != null) {
-                out.close();
-            }
         }
     }
 
     public static void zip(File[] files, File zip, String prefix) throws IOException {
-        OutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(zip));
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(zip))) {
             zip(files, out, prefix);
-        } finally {
-            if (out != null) {
-                out.close();
-            }
         }
     }
 
     public static void zipFilesUsingPrefix(String prefix, File[] files, OutputStream out) throws IOException {
-        ZipOutputStream zout = null;
-        try {
-            zout = new ZipOutputStream(out);
+        try (ZipOutputStream zout = new ZipOutputStream(out)) {
             if (prefix != null && prefix.length() > 0) {
                 int p = prefix.indexOf('/');
                 while (p > -1) {
@@ -215,230 +173,115 @@ public final class ZipUtils {
             for (File file : files) {
                 _putFileEntry(file, prefix + file.getName(), zout);
             }
-        } finally {
-            if (zout != null) {
-                zout.finish();
-            }
         }
     }
 
     // _____________________________ UNZIP ________________________________
 
     public static void unzip(String prefix, InputStream zipStream, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(zipStream));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(zipStream))) {
             unzip(prefix, in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(InputStream zipStream, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(zipStream));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(zipStream))) {
             unzip(in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(String prefix, URL zip, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(zip.openStream()));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(zip.openStream()))) {
             unzip(prefix, in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(URL zip, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(zip.openStream()));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(zip.openStream()))) {
             unzip(in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(String prefix, File zip, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
             unzip(prefix, in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(File zip, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
             unzip(in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(String prefix, ZipInputStream in, File dir) throws IOException {
-        dir.mkdirs();
-        ZipEntry entry;
-        while ((entry  = in.getNextEntry()) != null) {
-            String entryName = entry.getName();
-            if (!entryName.startsWith(prefix) || entryName.contains("..")) {
-                continue;
-            }
-
-            File file = new File(dir, entryName.substring(prefix.length()));
-            if (entry.isDirectory()) {
-                file.mkdirs();
-            } else {
-                file.getParentFile().mkdirs();
-                FileUtils.copyToFile(in, file);
-            }
-        }
+        unzip(in, dir, entry -> entry.getName().startsWith(prefix), name -> name.substring(prefix.length()));
     }
 
     public static void unzip(ZipInputStream in, File dir) throws IOException {
+        unzip(in, dir, entry -> true, Function.identity());
+    }
+
+    private static void unzip(ZipInputStream in, File dir, Predicate<ZipEntry> filter,
+            Function<String, String> nameFormatter) throws IOException {
         dir.mkdirs();
         ZipEntry entry;
         while ((entry = in.getNextEntry()) != null) {
-            if (entry.getName().contains("..")) {
-                continue;
-            }
-
-            File file = new File(dir, entry.getName());
-            if (entry.isDirectory()) {
-                file.mkdirs();
-            } else {
-                file.getParentFile().mkdirs();
-                FileUtils.copyToFile(in, file);
+            if (!entry.getName().contains("..") && filter.test(entry)) {
+                File file = new File(dir, nameFormatter.apply(entry.getName()));
+                if (entry.isDirectory()) {
+                    file.mkdirs();
+                } else {
+                    file.getParentFile().mkdirs();
+                    try (FileOutputStream output = FileUtils.openOutputStream(file)) {
+                        IOUtils.copy(in, output);
+                    }
+                }
             }
         }
     }
 
     public static void unzipIgnoreDirs(ZipInputStream in, File dir) throws IOException {
-        dir.mkdirs();
-        ZipEntry entry = in.getNextEntry();
-        while (entry != null) {
-            String entryName = entry.getName();
-            if (entry.isDirectory()) {
-            } else {
-                int p = entryName.lastIndexOf('/');
-                if (p > -1) {
-                    entryName = entryName.substring(p + 1);
-                }
-                File file = new File(dir, entryName);
-                FileUtils.copyToFile(in, file);
-            }
-            entry = in.getNextEntry();
-        }
+        unzip(in, dir, entry -> !entry.isDirectory(), Function.identity());
     }
 
     public static void unzipIgnoreDirs(InputStream zipStream, File dir) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(zipStream));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(zipStream))) {
             unzipIgnoreDirs(in, dir);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(File zip, File dir, PathFilter filter) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
             unzip(in, dir, filter);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(ZipInputStream in, File dir, PathFilter filter) throws IOException {
         if (filter == null) {
             unzip(in, dir);
-            return;
-        }
-        ZipEntry entry;
-        while ((entry = in.getNextEntry()) != null) {
-            String entryName = entry.getName();
-            if (entryName.contains("..")) {
-                continue;
-            }
-
-            if (filter.accept(new Path(entryName))) {
-                // System.out.println("Extracting "+entryName);
-                File file = new File(dir, entryName);
-                if (entry.isDirectory()) {
-                    file.mkdirs();
-                } else {
-                    file.getParentFile().mkdirs();
-                    FileUtils.copyToFile(in, file);
-                }
-            }
+        } else {
+            unzip(in, dir, toPredicate(filter), Function.identity());
         }
     }
 
     public static void unzip(String prefix, File zip, File dir, PathFilter filter) throws IOException {
-        ZipInputStream in = null;
-        try {
-            in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)));
+        try (ZipInputStream in = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
             unzip(prefix, in, dir, filter);
-        } finally {
-            if (in != null) {
-                in.close();
-            }
         }
     }
 
     public static void unzip(String prefix, ZipInputStream in, File dir, PathFilter filter) throws IOException {
         if (filter == null) {
             unzip(prefix, in, dir);
-            return;
+        } else {
+            unzip(in, dir, toPredicate(filter).and(entry -> entry.getName().startsWith(prefix)),
+                    name -> name.substring(prefix.length()));
         }
-        dir.mkdirs();
+    }
 
-        ZipEntry entry;
-        while ((entry = in.getNextEntry()) != null) {
-            String entryName = entry.getName();
-            if (entryName.contains("..")) {
-                continue;
-            }
-
-            if (filter.accept(new Path(entryName))) {
-                if (!entry.getName().startsWith(prefix)) {
-                    continue;
-                }
-                File file = new File(dir, entry.getName().substring(prefix.length()));
-                if (entry.isDirectory()) {
-                    file.mkdirs();
-                } else {
-                    file.getParentFile().mkdirs();
-                    FileUtils.copyToFile(in, file);
-                }
-            }
-        }
+    private static Predicate<ZipEntry> toPredicate(PathFilter filter) {
+        return entry -> filter.accept(new Path(entry.getName()));
     }
 
     // ________________ Entries ________________
@@ -467,9 +310,9 @@ public final class ZipUtils {
      * @param entryName the entry name that has to be extracted
      */
     public static String getEntryContentAsString(File file, String entryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(file, entryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.read(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(file, entryName)) {
+            return IOUtils.toString(resultStream, Charsets.UTF_8);
+        }
     }
 
     /**
@@ -480,9 +323,9 @@ public final class ZipUtils {
      * @param entryName the entry name that has to be extracted
      */
     public static byte[] getEntryContentAsBytes(File file, String entryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(file, entryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.readBytes(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(file, entryName)) {
+            return IOUtils.toByteArray(resultStream);
+        }
     }
 
     /**
@@ -493,15 +336,12 @@ public final class ZipUtils {
      */
     public static List<String> getEntryNames(File file) throws IOException {
         List<String> result = new ArrayList<String>();
-        ZipFile zip = new ZipFile(file);
-        try {
+        try (ZipFile zip = new ZipFile(file)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 result.add(entry.getName());
             }
-        } finally {
-            zip.close();
         }
         return result;
     }
@@ -531,30 +371,27 @@ public final class ZipUtils {
     }
 
     public static String getEntryContentAsString(InputStream stream, String searchedEntryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(stream, searchedEntryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.read(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(stream, searchedEntryName)) {
+            return IOUtils.toString(resultStream, Charsets.UTF_8);
+        }
     }
 
     public static byte[] getEntryContentAsBytes(InputStream stream, String searchedEntryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(stream, searchedEntryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.readBytes(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(stream, searchedEntryName)) {
+            return IOUtils.toByteArray(resultStream);
+        }
     }
 
     public static List<String> getEntryNames(InputStream stream) throws IOException {
 
         List<String> result = new ArrayList<String>();
-        ZipInputStream zip = new ZipInputStream(stream);
-        try {
+        try (ZipInputStream zip = new ZipInputStream(stream)) {
             while (zip.available() == 1) {
                 ZipEntry entry = zip.getNextEntry();
                 if (entry != null) {
                     result.add(entry.getName());
                 }
             }
-        } finally {
-            zip.close();
         }
         return result;
     }
@@ -569,15 +406,15 @@ public final class ZipUtils {
     }
 
     public static String getEntryContentAsString(URL url, String entryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(url, entryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.read(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(url, entryName)) {
+            return IOUtils.toString(resultStream, Charsets.UTF_8);
+        }
     }
 
     public static byte[] getEntryContentAsBytes(URL url, String entryName) throws IOException {
-        InputStream resultStream = getEntryContentAsStream(url, entryName);
-        // resultStream has been closed by FileUtils call
-        return FileUtils.readBytes(resultStream);
+        try (InputStream resultStream = getEntryContentAsStream(url, entryName)) {
+            return IOUtils.toByteArray(resultStream);
+        }
     }
 
     public static List<String> getEntryNames(URL url) throws IOException {

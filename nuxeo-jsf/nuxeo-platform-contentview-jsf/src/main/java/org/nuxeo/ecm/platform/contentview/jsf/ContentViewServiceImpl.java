@@ -149,6 +149,9 @@ public class ContentViewServiceImpl extends DefaultComponent implements ContentV
         if (desc.getWaitForExecution() != null) {
             contentView.setWaitForExecution(desc.getWaitForExecution().booleanValue());
         }
+        if (coreDesc != null && coreDesc.getQuickFilters() != null) {
+            contentView.setQuickFilters(coreDesc.getQuickFilters());
+        }
         return contentView;
     }
 

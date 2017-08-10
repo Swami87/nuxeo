@@ -20,6 +20,16 @@
       <pageSize>50</pageSize>
     </coreQueryPageProvider>
 
+    <coreQueryPageProvider name="TEST_NOTE_PP_WITH_TITLE_ORDER">
+      <pattern>
+        SELECT * FROM Note WHERE ecm:mixinType != 'HiddenInNavigation' AND
+        ecm:isCheckedInVersion = 0 AND ecm:currentLifeCycleState !=
+        'deleted'
+      </pattern>
+      <sort ascending="false" column="dc:title" />
+      <pageSize>50</pageSize>
+    </coreQueryPageProvider>
+
     <coreQueryPageProvider name="TEST_PP_PARAM">
       <pattern>
         SELECT * FROM Document WHERE ecm:parentId = :parentIdVar AND
@@ -74,6 +84,23 @@
         </predicate>
       </whereClause>
       <sort column="dc:title" ascending="true" />
+      <pageSize>2</pageSize>
+    </coreQueryPageProvider>
+
+    <coreQueryPageProvider name="namedParamProviderWithQuickFilter">
+      <pattern>
+        SELECT * FROM Document where dc:title='Note 1' and ecm:isVersion = 0
+      </pattern>
+      <sort column="dc:title" ascending="true" />
+      <quickFilters>
+        <quickFilter name="testQuickFilter">
+          <sort column="dc:title" ascending="false" />
+        </quickFilter>
+        <quickFilter name="testQuickFilter2">
+          <clause>dc:source='Source 1'</clause>
+          <sort column="dc:source" ascending="true" />
+        </quickFilter>
+      </quickFilters>
       <pageSize>2</pageSize>
     </coreQueryPageProvider>
 

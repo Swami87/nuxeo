@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Anahide Tchertchian
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.security;
 
 import org.nuxeo.ecm.core.query.sql.model.SQLQuery.Transformer;
@@ -38,14 +37,6 @@ public abstract class AbstractSecurityPolicy implements SecurityPolicy {
 
     @Override
     public Transformer getQueryTransformer(String repositoryName) {
-        return getQueryTransformer();
-    }
-
-    /**
-     * Legacy method for compatibility, use {@link #getQueryTransformer(String)} instead
-     */
-    @Deprecated
-    public Transformer getQueryTransformer() {
         // implement this if isExpressibleInQuery is true
         throw new UnsupportedOperationException();
     }
@@ -65,14 +56,6 @@ public abstract class AbstractSecurityPolicy implements SecurityPolicy {
 
     @Override
     public boolean isExpressibleInQuery(String repositoryName) {
-        return isExpressibleInQuery();
-    }
-
-    /**
-     * Legacy method for compatibility, use {@link #isExpressibleInQuery(String)} instead
-     */
-    @Deprecated
-    public boolean isExpressibleInQuery() {
         // by default, we don't know, so no
         return false;
     }

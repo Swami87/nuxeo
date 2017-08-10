@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import org.nuxeo.ecm.core.query.sql.model.WhereClause;
 public class NoFile2SecurityPolicy extends NoFileSecurityPolicy {
 
     @Override
-    public boolean isExpressibleInQuery() {
+    public boolean isExpressibleInQuery(String repositoryName) {
         return true;
     }
 
@@ -58,16 +58,15 @@ public class NoFile2SecurityPolicy extends NoFileSecurityPolicy {
             } else {
                 predicate = new Predicate(NO_FILE, Operator.AND, where.predicate);
             }
-            SQLQuery newQuery = new SQLQuery(query.select, query.from, new WhereClause(predicate), query.groupBy,
-                    query.having, query.orderBy, query.limit, query.offset);
-            return newQuery;
+            return new SQLQuery(query.select, query.from, new WhereClause(predicate), query.groupBy, query.having,
+                    query.orderBy, query.limit, query.offset);
         }
     }
 
     public static final Transformer NO_FILE_TRANSFORMER = new NoFileTransformer();
 
     @Override
-    public Transformer getQueryTransformer() {
+    public Transformer getQueryTransformer(String repositoryName) {
         return NO_FILE_TRANSFORMER;
     }
 

@@ -24,6 +24,7 @@ Bundle-ManifestVersion: 2
 Nuxeo-Component: OSGI-INF/imaging-service-framework.xml,
  OSGI-INF/imaging-service-contrib.xml,
  OSGI-INF/picture-schemas-contrib.xml,
+ OSGI-INF/imaging-types-contrib.xml,
  OSGI-INF/picture-life-cycle-contrib.xml,
  OSGI-INF/listeners-contrib.xml,
  OSGI-INF/picturebook-schemas-contrib.xml,
@@ -34,7 +35,9 @@ Nuxeo-Component: OSGI-INF/imaging-service-framework.xml,
  OSGI-INF/picture-thumbnailfactory-contrib.xml,
  OSGI-INF/picture-workmanager-contrib.xml,
  OSGI-INF/operations-contrib.xml,
- OSGI-INF/picture-renditions-contrib.xml
+ OSGI-INF/picture-renditions-contrib.xml,
+ OSGI-INF/imaging-base-properties.xml,
+ OSGI-INF/preview-adapter-contrib.xml
 Import-Package: com.drew.imaging.jpeg,
  com.drew.metadata,
  com.drew.metadata.iptc,

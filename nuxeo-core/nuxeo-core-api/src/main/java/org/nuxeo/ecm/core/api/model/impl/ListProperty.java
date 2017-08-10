@@ -225,7 +225,7 @@ public class ListProperty extends AbstractProperty implements List<Property> {
     @Override
     public void setValue(Object value) throws PropertyException {
         if (isReadOnly()) {
-            throw new ReadOnlyPropertyException(getPath());
+            throw new ReadOnlyPropertyException(getXPath());
         }
         if (value == null) {
             List<Property> temp = new ArrayList<Property>(children);
@@ -244,7 +244,7 @@ public class ListProperty extends AbstractProperty implements List<Property> {
         } else if (value instanceof Collection) { // collection support
             col = (Collection<?>) value;
         } else {
-            throw new InvalidPropertyValueException(getPath());
+            throw new InvalidPropertyValueException(getXPath());
         }
         clear();
         Field lfield = getType().getField();
@@ -267,10 +267,11 @@ public class ListProperty extends AbstractProperty implements List<Property> {
     }
 
     public boolean remove(Property property) {
-        if (!children.remove(property)) { // physically remove the property
+        int index = children.indexOf(property);
+        if (index == -1) {
             return false; // no such item
         }
-        setIsModified();
+        remove(index);
         return true;
     }
 
@@ -278,6 +279,10 @@ public class ListProperty extends AbstractProperty implements List<Property> {
     public Property remove(int index) {
         Property property = children.remove(index);
         setIsModified();
+        // properties after index have been moved
+        for (int i = index; i < children.size(); i++) {
+            ((AbstractProperty) children.get(i)).setIsMoved();
+        }
         return property;
     }
 

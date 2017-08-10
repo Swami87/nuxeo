@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
  *     Florent Guillaume
  *     Benoit Delbosc
  */
-
 package org.nuxeo.ecm.core.api;
 
 import static org.nuxeo.ecm.core.api.event.CoreEventConstants.CHANGED_ACL_NAME;
@@ -44,13 +43,11 @@ import static org.nuxeo.ecm.core.api.security.SecurityConstants.WRITE_VERSION;
 
 import java.io.Serializable;
 import java.security.Principal;
-import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
@@ -60,8 +57,6 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.collections.ScopeType;
-import org.nuxeo.common.collections.ScopedMap;
 import org.nuxeo.ecm.core.CoreService;
 import org.nuxeo.ecm.core.NXCore;
 import org.nuxeo.ecm.core.api.DocumentModel.DocumentModelRefresh;
@@ -86,6 +81,7 @@ import org.nuxeo.ecm.core.api.validation.DocumentValidationService;
 import org.nuxeo.ecm.core.event.Event;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.ecm.core.filter.CharacterFilteringService;
 import org.nuxeo.ecm.core.lifecycle.LifeCycleService;
 import org.nuxeo.ecm.core.model.Document;
 import org.nuxeo.ecm.core.model.PathComparator;
@@ -138,6 +134,9 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
     public static final String TRASH_KEEP_CHECKED_IN_PROPERTY = "org.nuxeo.trash.keepCheckedIn";
 
+    // @since 9.1 disable ecm:isLatestVersion and ecm:isLatestMajorVersion updates for performance purpose
+    public static final String DISABLED_ISLATESTVERSION_PROPERTY = "org.nuxeo.core.isLatestVersion.disabled";
+
     public static final String BINARY_TEXT_SYS_PROP = "fulltextBinary";
 
     private Boolean limitedResults;
@@ -154,12 +153,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     protected Counter updateDocumentCount;
 
     protected void createMetrics() {
-        createDocumentCount = registry.counter(MetricRegistry.name("nuxeo.repositories", getRepositoryName(),
-                "documents", "create"));
-        deleteDocumentCount = registry.counter(MetricRegistry.name("nuxeo.repositories", getRepositoryName(),
-                "documents", "delete"));
-        updateDocumentCount = registry.counter(MetricRegistry.name("nuxeo.repositories", getRepositoryName(),
-                "documents", "update"));
+        createDocumentCount = registry.counter(
+                MetricRegistry.name("nuxeo.repositories", getRepositoryName(), "documents", "create"));
+        deleteDocumentCount = registry.counter(
+                MetricRegistry.name("nuxeo.repositories", getRepositoryName(), "documents", "delete"));
+        updateDocumentCount = registry.counter(
+                MetricRegistry.name("nuxeo.repositories", getRepositoryName(), "documents", "update"));
     }
 
     /**
@@ -211,19 +210,15 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         if (!hasPermission(doc, permission)) {
             log.debug("Permission '" + permission + "' is not granted to '" + getPrincipal().getName()
                     + "' on document " + doc.getPath() + " (" + doc.getUUID() + " - " + doc.getType().getName() + ")");
-            throw new DocumentSecurityException("Privilege '" + permission + "' is not granted to '"
-                    + getPrincipal().getName() + "'");
+            throw new DocumentSecurityException(
+                    "Privilege '" + permission + "' is not granted to '" + getPrincipal().getName() + "'");
         }
     }
 
     protected Map<String, Serializable> getContextMapEventInfo(DocumentModel doc) {
         Map<String, Serializable> options = new HashMap<>();
         if (doc != null) {
-            ScopedMap ctxData = doc.getContextData();
-            if (ctxData != null) {
-                options.putAll(ctxData.getDefaultScopeValues());
-                options.putAll(ctxData.getScopeValues(ScopeType.REQUEST));
-            }
+            options.putAll(doc.getContextData());
         }
         return options;
     }
@@ -235,8 +230,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         return ctx;
     }
 
-    protected void notifyEvent(String eventId, DocumentModel source, Map<String, Serializable> options,
-            String category, String comment, boolean withLifeCycle, boolean inline) {
+    protected void notifyEvent(String eventId, DocumentModel source, Map<String, Serializable> options, String category,
+            String comment, boolean withLifeCycle, boolean inline) {
 
         DocumentEventContext ctx = new DocumentEventContext(this, getPrincipal(), source);
 
@@ -267,7 +262,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         // compat code: set isLocal on event if JMS is blocked
         if (source != null) {
             Boolean blockJms = (Boolean) source.getContextData("BLOCK_JMS_PRODUCING");
-            if (blockJms != null && blockJms) {
+            if (blockJms != null && blockJms.booleanValue()) {
                 event.setLocal(true);
                 event.setInline(true);
             }
@@ -309,6 +304,13 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     public boolean hasPermission(DocumentRef docRef, String permission) {
         Document doc = resolveReference(docRef);
         return hasPermission(doc, permission);
+    }
+
+    @Override
+    public Collection<String> filterGrantedPermissions(Principal principal, DocumentRef docRef,
+            Collection<String> permissions) {
+        Document doc = resolveReference(docRef);
+        return getSecurityService().filterGrantedPermissions(doc, principal, permissions);
     }
 
     protected final boolean hasPermission(Document doc, String permission) {
@@ -378,12 +380,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
-    @Deprecated
-    public DocumentModel copy(DocumentRef src, DocumentRef dst, String name) {
-        return copy(src, dst, name, null);
-    }
-
-    @Override
     public DocumentModel copy(DocumentRef src, DocumentRef dst, String name, CopyOption... copyOptions) {
         Document dstDoc = resolveReference(dst);
         checkPermission(dstDoc, ADD_CHILDREN);
@@ -439,12 +435,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
-    @Deprecated
-    public List<DocumentModel> copy(List<DocumentRef> src, DocumentRef dst) {
-        return copy(src, dst, null);
-    }
-
-    @Override
     public List<DocumentModel> copy(List<DocumentRef> src, DocumentRef dst, CopyOption... opts) {
         return src.stream().map(ref -> copy(ref, dst, null, opts)).collect(Collectors.toList());
     }
@@ -456,12 +446,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             return copyProxyAsDocument(src, dst, name, CopyOption.RESET_LIFE_CYCLE);
         }
         return copyProxyAsDocument(src, dst, name);
-    }
-
-    @Override
-    @Deprecated
-    public DocumentModel copyProxyAsDocument(DocumentRef src, DocumentRef dst, String name) {
-        return copyProxyAsDocument(src, dst, name, null);
     }
 
     @Override
@@ -503,12 +487,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             return copyProxyAsDocument(src, dst, CopyOption.RESET_LIFE_CYCLE);
         }
         return copyProxyAsDocument(src, dst);
-    }
-
-    @Override
-    @Deprecated
-    public List<DocumentModel> copyProxyAsDocument(List<DocumentRef> src, DocumentRef dst) {
-        return copyProxyAsDocument(src, dst, null);
     }
 
     @Override
@@ -675,6 +653,11 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
     @Override
     public DocumentModel createDocument(DocumentModel docModel) {
+
+        // start by removing disallowed characters
+        CharacterFilteringService charFilteringService = Framework.getService(CharacterFilteringService.class);
+        charFilteringService.filter(docModel);
+
         if (docModel.getSessionId() == null) {
             // docModel was created using constructor instead of CoreSession.createDocumentModel
             docModel.attach(getSessionId());
@@ -719,23 +702,38 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         }
 
         // init document life cycle
-        NXCore.getLifeCycleService().initialize(doc, initialLifecycleState);
+        getLifeCycleService().initialize(doc, initialLifecycleState);
 
         // init document with data from doc model
         docModel = writeModel(doc, docModel);
 
-        if (!Boolean.TRUE.equals(docModel.getContextData(ScopeType.REQUEST, VersioningService.SKIP_VERSIONING))) {
+        if (!Boolean.TRUE.equals(docModel.getContextData(VersioningService.SKIP_VERSIONING))) {
             // during remote publishing we want to skip versioning
             // to avoid overwriting the version number
             getVersioningService().doPostCreate(doc, options);
-            docModel = readModel(doc, docModel);
         }
 
+        // post-create event
+        docModel = readModel(doc, docModel);
+        // compute auto versioning
+        // no need to fire event, as we use DocumentModel API it's already done
+        // we don't rely on SKIP_VERSIONING because automatic versioning in saveDocument as the same behavior - and it
+        // doesn't erase initial version as it's the case to avoid when setting Skip_VERSIONING
+        getVersioningService().doAutomaticVersioning(null, docModel, false);
         notifyEvent(DocumentEventTypes.DOCUMENT_CREATED, docModel, options, null, null, true, false);
         docModel = writeModel(doc, docModel);
 
         createDocumentCount.inc();
         return docModel;
+    }
+
+    private transient LifeCycleService lifeCycleService;
+
+    private LifeCycleService getLifeCycleService() {
+        if (lifeCycleService == null) {
+            lifeCycleService = NXCore.getLifeCycleService();
+        }
+        return lifeCycleService;
     }
 
     protected Document fillCreateOptions(DocumentRef parentRef, String childName, Map<String, Serializable> options)
@@ -753,7 +751,11 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             options.put(CoreEventConstants.DESTINATION_REF, parentRef);
             options.put(CoreEventConstants.DESTINATION_PATH, folder.getPath());
             options.put(CoreEventConstants.DESTINATION_NAME, childName);
-            options.put(CoreEventConstants.DESTINATION_EXISTS, folder.hasChild(childName));
+            if (Boolean.TRUE.equals(options.get(CoreSession.SKIP_DESTINATION_CHECK_ON_CREATE))) {
+                options.put(CoreEventConstants.DESTINATION_EXISTS, false);
+            } else {
+                options.put(CoreEventConstants.DESTINATION_EXISTS, folder.hasChild(childName));
+            }
         }
         return folder;
     }
@@ -1099,6 +1101,14 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     @Override
     public DocumentModelList query(String query, String queryType, Filter filter, long limit, long offset,
             boolean countTotal) {
+        long countUpTo = computeCountUpTo(countTotal);
+        return query(query, queryType, filter, limit, offset, countUpTo);
+    }
+
+    /**
+     * @return the appropriate countUpTo value depending on input {@code countTotal} and configuration.
+     */
+    protected long computeCountUpTo(boolean countTotal) {
         long countUpTo;
         if (!countTotal) {
             countUpTo = 0;
@@ -1109,7 +1119,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
                 countUpTo = -1;
             }
         }
-        return query(query, queryType, filter, limit, offset, countUpTo);
+        return countUpTo;
     }
 
     protected long getMaxResults() {
@@ -1150,17 +1160,13 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             boolean postFilterPolicies = !securityService.arePoliciesExpressibleInQuery(repoName);
             boolean postFilterFilter = filter != null && !(filter instanceof FacetFilter);
             boolean postFilter = postFilterPolicies || postFilterFilter;
-            String[] principals;
-            if (isAdministrator()) {
-                principals = null; // means: no security check needed
-            } else {
-                principals = SecurityService.getPrincipalsToCheck(principal);
-            }
+            String[] principals = getPrincipalsToCheck();
             String[] permissions = securityService.getPermissionsToCheck(permission);
+            Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
             QueryFilter queryFilter = new QueryFilter(principal, principals, permissions,
-                    filter instanceof FacetFilter ? (FacetFilter) filter : null,
-                    securityService.getPoliciesQueryTransformers(repoName), postFilter ? 0 : limit, postFilter ? 0
-                            : offset);
+                    filter instanceof FacetFilter ? (FacetFilter) filter : null, transformers, postFilter ? 0 : limit,
+                    postFilter ? 0 : offset);
 
             // get document list with total size
             PartialList<Document> pl = getSession().query(query, queryType, queryFilter, postFilter ? -1 : countUpTo);
@@ -1228,21 +1234,11 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         try {
             SecurityService securityService = getSecurityService();
             Principal principal = getPrincipal();
-            String[] principals;
-            if (isAdministrator()) {
-                principals = null; // means: no security check needed
-            } else {
-                principals = SecurityService.getPrincipalsToCheck(principal);
-            }
+            String[] principals = getPrincipalsToCheck();
             String permission = BROWSE;
             String[] permissions = securityService.getPermissionsToCheck(permission);
-            Collection<Transformer> transformers;
-            if (NXQL.NXQL.equals(queryType)) {
-                String repoName = getRepositoryName();
-                transformers = securityService.getPoliciesQueryTransformers(repoName);
-            } else {
-                transformers = Collections.emptyList();
-            }
+            Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
             QueryFilter queryFilter = new QueryFilter(principal, principals, permissions, null, transformers, 0, 0);
             IterableQueryResult result = getSession().queryAndFetch(query, queryType, queryFilter, distinctDocuments,
                     params);
@@ -1251,6 +1247,69 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             e.addInfo("Failed to execute query: " + queryType + ": " + query);
             throw e;
         }
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset) {
+        return queryProjection(query, limit, offset, false);
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset,
+            boolean countTotal) {
+        long countUpTo = computeCountUpTo(countTotal);
+        return queryProjection(query, NXQL.NXQL, false, limit, offset, countUpTo);
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, String queryType,
+            boolean distinctDocuments, long limit, long offset, long countUpTo, Object... params) {
+        Principal principal = getPrincipal();
+        String[] principals = getPrincipalsToCheck();
+        String[] permissions = getPermissionsToCheck(BROWSE);
+        Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
+        QueryFilter queryFilter = new QueryFilter(principal, principals, permissions, null, transformers, limit,
+                offset);
+        return getSession().queryProjection(query, queryType, queryFilter, distinctDocuments, countUpTo, params);
+    }
+
+    protected String[] getPrincipalsToCheck() {
+        Principal principal = getPrincipal();
+        String[] principals;
+        if (isAdministrator()) {
+            principals = null; // means: no security check needed
+        } else {
+            principals = SecurityService.getPrincipalsToCheck(principal);
+        }
+        return principals;
+    }
+
+    protected Collection<Transformer> getPoliciesQueryTransformers(String queryType) {
+        Collection<Transformer> transformers;
+        if (NXQL.NXQL.equals(queryType)) {
+            String repoName = getRepositoryName();
+            transformers = securityService.getPoliciesQueryTransformers(repoName);
+        } else {
+            transformers = Collections.emptyList();
+        }
+        return transformers;
+    }
+
+    @Override
+    public ScrollResult scroll(String query, int batchSize, int keepAliveSeconds) {
+        if (!isAdministrator()) {
+            throw new NuxeoException("Only Administrators can scroll");
+        }
+        return getSession().scroll(query, batchSize, keepAliveSeconds);
+    }
+
+    @Override
+    public ScrollResult scroll(String scrollId) {
+        if (!isAdministrator()) {
+            throw new NuxeoException("Only Administrators can scroll");
+        }
+        return getSession().scroll(scrollId);
     }
 
     @Override
@@ -1287,7 +1346,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
      * Checks if a document can be removed, and returns a failure reason if not.
      */
     protected String canRemoveDocument(Document doc) {
-        // TODO must also check for proxies on live docs
+        // TODO must also check for proxies on live docs (NXP-22312)
         if (doc.isVersion()) {
             // TODO a hasProxies method would be more efficient
             Collection<Document> proxies = getSession().getProxies(doc, null);
@@ -1301,8 +1360,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
                 if (baseVersion != null && !baseVersion.isCheckedOut() && baseVersion.getUUID().equals(doc.getUUID())) {
                     return "Working copy " + working.getUUID() + " is checked in with base version " + doc.getUUID();
                 }
-                return hasPermission(working, WRITE_VERSION) ? null : "Missing permission '" + WRITE_VERSION
-                        + "' on working copy " + working.getUUID();
+                return hasPermission(working, WRITE_VERSION) ? null
+                        : "Missing permission '" + WRITE_VERSION + "' on working copy " + working.getUUID();
             } else {
                 // no working document, only admins can remove
                 return isAdministrator() ? null : "No working copy and not an Administrator";
@@ -1318,8 +1377,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             if (parent == null) {
                 return null; // ok
             }
-            return hasPermission(parent, REMOVE_CHILDREN) ? null : "Missing permission '" + REMOVE_CHILDREN
-                    + "' on parent document " + parent.getUUID();
+            return hasPermission(parent, REMOVE_CHILDREN) ? null
+                    : "Missing permission '" + REMOVE_CHILDREN + "' on parent document " + parent.getUUID();
         }
     }
 
@@ -1333,8 +1392,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         try {
             String reason = canRemoveDocument(doc);
             if (reason != null) {
-                throw new DocumentSecurityException("Permission denied: cannot remove document " + doc.getUUID() + ", "
-                        + reason);
+                throw new DocumentSecurityException(
+                        "Permission denied: cannot remove document " + doc.getUUID() + ", " + reason);
             }
             removeNotifyOneDoc(doc);
 
@@ -1397,16 +1456,19 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         // TODO OPTIM: it's not guaranteed that getPath is cheap and
         // we call it a lot. Should use an object for pairs (document, path)
         // to call it just once per doc.
-        Arrays.sort(docs, pathComparator);
+        Arrays.sort(docs, pathComparator); // nulls first
         String[] paths = new String[docs.length];
         for (int i = 0; i < docs.length; i++) {
             paths[i] = docs[i].getPath();
         }
-        String latestRemoved = null;
+        String lastRemovedWithSlash = "\u0000";
         for (int i = 0; i < docs.length; i++) {
-            if (i == 0 || !paths[i].startsWith(latestRemoved + "/")) {
+            String path = paths[i];
+            if (i == 0 || path == null || !path.startsWith(lastRemovedWithSlash)) {
                 removeDocument(docs[i]);
-                latestRemoved = paths[i];
+                if (path != null) {
+                    lastRemovedWithSlash = path + "/";
+                }
             }
         }
     }
@@ -1426,10 +1488,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     @Override
     public DocumentModel saveDocument(DocumentModel docModel) {
         if (docModel.getRef() == null) {
-            throw new IllegalArgumentException(String.format("cannot save document '%s' with null reference: "
-                    + "document has probably not yet been created " + "in the repository with "
-                    + "'CoreSession.createDocument(docModel)'", docModel.getTitle()));
+            throw new IllegalArgumentException(String.format(
+                    "cannot save document '%s' with null reference: " + "document has probably not yet been created "
+                            + "in the repository with " + "'CoreSession.createDocument(docModel)'",
+                    docModel.getTitle()));
         }
+
         Document doc = resolveReference(docModel.getRef());
         checkPermission(doc, WRITE_PROPERTIES);
 
@@ -1437,15 +1501,24 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
         boolean dirty = docModel.isDirty();
 
-        // document validation
-        if (dirty && getValidationService().isActivated(DocumentValidationService.CTX_SAVEDOC, options)) {
-            DocumentValidationReport report = getValidationService().validate(docModel, true);
-            if (report.hasError()) {
-                throw new DocumentValidationException(report);
+        if (dirty) {
+            // document validation
+            if (getValidationService().isActivated(DocumentValidationService.CTX_SAVEDOC, options)) {
+                DocumentValidationReport report = getValidationService().validate(docModel, true);
+                if (report.hasError()) {
+                    throw new DocumentValidationException(report);
+                }
             }
+            // remove disallowed characters
+            CharacterFilteringService charFilteringService = Framework.getService(CharacterFilteringService.class);
+            charFilteringService.filter(docModel);
         }
 
-        options.put(CoreEventConstants.PREVIOUS_DOCUMENT_MODEL, readModel(doc));
+        DocumentModel previousDocModel = readModel(doc);
+        // load previous data for versioning purpose, we want previous document filled with previous value which could
+        // not be the case if access to property value is done after the update
+        Arrays.asList(previousDocModel.getSchemas()).forEach(previousDocModel::getProperties);
+        options.put(CoreEventConstants.PREVIOUS_DOCUMENT_MODEL, previousDocModel);
         // regular event, last chance to modify docModel
         options.put(CoreEventConstants.DESTINATION_NAME, docModel.getName());
         options.put(CoreEventConstants.DOCUMENT_DIRTY, dirty);
@@ -1461,25 +1534,27 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         dirty = docModel.isDirty();
         options.put(CoreEventConstants.DOCUMENT_DIRTY, dirty);
 
-        VersioningOption versioningOption = (VersioningOption) docModel.getContextData(VersioningService.VERSIONING_OPTION);
+        // recompute versioning option as it can be set by listeners
+        VersioningOption versioningOption = (VersioningOption) docModel.getContextData(
+                VersioningService.VERSIONING_OPTION);
         docModel.putContextData(VersioningService.VERSIONING_OPTION, null);
         String checkinComment = (String) docModel.getContextData(VersioningService.CHECKIN_COMMENT);
         docModel.putContextData(VersioningService.CHECKIN_COMMENT, null);
         Boolean disableAutoCheckOut = (Boolean) docModel.getContextData(VersioningService.DISABLE_AUTO_CHECKOUT);
         docModel.putContextData(VersioningService.DISABLE_AUTO_CHECKOUT, null);
         options.put(VersioningService.DISABLE_AUTO_CHECKOUT, disableAutoCheckOut);
-        // compat
-        boolean snapshot = Boolean.TRUE.equals(docModel.getContextData(ScopeType.REQUEST,
-                VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY));
-        docModel.putContextData(ScopeType.REQUEST, VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY, null);
-        if (versioningOption == null && snapshot && dirty) {
-            String key = String.valueOf(docModel.getContextData(ScopeType.REQUEST,
-                    VersioningDocument.KEY_FOR_INC_OPTION));
-            docModel.putContextData(ScopeType.REQUEST, VersioningDocument.KEY_FOR_INC_OPTION, null);
-            versioningOption = "inc_major".equals(key) ? VersioningOption.MAJOR : VersioningOption.MINOR;
-        }
 
+        boolean manualVersioning = versioningOption != null;
         if (!docModel.isImmutable()) {
+            // compute auto versioning before update - here we create a version of document in order to save previous
+            // state it's useful if we want to implement rules like create a version if last contributor is not the
+            // same previous one. So we want to trigger this mechanism if and only if:
+            // - previous document is checkouted
+            // - we don't ask for a version without updating the document (manual versioning only)
+            // no need to fire event, as we use DocumentModel API it's already done
+            if (previousDocModel.isCheckedOut() && (!manualVersioning || dirty)) {
+                getVersioningService().doAutomaticVersioning(previousDocModel, docModel, true);
+            }
             // pre-save versioning
             boolean checkout = getVersioningService().isPreSaveDoingCheckOut(doc, dirty, versioningOption, options);
             if (checkout) {
@@ -1512,7 +1587,13 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             if (checkin) {
                 notifyEvent(DocumentEventTypes.ABOUT_TO_CHECKIN, docModel, options, null, null, true, true);
             }
-            checkedInDoc = getVersioningService().doPostSave(doc, versioningOption, checkinComment, options);
+            if (manualVersioning) {
+                checkedInDoc = getVersioningService().doPostSave(doc, versioningOption, checkinComment, options);
+            } else {
+                // compute auto versioning - only if it is not deactivated by manual versioning
+                // no need to fire event, as we use DocumentModel API it's already done
+                getVersioningService().doAutomaticVersioning(previousDocModel, docModel, false);
+            }
         }
 
         // post-save events
@@ -1521,15 +1602,10 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             DocumentRef checkedInVersionRef = new IdRef(checkedInDoc.getUUID());
             notifyCheckedInVersion(docModel, checkedInVersionRef, options, checkinComment);
         }
+
         notifyEvent(DocumentEventTypes.DOCUMENT_UPDATED, docModel, options, null, null, true, false);
         updateDocumentCount.inc();
         return docModel;
-    }
-
-    @Override
-    @Deprecated
-    public boolean isDirty(DocumentRef docRef) {
-        return resolveReference(docRef).isCheckedOut();
     }
 
     @Override
@@ -1560,14 +1636,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         versionModel.setDescription(version.getCheckinComment());
         versionModel.setLabel(version.getVersionLabel());
         return versionModel;
-    }
-
-    @Override
-    public VersionModel getLastVersion(DocumentRef docRef) {
-        Document doc = resolveReference(docRef);
-        checkPermission(doc, READ_VERSION);
-        Document version = doc.getLastVersion();
-        return version == null ? null : getVersionModel(version);
     }
 
     @Override
@@ -1628,20 +1696,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         Document doc = resolveReference(docRef);
         Document ver = resolveReference(versionRef);
         return restoreToVersion(doc, ver, false, true);
-    }
-
-    @Override
-    @Deprecated
-    public DocumentModel restoreToVersion(DocumentRef docRef, VersionModel version) {
-        return restoreToVersion(docRef, version, false);
-    }
-
-    @Override
-    @Deprecated
-    public DocumentModel restoreToVersion(DocumentRef docRef, VersionModel version, boolean skipSnapshotCreation) {
-        Document doc = resolveReference(docRef);
-        Document ver = doc.getVersion(version.getLabel());
-        return restoreToVersion(doc, ver, skipSnapshotCreation, false);
     }
 
     @Override
@@ -1715,13 +1769,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         }
         checkPermission(ver, READ);
         return new IdRef(ver.getUUID());
-    }
-
-    @Override
-    @Deprecated
-    public DocumentModel checkIn(DocumentRef docRef, VersionModel ver) {
-        DocumentRef verRef = checkIn(docRef, VersioningOption.MINOR, ver == null ? null : ver.getDescription());
-        return readModel(resolveReference(verRef));
     }
 
     @Override
@@ -1935,30 +1982,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
-    public String[] getProxyVersions(DocumentRef docRef, DocumentRef folderRef) {
-        Document folder = resolveReference(folderRef);
-        Document doc = resolveReference(docRef);
-        checkPermission(folder, READ_CHILDREN);
-        Collection<Document> children = getSession().getProxies(doc, folder);
-        if (children.isEmpty()) {
-            return null;
-        }
-        List<String> versions = new ArrayList<>();
-        for (Document child : children) {
-            if (hasPermission(child, READ)) {
-                Document target = child.getTargetDocument();
-                if (target.isVersion()) {
-                    versions.add(target.getVersionLabel());
-                } else {
-                    // live proxy
-                    versions.add("");
-                }
-            }
-        }
-        return versions.toArray(new String[versions.size()]);
-    }
-
-    @Override
     public List<String> getAvailableSecurityPermissions() {
         // XXX: add security check?
         return Arrays.asList(getSecurityService().getPermissionProvider().getPermissions());
@@ -2013,7 +2036,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
      * @param options an option map than can be used by callers to pass additional params
      * @since 5.9.3
      */
-    private boolean followTransition(DocumentRef docRef, String transition, ScopedMap options)
+    private boolean followTransition(DocumentRef docRef, String transition, Map<String, Serializable> options)
             throws LifeCycleException {
         Document doc = resolveReference(docRef);
         checkPermission(doc, WRITE_LIFE_CYCLE);
@@ -2021,8 +2044,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         if (!doc.isVersion() && !doc.isProxy() && !doc.isCheckedOut()) {
             boolean deleteOrUndelete = LifeCycleConstants.DELETE_TRANSITION.equals(transition)
                     || LifeCycleConstants.UNDELETE_TRANSITION.equals(transition);
-            if (!deleteOrUndelete || Framework.getService(ConfigurationService.class).isBooleanPropertyFalse(
-                    TRASH_KEEP_CHECKED_IN_PROPERTY)) {
+            if (!deleteOrUndelete || Framework.getService(ConfigurationService.class)
+                                              .isBooleanPropertyFalse(TRASH_KEEP_CHECKED_IN_PROPERTY)) {
                 checkOut(docRef);
                 doc = resolveReference(docRef);
             }
@@ -2035,7 +2058,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         eventOptions.put(org.nuxeo.ecm.core.api.LifeCycleConstants.TRANSTION_EVENT_OPTION_FROM, formerStateName);
         eventOptions.put(org.nuxeo.ecm.core.api.LifeCycleConstants.TRANSTION_EVENT_OPTION_TO, doc.getLifeCycleState());
         eventOptions.put(org.nuxeo.ecm.core.api.LifeCycleConstants.TRANSTION_EVENT_OPTION_TRANSITION, transition);
-        String comment = (String) options.getScopedValue("comment");
+        String comment = (String) options.get("comment");
         DocumentModel docModel = readModel(doc);
         notifyEvent(org.nuxeo.ecm.core.api.LifeCycleConstants.TRANSITION_EVENT, docModel, eventOptions,
                 DocumentEventCategories.EVENT_LIFE_CYCLE_CATEGORY, comment, true, false);
@@ -2052,7 +2075,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
     @Override
     public boolean followTransition(DocumentRef docRef, String transition) throws LifeCycleException {
-        return followTransition(docRef, transition, new ScopedMap());
+        return followTransition(docRef, transition, Collections.emptyMap());
     }
 
     @Override
@@ -2066,8 +2089,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     public void reinitLifeCycleState(DocumentRef docRef) {
         Document doc = resolveReference(docRef);
         checkPermission(doc, WRITE_LIFE_CYCLE);
-        LifeCycleService service = NXCore.getLifeCycleService();
-        service.reinitLifeCycle(doc);
+        getLifeCycleService().reinitLifeCycle(doc);
     }
 
     @Override
@@ -2110,38 +2132,6 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         System.arraycopy(parentRefs, 0, allRefs, 1, parentRefs.length);
 
         return getDataModelsField(allRefs, schema, field);
-    }
-
-    protected String oldLockKey(Lock lock) {
-        if (lock == null) {
-            return null;
-        }
-        // return deprecated format, like "someuser:Nov 29, 2010"
-        String lockCreationDate = (lock.getCreated() == null) ? null : DateFormat.getDateInstance(DateFormat.MEDIUM)
-                                                                                 .format(new Date(
-                                                                                         lock.getCreated()
-                                                                                             .getTimeInMillis()));
-        return lock.getOwner() + ':' + lockCreationDate;
-    }
-
-    @Override
-    @Deprecated
-    public String getLock(DocumentRef docRef) {
-        Lock lock = getLockInfo(docRef);
-        return oldLockKey(lock);
-    }
-
-    @Override
-    @Deprecated
-    public void setLock(DocumentRef docRef, String key) {
-        setLock(docRef);
-    }
-
-    @Override
-    @Deprecated
-    public String unlock(DocumentRef docRef) {
-        Lock lock = removeLock(docRef);
-        return oldLockKey(lock);
     }
 
     @Override
@@ -2238,7 +2228,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
-    public DocumentModel publishDocument(DocumentModel docModel, DocumentModel section, boolean overwriteExistingProxy) {
+    public DocumentModel publishDocument(DocumentModel docModel, DocumentModel section,
+            boolean overwriteExistingProxy) {
         Document doc = resolveReference(docModel.getRef());
         Document sec = resolveReference(section.getRef());
         checkPermission(doc, READ);
@@ -2291,7 +2282,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
                     // notify proxy updates
                     notifyEvent(DocumentEventTypes.DOCUMENT_PROXY_UPDATED, proxy, options, null, null, true, false);
                     notifyEvent(DocumentEventTypes.DOCUMENT_PROXY_PUBLISHED, proxy, options, null, null, true, false);
-                    notifyEvent(DocumentEventTypes.SECTION_CONTENT_PUBLISHED, section, options, null, null, true, false);
+                    notifyEvent(DocumentEventTypes.SECTION_CONTENT_PUBLISHED, section, options, null, null, true,
+                            false);
                 }
             }
         }
@@ -2369,6 +2361,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
+    public String getChangeToken(DocumentRef ref) {
+        Document doc = resolveReference(ref);
+        return doc.getChangeToken();
+    }
+
+    @Override
     public void orderBefore(DocumentRef parent, String src, String dest) {
         if ((src == null) || (src.equals(dest))) {
             return;
@@ -2379,9 +2377,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
         // send event on container passing the reordered child as parameter
         DocumentModel docModel = readModel(doc);
-        String comment = src;
         options.put(CoreEventConstants.REORDERED_CHILD, src);
-        notifyEvent(DocumentEventTypes.DOCUMENT_CHILDREN_ORDER_CHANGED, docModel, options, null, comment, true, false);
+        notifyEvent(DocumentEventTypes.DOCUMENT_CHILDREN_ORDER_CHANGED, docModel, options, null, src, true, false);
     }
 
     @Override
@@ -2389,7 +2386,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         Document doc = resolveReference(ref);
 
         // permission checks
-        if ((refreshFlags & (DocumentModel.REFRESH_PREFETCH | DocumentModel.REFRESH_STATE | DocumentModel.REFRESH_CONTENT)) != 0) {
+        if ((refreshFlags & (DocumentModel.REFRESH_PREFETCH | DocumentModel.REFRESH_STATE
+                | DocumentModel.REFRESH_CONTENT)) != 0) {
             checkPermission(doc, READ);
         }
         if ((refreshFlags & DocumentModel.REFRESH_ACP) != 0) {
@@ -2457,7 +2455,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     public Map<String, String> getBinaryFulltext(DocumentRef ref) {
         Document doc = resolveReference(ref);
         checkPermission(doc, READ);
-        return getSession().getBinaryFulltext(doc.getUUID());
+        // Use an id whether than system properties to avoid to store fulltext properties in cache
+        String id = doc.getUUID();
+        if (doc.isProxy()) {
+            id = doc.getTargetDocument().getUUID();
+        }
+        return getSession().getBinaryFulltext(id);
     }
 
 }

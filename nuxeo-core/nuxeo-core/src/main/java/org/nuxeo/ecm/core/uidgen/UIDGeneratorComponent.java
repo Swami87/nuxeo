@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
-import org.nuxeo.ecm.core.uidgen.UIDGenerator;
-import org.nuxeo.ecm.core.uidgen.UIDSequencer;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.DefaultComponent;
@@ -51,28 +49,26 @@ public class UIDGeneratorComponent extends DefaultComponent implements UIDGenera
 
     private static final Log log = LogFactory.getLog(UIDGeneratorComponent.class);
 
-    protected final Map<String, UIDGenerator> generators = new HashMap<String, UIDGenerator>();
+    protected final Map<String, UIDGenerator> generators = new HashMap<>();
 
-    protected final Map<String, UIDSequencer> sequencers = new HashMap<String, UIDSequencer>();
+    protected final Map<String, UIDSequencer> sequencers = new HashMap<>();
 
-    protected final LinkedHashMap<String, UIDSequencerProviderDescriptor> sequencerContribs = new LinkedHashMap<String, UIDSequencerProviderDescriptor>();
+    protected final LinkedHashMap<String, UIDSequencerProviderDescriptor> sequencerContribs = new LinkedHashMap<>();
 
     protected String defaultSequencer;
 
     @Override
-    public void activate(ComponentContext context) {
+    public void start(ComponentContext context) {
         for (String name : sequencers.keySet()) {
             sequencers.get(name).init();
         }
-        super.activate(context);
     }
 
     @Override
-    public void deactivate(ComponentContext context) {
+    public void stop(ComponentContext context) {
         for (String name : sequencers.keySet()) {
             sequencers.get(name).dispose();
         }
-        super.deactivate(context);
     }
 
     @Override
@@ -168,7 +164,9 @@ public class UIDGeneratorComponent extends DefaultComponent implements UIDGenera
 
             UIDGenerator generator;
             try {
-                generator = (UIDGenerator) extension.getContext().loadClass(generatorDescriptor.getClassName()).newInstance();
+                generator = (UIDGenerator) extension.getContext()
+                                                    .loadClass(generatorDescriptor.getClassName())
+                                                    .newInstance();
             } catch (ReflectiveOperationException e) {
                 throw new RuntimeException(e);
             }

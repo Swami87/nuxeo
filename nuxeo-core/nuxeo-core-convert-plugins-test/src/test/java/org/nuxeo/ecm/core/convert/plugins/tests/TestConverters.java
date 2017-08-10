@@ -32,16 +32,21 @@ import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
 import org.nuxeo.ecm.core.convert.api.ConversionService;
 import org.nuxeo.ecm.core.test.CoreFeature;
+import org.nuxeo.ecm.platform.commandline.executor.api.CommandLineExecutorService;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 
 @RunWith(FeaturesRunner.class)
 @Features(CoreFeature.class)
+@Deploy("org.nuxeo.ecm.platform.commandline.executor")
 public class TestConverters extends SimpleConverterTest {
 
     @Inject
     protected ConversionService cs;
+
+    @Inject
+    protected CommandLineExecutorService cles;
 
     @Test
     public void testHTMLConverter() throws Exception {
@@ -122,6 +127,18 @@ public class TestConverters extends SimpleConverterTest {
         assertTrue(textContent.contains(" second "));
         assertTrue(textContent.contains(" third "));
         assertTrue(textContent.contains("d\u00e9j\u00e0"));
+    }
+
+    @Test
+    public void testAiConverter() throws Exception {
+        String textContent = doTestTextConverter("application/illustrator", "ps2pdf2text", "hello.ai");
+        assertTrue(textContent.contains("Hello from a .ai document!"));
+    }
+
+    @Test
+    public void testEpsConverter() throws Exception {
+        String textContent = doTestTextConverter("application/eps", "ps2pdf2text", "hello.eps");
+        assertTrue(textContent.contains("Hello from a .eps document!"));
     }
 
     // fails since upgrade from pdfbox 1.6.0 to 1.8.5

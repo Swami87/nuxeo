@@ -22,8 +22,6 @@ package org.nuxeo.ecm.core.storage.sql;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.nuxeo.runtime.api.Framework;
 
@@ -34,7 +32,9 @@ public class DatabaseMySQL extends DatabaseHelper {
 
     public static DatabaseHelper INSTANCE = new DatabaseMySQL();
 
-    private static final String DEF_URL = "jdbc:mysql://localhost:3306/nuxeojunittests";
+    private static final String DEF_KIND = "mysql"; // or mariadb
+
+    private static final String DEF_URL = "jdbc:" + DEF_KIND + "://localhost:3306/" + DEFAULT_DATABASE_NAME;
 
     private static final String DEF_USER = "nuxeo";
 
@@ -42,24 +42,28 @@ public class DatabaseMySQL extends DatabaseHelper {
 
     private static final String CONTRIB_XML = "OSGI-INF/test-repo-repository-mysql-contrib.xml";
 
-    private static final String DRIVER = "com.mysql.jdbc.Driver";
+    private static final String DRIVER_MYSQL = "com.mysql.jdbc.Driver";
+
+    private static final String DRIVER_MARIADB = "org.mariadb.jdbc.Driver";
 
     private void setProperties() {
-        setProperty(URL_PROPERTY, DEF_URL);
+        String url = setProperty(URL_PROPERTY, DEF_URL);
         setProperty(USER_PROPERTY, DEF_USER);
         setProperty(PASSWORD_PROPERTY, DEF_PASSWORD);
-        setProperty(DRIVER_PROPERTY, DRIVER);
+        String driver = url.startsWith("jdbc:mariadb:") ? DRIVER_MARIADB : DRIVER_MYSQL;
+        setProperty(DRIVER_PROPERTY, driver);
     }
 
     @Override
     public void setUp() throws SQLException {
         super.setUp();
+        setProperties();
+        String driver = Framework.getProperty(DRIVER_PROPERTY);
         try {
-            Class.forName(DRIVER);
+            Class.forName(driver);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
-        setProperties();
         Connection connection = DriverManager.getConnection(Framework.getProperty(URL_PROPERTY),
                 Framework.getProperty(USER_PROPERTY), Framework.getProperty(PASSWORD_PROPERTY));
         doOnAllTables(connection, null, null, "DROP TABLE `%s` CASCADE");
@@ -74,18 +78,7 @@ public class DatabaseMySQL extends DatabaseHelper {
     @Override
     public RepositoryDescriptor getRepositoryDescriptor() {
         RepositoryDescriptor descriptor = new RepositoryDescriptor();
-        descriptor.xaDataSourceName = "com.mysql.jdbc.jdbc2.optional.MysqlXADataSource";
-        Map<String, String> properties = new HashMap<String, String>();
-        properties.put("URL", Framework.getProperty(URL_PROPERTY));
-        properties.put("User", Framework.getProperty(USER_PROPERTY));
-        properties.put("Password", Framework.getProperty(PASSWORD_PROPERTY));
-        descriptor.properties = properties;
         return descriptor;
-    }
-
-    @Override
-    public boolean hasSubSecondResolution() {
-        return false;
     }
 
     @Override

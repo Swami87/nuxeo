@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: ActionService.java 28460 2008-01-03 15:34:05Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.actions;
 
 import java.util.ArrayList;
@@ -59,8 +56,7 @@ public class ActionService extends DefaultComponent implements ActionManager {
 
     private static final String LOG_MIN_DURATION_KEY = "nuxeo.actions.debug.log_min_duration_ms";
 
-    private static final long LOG_MIN_DURATION_NS = Long.parseLong(
-            Framework.getService(ConfigurationService.class).getProperty(LOG_MIN_DURATION_KEY, "-1")) * 1000000;
+    private long LOG_MIN_DURATION_NS = -1 * 1000000;
 
     private Timer actionsTimer;
 
@@ -74,7 +70,7 @@ public class ActionService extends DefaultComponent implements ActionManager {
     public void activate(ComponentContext context) {
         filters = new FilterContributionHandler();
         actions = new ActionContributionHandler(filters);
-        actionsTimer = metrics.timer(MetricRegistry.name("nuxeo", "ActionService", "ations"));
+        actionsTimer = metrics.timer(MetricRegistry.name("nuxeo", "ActionService", "actions"));
         actionTimer = metrics.timer(MetricRegistry.name("nuxeo", "ActionService", "action"));
         filtersTimer = metrics.timer(MetricRegistry.name("nuxeo", "ActionService", "filters"));
         filterTimer = metrics.timer(MetricRegistry.name("nuxeo", "ActionService", "filter"));
@@ -90,23 +86,25 @@ public class ActionService extends DefaultComponent implements ActionManager {
         filterTimer = null;
     }
 
+    @Override
+    public void start(ComponentContext context) {
+        LOG_MIN_DURATION_NS = Long.parseLong(
+                Framework.getService(ConfigurationService.class).getProperty(LOG_MIN_DURATION_KEY, "-1")) * 1000000;
+    }
+
     /**
      * Return the action registry
-     *
-     * @deprecated since 5.5: use interface methods on ActionManager instead of public methods on ActionService.
      */
-    @Deprecated
-    public final ActionRegistry getActionRegistry() {
+    // used by unit test
+    protected final ActionRegistry getActionRegistry() {
         return actions.getRegistry();
     }
 
     /**
      * Return the action filter registry
-     *
-     * @deprecated since 5.5: use interface methods on ActionManager instead of public methods on ActionService.
      */
-    @Deprecated
-    public final ActionFilterRegistry getFilterRegistry() {
+    // used by unit test
+    protected final ActionFilterRegistry getFilterRegistry() {
         return filters.getRegistry();
     }
 
@@ -130,18 +128,18 @@ public class ActionService extends DefaultComponent implements ActionManager {
         if (action == null) {
             return false;
         }
-        if (log.isDebugEnabled()) {
-            log.debug(String.format("Checking access for action '%s'...", action.getId()));
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Checking access for action '%s'...", action.getId()));
         }
 
         boolean granted = checkFilters(action, action.getFilterIds(), context);
         if (granted) {
-            if (log.isDebugEnabled()) {
-                log.debug(String.format("Granting access for action '%s'", action.getId()));
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Granting access for action '%s'", action.getId()));
             }
         } else {
-            if (log.isDebugEnabled()) {
-                log.debug(String.format("Denying access for action '%s'", action.getId()));
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Denying access for action '%s'", action.getId()));
             }
         }
         return granted;
@@ -166,7 +164,7 @@ public class ActionService extends DefaultComponent implements ActionManager {
                 applyFilters(context, actions);
                 return actions;
             } else {
-                List<Action> allActions = new ArrayList<Action>();
+                List<Action> allActions = new ArrayList<>();
                 allActions.addAll(actions);
                 applyFilters(context, actions);
 
@@ -177,11 +175,15 @@ public class ActionService extends DefaultComponent implements ActionManager {
             }
         } finally {
             long duration = timerContext.stop();
-            if ((LOG_MIN_DURATION_NS >= 0) && (duration > LOG_MIN_DURATION_NS)) {
-                log.info(String.format("Resolving actions for category '%s' took: %.2f ms", category,
+            if (isTimeTracerLogEnabled() && (duration > LOG_MIN_DURATION_NS)) {
+                log.debug(String.format("Resolving actions for category '%s' took: %.2f ms", category,
                         duration / 1000000.0));
             }
         }
+    }
+
+    protected boolean isTimeTracerLogEnabled() {
+        return log.isDebugEnabled() && LOG_MIN_DURATION_NS >= 0;
     }
 
     @Override
@@ -199,14 +201,13 @@ public class ActionService extends DefaultComponent implements ActionManager {
                         action.setAvailable(false);
                     }
                 }
+                action.setFiltered(true);
             }
-
-            action.setFiltered(true);
             return action;
         } finally {
             long duration = timerContext.stop();
-            if ((LOG_MIN_DURATION_NS >= 0) && (duration > LOG_MIN_DURATION_NS)) {
-                log.info(String.format("Resolving action with id '%s' took: %.2f ms", actionId, duration / 1000000.0));
+            if (isTimeTracerLogEnabled() && (duration > LOG_MIN_DURATION_NS)) {
+                log.debug(String.format("Resolving action with id '%s' took: %.2f ms", actionId, duration / 1000000.0));
             }
         }
     }
@@ -261,19 +262,20 @@ public class ActionService extends DefaultComponent implements ActionManager {
     }
 
     @Override
+    public ActionFilter getFilter(String filterId) {
+        return getFilterRegistry().getFilter(filterId);
+    }
+
+    @Override
     public boolean checkFilter(String filterId, ActionContext context) {
         final Timer.Context timerContext = filterTimer.time();
         try {
-            ActionFilterRegistry filterReg = getFilterRegistry();
-            ActionFilter filter = filterReg.getFilter(filterId);
-            if (filter == null) {
-                return false;
-            }
-            return filter.accept(null, context);
+            ActionFilter filter = getFilter(filterId);
+            return filter != null && filter.accept(null, context);
         } finally {
             long duration = timerContext.stop();
-            if ((LOG_MIN_DURATION_NS >= 0) && (duration > LOG_MIN_DURATION_NS)) {
-                log.info(String.format("Resolving filter with id '%s' took: %.2f ms", filterId, duration / 1000000.0));
+            if (isTimeTracerLogEnabled() && (duration > LOG_MIN_DURATION_NS)) {
+                log.debug(String.format("Resolving filter with id '%s' took: %.2f ms", filterId, duration / 1000000.0));
             }
         }
     }
@@ -284,6 +286,9 @@ public class ActionService extends DefaultComponent implements ActionManager {
     }
 
     protected boolean checkFilters(Action action, List<String> filterIds, ActionContext context) {
+        if (filterIds == null || filterIds.isEmpty()) {
+            return true;
+        }
         final Timer.Context timerContext = filtersTimer.time();
         try {
             ActionFilterRegistry filterReg = getFilterRegistry();
@@ -294,22 +299,32 @@ public class ActionService extends DefaultComponent implements ActionManager {
                 }
                 if (!filter.accept(action, context)) {
                     // denying filter found => ignore following filters
-                    if (log.isDebugEnabled()) {
-                        log.debug(String.format("Filter '%s' denied access", filterId));
+                    if (log.isTraceEnabled()) {
+                        log.trace(String.format("Filter '%s' denied access", filterId));
                     }
                     return false;
                 }
-                if (log.isDebugEnabled()) {
-                    log.debug(String.format("Filter '%s' granted access", filterId));
+                if (log.isTraceEnabled()) {
+                    log.trace(String.format("Filter '%s' granted access", filterId));
                 }
             }
             return true;
         } finally {
             long duration = timerContext.stop();
-            if ((LOG_MIN_DURATION_NS >= 0) && (duration > LOG_MIN_DURATION_NS)) {
-                log.info(String.format("Resolving filters %s took: %.2f ms", filterIds, duration / 1000000.0));
+            if (isTimeTracerLogEnabled() && (duration > LOG_MIN_DURATION_NS)) {
+                log.debug(String.format("Resolving filters %s took: %.2f ms", filterIds, duration / 1000000.0));
             }
         }
+    }
+
+    @Override
+    public void addAction(Action action) {
+        getActionRegistry().addAction(action);
+    }
+
+    @Override
+    public Action removeAction(String actionId) {
+        return getActionRegistry().removeAction(actionId);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,8 @@ import java.lang.annotation.Target;
 
 import org.apache.commons.lang.StringUtils;
 import org.nuxeo.ecm.core.cache.CacheFeature;
-import org.nuxeo.ecm.core.redis.embedded.RedisEmbeddedGuessConnectionError;
-import org.nuxeo.ecm.core.redis.embedded.RedisEmbeddedPool;
-import org.nuxeo.ecm.core.redis.embedded.RedisEmbeddedSynchronizedExecutor;
-import org.nuxeo.ecm.core.redis.embedded.RedisEmbeddedTraceExecutor;
-import org.nuxeo.ecm.core.test.CoreFeature;
-import org.nuxeo.ecm.core.test.DefaultRepositoryInit;
-import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.test.runner.Defaults;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
@@ -43,8 +37,7 @@ import org.nuxeo.runtime.test.runner.SimpleFeature;
 
 import redis.clients.jedis.Protocol;
 
-@Features({ CoreFeature.class, CacheFeature.class })
-@RepositoryConfig(init = DefaultRepositoryInit.class)
+@Features({ CacheFeature.class })
 public class RedisFeature extends SimpleFeature {
 
     /**
@@ -60,24 +53,22 @@ public class RedisFeature extends SimpleFeature {
         String host() default "";
 
         int port() default 0;
-
-        Class<? extends RedisEmbeddedGuessConnectionError> guessError() default RedisEmbeddedGuessConnectionError.NoError.class;
     }
 
     public static final String PROP_MODE = "nuxeo.test.redis.mode";
 
     public static final String PROP_HOST = "nuxeo.test.redis.host";
 
-    public static final String PROP_PORT= "nuxeo.test.redis.port";
+    public static final String PROP_PORT = "nuxeo.test.redis.port";
 
-    public static final Mode DEFAULT_MODE = Mode.embedded;
+    public static final Mode DEFAULT_MODE = Mode.server;
 
     public static final String DEFAULT_HOST = "localhost";
 
     public static final int DEFAULT_PORT = Protocol.DEFAULT_PORT;
 
     public enum Mode {
-        undefined, disabled, embedded, server, sentinel
+        undefined, disabled, server, sentinel
     }
 
     protected Mode getMode() {
@@ -116,8 +107,9 @@ public class RedisFeature extends SimpleFeature {
                 port = Integer.parseInt(portProp);
             }
         }
-   return port;
+        return port;
     }
+
     protected RedisServerDescriptor newRedisServerDescriptor() {
         RedisServerDescriptor desc = new RedisServerDescriptor();
         desc.host = getHost();
@@ -138,7 +130,14 @@ public class RedisFeature extends SimpleFeature {
     }
 
     public static boolean setup(RuntimeHarness harness) throws Exception {
-        return new RedisFeature().setupMe(harness);
+        RedisFeature redisFeature = setUpFeature(harness);
+        return Mode.disabled.equals(redisFeature.getMode()) ? false : true;
+    }
+
+    public static RedisFeature setUpFeature(RuntimeHarness harness) throws Exception {
+        RedisFeature redisFeature = new RedisFeature();
+        redisFeature.setupMe(harness);
+        return redisFeature;
     }
 
     protected boolean setupMe(RuntimeHarness harness) throws Exception {
@@ -158,20 +157,16 @@ public class RedisFeature extends SimpleFeature {
         harness.deployBundle("org.nuxeo.ecm.core.redis");
         harness.deployTestContrib("org.nuxeo.ecm.core.redis", RedisFeature.class.getResource("/redis-contribs.xml"));
 
-        RedisComponent component = (RedisComponent) Framework.getRuntime().getComponent(
-                RedisComponent.class.getPackage().getName());
-        if (Mode.embedded.equals(mode)) {
-            RedisExecutor executor = new RedisPoolExecutor(new RedisEmbeddedPool());
-            executor = new RedisEmbeddedTraceExecutor(executor);
-            executor = new RedisEmbeddedSynchronizedExecutor(executor);
-            executor = new RedisFailoverExecutor(10, executor);
-            component.handleNewExecutor(executor);
-        } else {
-            component.registerRedisPoolDescriptor(getDescriptor(mode));
-            component.handleNewExecutor(component.getConfig().newExecutor());
-        }
+        registerComponentListener();// this will dynamically configure redis component when activated
+        return true;
+    }
 
-        clear();
+    protected boolean installConfig(RedisComponent component) {
+        Mode mode = getMode();
+        if (Mode.disabled.equals(mode)) {
+            return false;
+        }
+        component.registerRedisPoolDescriptor(getDescriptor(mode));
         return true;
     }
 
@@ -189,6 +184,19 @@ public class RedisFeature extends SimpleFeature {
 
     protected Config config = Defaults.of(Config.class);
 
+    protected void registerComponentListener() {
+        Framework.getRuntime().getComponentManager().addListener(new ComponentManager.LifeCycleHandler() {
+            @Override
+            public void afterActivation(ComponentManager mgr) {
+                // overwrite the redis config (before redis component is started)
+                RedisComponent comp = (RedisComponent) Framework.getRuntime().getComponent("org.nuxeo.ecm.core.redis");
+                if (comp != null) {
+                    installConfig(comp);
+                }
+            }
+        });
+    }
+
     @Override
     public void initialize(FeaturesRunner runner) throws Exception {
         config = runner.getConfig(Config.class);
@@ -198,6 +206,11 @@ public class RedisFeature extends SimpleFeature {
     @Override
     public void start(FeaturesRunner runner) throws Exception {
         setupMe(runner.getFeature(RuntimeFeature.class).getHarness());
+    }
+
+    @Override
+    public void beforeRun(FeaturesRunner runner) throws Exception {
+        clear();
     }
 
 }

@@ -25,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.management.ObjectInstance;
 import javax.naming.NamingException;
 import javax.transaction.Status;
 import javax.transaction.Synchronization;
@@ -43,6 +42,7 @@ import org.javasimon.SimonManager;
 import org.javasimon.Stopwatch;
 import org.nuxeo.ecm.core.management.jtajca.TransactionMonitor;
 import org.nuxeo.ecm.core.management.jtajca.TransactionStatistics;
+import org.nuxeo.ecm.core.management.jtajca.internal.DefaultMonitorComponent.ServerInstance;
 import org.nuxeo.runtime.jtajca.NuxeoContainer;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
@@ -65,6 +65,7 @@ public class DefaultTransactionMonitor implements TransactionManagerMonitor, Tra
             return;
         }
         bindManagementInterface();
+        toggle();
     }
 
     @Override
@@ -78,7 +79,7 @@ public class DefaultTransactionMonitor implements TransactionManagerMonitor, Tra
         }
     }
 
-    protected ObjectInstance self;
+    protected ServerInstance self;
 
     protected void bindManagementInterface() {
         self = DefaultMonitorComponent.bind(TransactionMonitor.class, this);
@@ -108,7 +109,7 @@ public class DefaultTransactionMonitor implements TransactionManagerMonitor, Tra
 
     protected TransactionStatistics lastRollbackedStatistics;
 
-    protected final Map<Object, DefaultTransactionStatistics> activeStatistics = new HashMap<Object, DefaultTransactionStatistics>();
+    protected final Map<Object, DefaultTransactionStatistics> activeStatistics = new HashMap<>();
 
     public static String id(Object key) {
         if (key instanceof XidImpl) {
@@ -143,7 +144,9 @@ public class DefaultTransactionMonitor implements TransactionManagerMonitor, Tra
         synchronized (this) {
             activeStatistics.put(key, info);
         }
-        tm.registerInterposedSynchronization(this); // register end status
+        if (TransactionStatistics.Status.ACTIVE == info.status) {
+            tm.registerInterposedSynchronization(this); // register end status
+        }
         if (log.isTraceEnabled()) {
             log.trace(info.toString());
         }
@@ -178,7 +181,7 @@ public class DefaultTransactionMonitor implements TransactionManagerMonitor, Tra
 
     @Override
     public List<TransactionStatistics> getActiveStatistics() {
-        List<TransactionStatistics> l = new ArrayList<TransactionStatistics>(activeStatistics.values());
+        List<TransactionStatistics> l = new ArrayList<>(activeStatistics.values());
         Collections.sort(l, new Comparator<TransactionStatistics>() {
             @Override
             public int compare(TransactionStatistics o1, TransactionStatistics o2) {

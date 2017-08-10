@@ -1,6 +1,6 @@
 # About the Nuxeo Distribution module
 
-See <http://doc.nuxeo.org/> for full documentation.
+See <https://doc.nuxeo.com/> for full documentation.
 
 This module builds, packages and tests the Nuxeo products.
 
@@ -35,11 +35,11 @@ Maven usage: `mvn clean package [options]`
 
  * Build only the Tomcat distributions
 
-        mvn clean package -pl :nuxeo-distribution-tomcat
+        mvn clean package -pl :nuxeo-server-tomcat
 
- * Run CAP WebDriver Functional Tests after build of the needed resources:
+ * Run JSF UI WebDriver Functional Tests after build of the needed resources:
 
-        mvn clean verify -pl :nuxeo-distribution-cap-webdriver-tests -am
+        mvn clean verify -pl :nuxeo-jsf-ui-webdriver-tests -am
 
 ### Build with Ant (deprecated)
 
@@ -54,31 +54,32 @@ Ant usage: `ant package`
 ## Modules listing
 
  * nuxeo-functional-tests: Framework for testing Nuxeo distributions
- * nuxeo-startup-wizard: Startup Wizard WebApp
+ * nuxeo-jsf-ui-funkload-tests: Funkload tests and bench on Nuxeo Server with the JSF UI package installed
+ * nuxeo-jsf-ui-gatling-tests: Gatling bench on Nuxeo Server with the JSF UI package installed
+ * nuxeo-jsf-ui-webdriver-tests: WebDriver functional tests on Nuxeo Server with the JSF UI package installed
  * nuxeo-launcher: Control Panel and Launcher
- * nuxeo-distribution-resources: Resources for packaging (doc, binaries, configuration templates)
- * nuxeo-distribution-tests: Convenient helper POM listing the Nuxeo test dependencies
- * nuxeo-distribution-coreserver: Core Server NXR
- * nuxeo-distribution-cap: Content Application Platform NXR
- * nuxeo-distribution-tomcat: Package Nuxeo CAP with Tomcat
- * nuxeo-distribution-tomcat-wizard-tests: WebDriver tests on Startup Wizard
- * nuxeo-distribution-cap-cmis-tests: CMIS tests on Nuxeo CAP
- * nuxeo-distribution-cap-funkload-tests: Funkload tests and bench on Nuxeo CAP
- * nuxeo-distribution-cap-gatling-tests: Gatling bench on Nuxeo CAP
- * nuxeo-distribution-cap-selenium-tests: Selenium functional tests on Nuxeo CAP
- * nuxeo-distribution-cap-webdriver-tests: WebDriver functional tests on Nuxeo CAP
  * nuxeo-marketplace-dm: Transitional package for DM
+ * nuxeo-marketplace-jsf-ui: Package for the JSF UI
+ * nuxeo-nxr-jsf-ui: JSF UI NXR
+ * nuxeo-nxr-server: Server NXR
+ * nuxeo-server-cmis-tests: CMIS tests on Nuxeo Server
+ * nuxeo-server-tests: Functional tests on Nuxeo Server
+ * nuxeo-server-tomcat: Nuxeo Server packaged with Tomcat
+ * nuxeo-startup-wizard: Startup Wizard Web App
+ * nuxeo-test-dependencies: Convenient helper POM listing the Nuxeo test dependencies
+ * nuxeo-war-tests: Functional tests on Nuxeo (static) WAR
+ * nuxeo-wizard-tests: WebDriver tests on Startup Wizard
 
 ## Produced packages
 
  * NXR packages
-   * Core Server
-   * Content Application Platform (CAP)
+   * Server
+   * JSF UI
  * Nuxeo Packages
+   * Nuxeo JSF UI
    * Transitional Package for Advanced Document Management (DM)
  * Tomcat packages
-   * Core Server
-   * Content Application Platform (CAP)
+   * Server
    * SDK
 
 ## Understanding Maven phases and options
@@ -99,24 +100,23 @@ See also Nuxeo Documentation: [CORG/Maven+usage](http://doc.nuxeo.com/x/JQk7)
 
 ## Details about predefined applications
 
-### Nuxeo Core Server
+### Nuxeo Server
 
 A minimal server NXR. An embedded repository will be started. No other  platform services are available.
 
 This application can be used to debug, test or develop nuxeo components that need a repository connection.
 
-Built NXR is in `nuxeo-distribution-coreserver/target/`.
+Built NXR is in `nuxeo-nxr-server/target/`.
 
-It is packaged within Tomcat in `nuxeo-distribution-tomcat/target/` (see "coreserver").
+This is the default application packaged within Tomcat in `nuxeo-server-tomcat/target/` (see "server").
 
+### Nuxeo JSF UI
 
-### Nuxeo CAP
+Complete user interface for the Nuxeo Server built with JSF.
 
-Basic document management features.
+Built Nuxeo Package is in `nuxeo-marketplace-jsf-ui/target/`.
 
-Built NXR is in `nuxeo-distribution-cap/target/`.
-
-This is the default packaged application in `nuxeo-distribution-tomcat/target/` (see "nuxeo-cap").
+It can be installed in a Nuxeo Server using `nuxeoctl` or from the Administration page within the Nuxeo server.
 
 ### Nuxeo Document Management
 
@@ -124,7 +124,7 @@ Advanced document management features. The package has been split and deprecated
 
 Built Nuxeo Package is in `nuxeo-marketplace-dm/target/`.
 
-It can be installed in CAP Tomcat using `nuxeoctl` or from the Administration page within the Nuxeo server.
+It can be installed in a Nuxeo Server using `nuxeoctl` or from the Administration page within the Nuxeo server.
 
 ### Other applications
 

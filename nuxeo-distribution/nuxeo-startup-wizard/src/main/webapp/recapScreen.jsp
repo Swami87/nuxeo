@@ -47,7 +47,7 @@ boolean connectOK = ctx.isConnectRegistrationDone();
     Map<String,String> connectMap = ctx.getConnectMap();%>
     <div class="screenExplanations">
       <div class="bold"><fmt:message key="label.connectFinish.ok" /></div>
-      <div id="CLID"><%=connectMap.get("CLID")%></div>
+      <div id="CLID" style="word-break: break-all;"><%=connectMap.get("CLID")%></div>
     </div>
  <%}%>
 
@@ -55,7 +55,7 @@ boolean connectOK = ctx.isConnectRegistrationDone();
 <%if (currentPage.prev()!=null) { %>
  <input type="button" id="btnPrev" class="glossyButton" value="<fmt:message key="label.action.prev"/>" onclick="navigateTo('<%=currentPage.prev().getAction()%>');"/>
 <%}%>
- <input type="submit" id="btnNext" class="glossyButton" value="<fmt:message key="label.action.finish"/>"/>
+ <input type="submit" id="btnNext" class="glossyButton endButton" value="<fmt:message key="label.action.finish"/>"/>
 </div>
 
 </form>

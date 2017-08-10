@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Thomas Roger
  */
-
 package org.nuxeo.ecm.platform.rendition.service;
 
 import static org.junit.Assert.assertEquals;
@@ -32,7 +31,6 @@ import org.junit.runner.RunWith;
 import org.nuxeo.ecm.automation.AutomationService;
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
-import org.nuxeo.ecm.automation.TraceException;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -45,7 +43,6 @@ import org.nuxeo.ecm.platform.rendition.Rendition;
 import org.nuxeo.ecm.platform.rendition.operation.GetRendition;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
-import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
  * @since 7.3
@@ -76,7 +73,15 @@ public class TestRenditionOperation {
         Blob renditionBlob = (Blob) automationService.run(ctx, GetRendition.ID, params);
         assertNotNull(renditionBlob);
         assertEquals("application/pdf", renditionBlob.getMimeType());
-        assertEquals("dummy.txt.pdf", renditionBlob.getFilename());
+        assertEquals("dummy.pdf", renditionBlob.getFilename());
+
+        // do it again in order to check the cached blob
+        ctx = new OperationContext(session);
+        ctx.setInput(file);
+        renditionBlob = (Blob) automationService.run(ctx, GetRendition.ID, params);
+        assertNotNull(renditionBlob);
+        assertEquals("application/pdf", renditionBlob.getMimeType());
+        assertEquals("dummy.pdf", renditionBlob.getFilename());
 
         Rendition pdfRendition = renditionService.getRendition(file, "pdf");
         assertEquals(renditionBlob.getLength(), pdfRendition.getBlob().getLength());
@@ -91,7 +96,7 @@ public class TestRenditionOperation {
         return session.createDocument(file);
     }
 
-    @Test(expected = TraceException.class)
+    @Test(expected = OperationException.class)
     public void shouldThroughTraceExceptionForNonExistingRendition() throws OperationException {
         DocumentModel file = createDummyFile();
 

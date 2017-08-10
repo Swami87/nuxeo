@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,7 +67,8 @@ public class CoreManagementComponent extends DefaultComponent {
     }
 
     public AdministrativeStatusManagerImpl getLocalManager() {
-        return (AdministrativeStatusManagerImpl) globalManager.getStatusManager(globalManager.getLocalNuxeoInstanceIdentifier());
+        return (AdministrativeStatusManagerImpl) globalManager.getStatusManager(
+                globalManager.getLocalNuxeoInstanceIdentifier());
     }
 
     @Override
@@ -124,8 +125,12 @@ public class CoreManagementComponent extends DefaultComponent {
     public void deactivate(ComponentContext context) {
         defaultComponent = null;
         storageManager.uninstall();
-        getLocalManager().onNuxeoServerShutdown();
         EventStatsHolder.clearStats();
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        getLocalManager().onNuxeoServerShutdown();
     }
 
     public void onNuxeoServerStartup() {

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,6 @@ import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkSchedulePath;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.transaction.TransactionHelper;
-import org.nuxeo.runtime.transaction.TransactionRuntimeException;
 
 /**
  * A base implementation for a {@link Work} instance, dealing with most of the details around state change.
@@ -174,7 +173,7 @@ public abstract class AbstractWork implements Work {
     public void setDocuments(String repositoryName, List<String> docIds) {
         this.repositoryName = repositoryName;
         docId = null;
-        this.docIds = new ArrayList<String>(docIds);
+        this.docIds = new ArrayList<>(docIds);
     }
 
     /**
@@ -214,12 +213,6 @@ public abstract class AbstractWork implements Work {
 
     @Override
     public State getWorkInstanceState() {
-        return state;
-    }
-
-    @Override
-    @Deprecated
-    public State getState() {
         return state;
     }
 
@@ -328,23 +321,23 @@ public abstract class AbstractWork implements Work {
         if (SequenceTracer.isEnabled()) {
             SequenceTracer.startFrom(callerThread, "Work " + getTitleOr("unknown"), " #7acde9");
         }
-        Exception suppressed = null;
+        RuntimeException suppressed = null;
         int retryCount = getRetryCount(); // may be 0
         for (int i = 0; i <= retryCount; i++) {
             if (i > 0) {
                 log.debug("Retrying work due to concurrent update (" + i + "): " + this);
                 log.trace("Concurrent update", suppressed);
             }
-            Exception e = runWorkWithTransactionAndCheckExceptions();
-            if (e == null) {
-                // no exception, work is done
+            try {
+                runWorkWithTransaction();
                 SequenceTracer.stop("Work done " + (completionTime - startTime) + " ms");
                 return;
-            }
-            if (suppressed == null) {
-                suppressed = e;
-            } else {
-                suppressed.addSuppressed(e);
+            } catch (RuntimeException e) {
+                if (suppressed == null) {
+                    suppressed = e;
+                } else {
+                    suppressed.addSuppressed(e);
+                }
             }
         }
         // all retries have been done, throw the exception
@@ -365,47 +358,11 @@ public abstract class AbstractWork implements Work {
     }
 
     /**
-     * Does work under a transaction, and collects exception and suppressed exceptions that may lead to a retry.
-     *
-     * @since 5.9.4
-     */
-    protected Exception runWorkWithTransactionAndCheckExceptions() {
-        List<Exception> suppressed = Collections.emptyList();
-        try {
-            TransactionHelper.noteSuppressedExceptions();
-            try {
-                runWorkWithTransaction();
-            } finally {
-                suppressed = TransactionHelper.getSuppressedExceptions();
-            }
-        } catch (ConcurrentUpdateException e) {
-            // happens typically during save()
-            return e;
-        } catch (TransactionRuntimeException e) {
-            // error at commit time
-            if (suppressed.isEmpty()) {
-                return e;
-            }
-        }
-        // reached if no catch, or if TransactionRuntimeException caught
-        if (suppressed.isEmpty()) {
-            return null;
-        }
-        // exceptions during commit caused a rollback in SessionImpl#end
-        Exception e = suppressed.get(0);
-        for (int i = 1; i < suppressed.size(); i++) {
-            e.addSuppressed(suppressed.get(i));
-        }
-        return e;
-    }
-
-    /**
      * Does work under a transaction.
      *
      * @since 5.9.4
-     * @throws ConcurrentUpdateException, TransactionRuntimeException
      */
-    protected void runWorkWithTransaction() throws ConcurrentUpdateException {
+    protected void runWorkWithTransaction() {
         TransactionHelper.startTransaction();
         boolean ok = false;
         Exception exc = null;
@@ -418,9 +375,7 @@ public abstract class AbstractWork implements Work {
             // --- end work
         } catch (Exception e) {
             exc = e;
-            if (e instanceof ConcurrentUpdateException) {
-                throw (ConcurrentUpdateException) e;
-            } else if (e instanceof RuntimeException) {
+            if (e instanceof RuntimeException) {
                 throw (RuntimeException) e;
             } else if (e instanceof InterruptedException) {
                 // restore interrupted status for the thread pool worker
@@ -435,6 +390,7 @@ public abstract class AbstractWork implements Work {
             } finally {
                 if (TransactionHelper.isTransactionActiveOrMarkedRollback()) {
                     if (!ok || isSuspending()) {
+                        log.trace(this + " is suspending, rollbacking");
                         TransactionHelper.setTransactionRollbackOnly();
                     }
                     TransactionHelper.commitOrRollbackTransaction();
@@ -471,7 +427,7 @@ public abstract class AbstractWork implements Work {
                 log.debug("Suspended work: " + this);
             } else {
                 if (!(e instanceof ConcurrentUpdateException)) {
-                    if (!isSuspending() || !(e instanceof InterruptedException)) {
+                    if (!isSuspending()) {
                         log.error("Exception during work: " + this, e);
                         if (WorkSchedulePath.captureStack) {
                             WorkSchedulePath.log.error("Work schedule path", getSchedulePath().getStack());
@@ -558,7 +514,7 @@ public abstract class AbstractWork implements Work {
     @Override
     public List<DocumentLocation> getDocuments() {
         if (docIds != null) {
-            List<DocumentLocation> res = new ArrayList<DocumentLocation>(docIds.size());
+            List<DocumentLocation> res = new ArrayList<>(docIds.size());
             for (String docId : docIds) {
                 res.add(newDocumentLocation(docId));
             }

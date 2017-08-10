@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 package org.nuxeo.ecm.platform.filemanager.api;
 
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
 import java.util.List;
 
@@ -47,12 +46,26 @@ public interface FileManager {
      *
      * @param input the blob containing the content and the mime type
      * @param path the path were to create the document
-     * @param overwrite boolean how decide to overwrite or not
+     * @param overwrite whether to overwrite an existing file with the same title or not
      * @param fullName the fullname that contains the filename
      * @return the created Document
      */
     DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path, boolean overwrite,
             String fullName) throws IOException;
+
+    /**
+     * Returns an initialized doc based on a given blob.
+     *
+     * @param input the blob containing the content and the mime type
+     * @param path the path were to create the document
+     * @param overwrite whether to overwrite an existing file with the same title or not
+     * @param fullName the fullname that contains the filename
+     * @param noMimeTypeCheck true if the blob's mime-type doesn't have to be checked against fullName
+     * @return the created Document
+     * @since 8.10
+     */
+    DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path, boolean overwrite,
+            String fullName, boolean noMimeTypeCheck) throws IOException;
 
     /**
      * Just applies the same actions as creation but does not changes the doc type.
@@ -70,9 +83,24 @@ public interface FileManager {
      * @param fullname the full name of the folder
      * @param path the path were to create the folder
      * @return the Folder Created
+     * @deprecated since 9.1, use {@link #createFolder(CoreSession, String, String, boolean)} instead
      */
-    DocumentModel createFolder(CoreSession documentManager, String fullname, String path) throws
-            IOException;
+    @Deprecated
+    default DocumentModel createFolder(CoreSession documentManager, String fullname, String path) throws IOException {
+        return createFolder(documentManager, fullname, path, true);
+    }
+
+    /**
+     * Creates a Folder.
+     *
+     * @param fullname the full name of the folder
+     * @param path the path were to create the folder
+     * @param overwrite whether to overwrite an existing folder with the same title or not
+     * @return the Folder Created
+     * @since 9.1
+     */
+    DocumentModel createFolder(CoreSession documentManager, String fullname, String path, boolean overwrite)
+            throws IOException;
 
     /**
      * Returns the list of document that are to be suggested to principalName as a candidate container for a new
@@ -105,14 +133,20 @@ public interface FileManager {
      * Gets the versioning applied on an overwritten document before it is overwritten.
      *
      * @since 5.7
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     * behaviors from importers
      */
+    @Deprecated
     VersioningOption getVersioningOption();
 
     /**
      * Checks whether versioning should also be applied after a document is added.
      *
      * @since 5.7
+     * @deprecated since 9.1 automatic versioning is now handled at versioning service level, remove versioning
+     * behaviors from importers
      */
+    @Deprecated
     boolean doVersioningAfterAdd();
 
 }

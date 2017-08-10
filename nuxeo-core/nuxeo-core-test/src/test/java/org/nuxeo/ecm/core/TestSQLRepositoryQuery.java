@@ -27,6 +27,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeFalse;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.Serializable;
@@ -47,12 +48,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.log4j.spi.LoggingEvent;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
+import org.nuxeo.common.utils.ExceptionUtils;
 import org.nuxeo.ecm.core.api.AbstractSession;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
@@ -65,7 +75,9 @@ import org.nuxeo.ecm.core.api.Filter;
 import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.core.api.PartialList;
 import org.nuxeo.ecm.core.api.PathRef;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.api.VersioningOption;
 import org.nuxeo.ecm.core.api.impl.DocumentModelImpl;
 import org.nuxeo.ecm.core.api.impl.FacetFilter;
@@ -79,6 +91,7 @@ import org.nuxeo.ecm.core.query.QueryParseException;
 import org.nuxeo.ecm.core.query.sql.NXQL;
 import org.nuxeo.ecm.core.schema.FacetNames;
 import org.nuxeo.ecm.core.test.CoreFeature;
+import org.nuxeo.ecm.core.test.StorageConfiguration;
 import org.nuxeo.ecm.core.test.annotations.Granularity;
 import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
 import org.nuxeo.runtime.api.Framework;
@@ -86,11 +99,12 @@ import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
+import org.nuxeo.runtime.test.runner.LogCaptureFeature;
 import org.nuxeo.runtime.test.runner.RuntimeHarness;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
 @RunWith(FeaturesRunner.class)
-@Features(CoreFeature.class)
+@Features({ CoreFeature.class, LogCaptureFeature.class })
 @RepositoryConfig(cleanup = Granularity.METHOD)
 @Deploy({ "org.nuxeo.ecm.core.convert", //
         "org.nuxeo.ecm.core.convert.plugins", //
@@ -108,7 +122,13 @@ public class TestSQLRepositoryQuery {
     @Inject
     protected CoreSession session;
 
+    @Inject
+    LogCaptureFeature.Result logCaptureResult;
+
     protected boolean proxies;
+
+    @Rule
+    public ExpectedException exception = ExpectedException.none();
 
     protected boolean isDBS() {
         return coreFeature.getStorageConfiguration().isDBS();
@@ -118,9 +138,17 @@ public class TestSQLRepositoryQuery {
         return coreFeature.getStorageConfiguration().isDBSMongoDB();
     }
 
+    protected boolean isDBSMarkLogic() {
+        return coreFeature.getStorageConfiguration().isDBSMarkLogic();
+    }
+
     protected void waitForFulltextIndexing() {
         nextTransaction();
         coreFeature.getStorageConfiguration().waitForFulltextIndexing();
+    }
+
+    protected void maybeSleepToNextSecond() {
+        coreFeature.getStorageConfiguration().maybeSleepToNextSecond();
     }
 
     protected void nextTransaction() {
@@ -134,7 +162,7 @@ public class TestSQLRepositoryQuery {
      * Query of NOT (something) matches docs where (something) did not match because the field was null.
      */
     public boolean notMatchesNull() {
-        return isDBSMongoDB();
+        return isDBSMongoDB() || isDBSMarkLogic();
     }
 
     public boolean supportsDistinct() {
@@ -143,6 +171,12 @@ public class TestSQLRepositoryQuery {
 
     public boolean supportsTags() {
         return !isDBS();
+    }
+
+    public boolean supportsScroll() {
+        StorageConfiguration conf = coreFeature.getStorageConfiguration();
+        // DBS mem and marklogic are not yet supported
+        return (conf.isDBSMongoDB() || conf.isVCS());
     }
 
     // ---------------------------------------
@@ -168,10 +202,11 @@ public class TestSQLRepositoryQuery {
      *  |- testfolder1 (UUID_2)
      *  |  |- testfile1 (UUID_3) (content UUID_4)
      *  |  |- testfile2 (UUID_5) (content UUID_6)
-     *  |  \- testfile3 (UUID_7) (Note)
-     *  \- tesfolder2 (UUID_8)
-     *     \- testfolder3 (UUID_9)
-     *        \- testfile4 (UUID_10) (content UUID_11)
+     *  |  |- testfile3 (UUID_7) (Note)
+     *  |  \- testfile3 (UUID_8) (version of testfile3/UUID_7)
+     *  \- tesfolder2 (UUID_9)
+     *     \- testfolder3 (UUID_10)
+     *        \- testfile4 (UUID_11) (content UUID_12)
      * </pre>
      *
      * DBS:
@@ -180,10 +215,11 @@ public class TestSQLRepositoryQuery {
      *  |- testfolder1 (UUID_1)
      *  |  |- testfile1 (UUID_2)
      *  |  |- testfile2 (UUID_3)
-     *  |  \- testfile3 (UUID_4) (Note)
-     *  \- tesfolder2 (UUID_5)
-     *     \- testfolder3 (UUID_6)
-     *        \- testfile4 (UUID_7)
+     *  |  |- testfile3 (UUID_4) (Note)
+     *  |  \- testfile3 (UUID_5) (version of testfile3/UUID_4)
+     *  \- tesfolder2 (UUID_6)
+     *     \- testfolder3 (UUID_7)
+     *        \- testfile4 (UUID_8)
      * </pre>
      */
     protected void createDocs() throws Exception {
@@ -199,7 +235,6 @@ public class TestSQLRepositoryQuery {
         Blob blob1 = Blobs.createBlob(content);
         blob1.setFilename(filename);
         file1.setPropertyValue("content", (Serializable) blob1);
-        file1.setPropertyValue("filename", filename);
         Calendar cal1 = getCalendar(2007, 3, 1, 12, 0, 0);
         file1.setPropertyValue("dc:created", cal1);
         file1.setPropertyValue("dc:coverage", "football");
@@ -242,9 +277,9 @@ public class TestSQLRepositoryQuery {
     /**
      * Publishes testfile4 to testfolder1:
      * <p>
-     * VCS: version (UUID_12, content UUID_13), proxy (UUID_14)
+     * VCS: version (UUID_13, content UUID_14), proxy (UUID_15)
      * <p>
-     * DBS: version (UUID_8), proxy (UUID_9)
+     * DBS: version (UUID_9), proxy (UUID_10)
      */
     protected DocumentModel publishDoc() throws Exception {
         DocumentModel doc = session.getDocument(new PathRef("/testfolder2/testfolder3/testfile4"));
@@ -268,7 +303,7 @@ public class TestSQLRepositoryQuery {
             assertEquals("File", dm.getType());
         }
 
-        dml = session.query("SELECT * FROM Note");
+        dml = session.query("SELECT * FROM Note WHERE ecm:isVersion = 0");
         assertEquals(1, dml.size());
         for (DocumentModel dm : dml) {
             assertEquals("Note", dm.getType());
@@ -280,7 +315,7 @@ public class TestSQLRepositoryQuery {
             assertEquals("Folder", dm.getType());
         }
 
-        dml = session.query("SELECT * FROM Document");
+        dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0");
         assertEquals(7, dml.size());
 
         dml = session.query("SELECT * FROM File");
@@ -304,14 +339,14 @@ public class TestSQLRepositoryQuery {
         dml = session.query("SELECT * FROM File WHERE dc:title = 'testfolder1_Title'");
         assertEquals(0, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE filename = 'testfile.txt'");
+        dml = session.query("SELECT * FROM File WHERE content/name = 'testfile.txt'");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Note WHERE dc:title = 'testfile3_Title'");
+        dml = session.query("SELECT * FROM Note WHERE dc:title = 'testfile3_Title' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
         // two uses of the same schema
-        dml = session.query("SELECT * FROM Note WHERE dc:title = 'testfile3_Title' OR dc:description = 'hmmm'");
+        dml = session.query("SELECT * FROM Note WHERE (dc:title = 'testfile3_Title' OR dc:description = 'hmmm') AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
         // property in a schema with no prefix
@@ -322,10 +357,10 @@ public class TestSQLRepositoryQuery {
         assertEquals(1, dml.size());
 
         // this needs an actual LEFT OUTER JOIN
-        dml = session.query("SELECT * FROM Document WHERE filename = 'testfile.txt' OR dc:title = 'testfile3_Title'");
+        dml = session.query("SELECT * FROM Document WHERE (content/name = 'testfile.txt' OR dc:title = 'testfile3_Title') AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE filename = 'testfile.txt' OR dc:contributors = 'bob'");
+        dml = session.query("SELECT * FROM Document WHERE (content/name = 'testfile.txt' OR dc:contributors = 'bob') AND ecm:isVersion = 0");
         assertEquals(3, dml.size());
 
         // early detection of conflicting types for VCS
@@ -352,22 +387,22 @@ public class TestSQLRepositoryQuery {
         createDocs();
         DocumentModelList dml;
 
-        dml = session.query("SELECT * FROM Document WHERE dc:title ILIKE 'test%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:title ILIKE 'test%' AND ecm:isVersion = 0");
         assertEquals(5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:title ILIKE 'Test%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:title ILIKE 'Test%' AND ecm:isVersion = 0");
         assertEquals(5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:title NOT ILIKE 'foo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:title NOT ILIKE 'foo%' AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 7 : 5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:title NOT ILIKE 'Foo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:title NOT ILIKE 'Foo%' AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 7 : 5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:subjects ILIKE '%oo'");
+        dml = session.query("SELECT * FROM Document WHERE dc:subjects ILIKE '%oo' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:subjects NOT ILIKE '%oo'");
+        dml = session.query("SELECT * FROM Document WHERE dc:subjects NOT ILIKE '%oo' AND ecm:isVersion = 0");
         assertEquals(6, dml.size());
     }
 
@@ -396,40 +431,40 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        dml = session.query("SELECT * FROM File WHERE dc:contributors = 'pete'");
+        dml = session.query("SELECT * FROM File WHERE dc:contributors = 'pete' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE dc:contributors = 'bob'");
+        dml = session.query("SELECT * FROM File WHERE dc:contributors = 'bob' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors = 'bob'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors = 'bob' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors IN ('bob', 'pete')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors IN ('bob', 'pete') AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors IN ('bob', 'john')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors IN ('bob', 'john') AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors NOT IN ('bob', 'pete')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors NOT IN ('bob', 'pete') AND ecm:isVersion = 0");
         assertEquals(5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors NOT IN ('bob', 'john')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors NOT IN ('bob', 'john') AND ecm:isVersion = 0");
         assertEquals(5, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE 'pe%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE 'pe%' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE 'bo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE 'bo%' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE '%o%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors LIKE '%o%' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:subjects LIKE '%oo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:subjects LIKE '%oo%' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE dc:subjects NOT LIKE '%oo%'");
+        dml = session.query("SELECT * FROM File WHERE dc:subjects NOT LIKE '%oo%' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
     }
 
@@ -438,43 +473,43 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        dml = session.query("SELECT * FROM File WHERE dc:contributors/* = 'pete'");
+        dml = session.query("SELECT * FROM File WHERE dc:contributors/* = 'pete' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE dc:contributors/* = 'bob'");
+        dml = session.query("SELECT * FROM File WHERE dc:contributors/* = 'bob' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* = 'bob'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* = 'bob' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* IN ('bob', 'pete')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* IN ('bob', 'pete') AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* IN ('bob', 'john')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* IN ('bob', 'john') AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT IN ('bob', 'pete')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT IN ('bob', 'pete') AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 5 : 1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT IN ('bob', 'john')");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT IN ('bob', 'john') AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 5 : 1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE 'pe%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE 'pe%' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE 'bo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE 'bo%' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE '%o%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* LIKE '%o%' AND ecm:isVersion = 0");
         assertEquals(2, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT LIKE '%o%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors/* NOT LIKE '%o%' AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 5 : 1, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:subjects/* LIKE '%oo%'");
+        dml = session.query("SELECT * FROM Document WHERE dc:subjects/* LIKE '%oo%' AND ecm:isVersion = 0");
         assertEquals(1, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE dc:subjects/* NOT LIKE '%oo%'");
+        dml = session.query("SELECT * FROM File WHERE dc:subjects/* NOT LIKE '%oo%' AND ecm:isVersion = 0");
         assertEquals(notMatchesNull() ? 2 : 0, dml.size());
     }
 
@@ -482,17 +517,17 @@ public class TestSQLRepositoryQuery {
     public void testQueryNegativeMultiple() throws Exception {
         DocumentModelList dml;
         createDocs();
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors <> 'pete'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors <> 'pete' AND ecm:isVersion = 0");
         assertEquals(6, dml.size());
 
-        dml = session.query("SELECT * FROM Document WHERE dc:contributors <> 'blah'");
+        dml = session.query("SELECT * FROM Document WHERE dc:contributors <> 'blah' AND ecm:isVersion = 0");
         assertEquals(7, dml.size());
 
-        dml = session.query("SELECT * FROM File WHERE dc:contributors <> 'blah' AND ecm:isProxy = 0");
+        dml = session.query("SELECT * FROM File WHERE dc:contributors <> 'blah' AND ecm:isProxy = 0 AND ecm:isVersion = 0");
         assertEquals(3, dml.size());
 
         dml = session.query(
-                "SELECT * FROM Document WHERE ecm:mixinType = 'Versionable' AND ecm:mixinType <> 'Downloadable'");
+                "SELECT * FROM Document WHERE ecm:mixinType = 'Versionable' AND ecm:mixinType <> 'Downloadable' AND ecm:isVersion = 0");
         assertEquals(1, dml.size()); // 1 note
     }
 
@@ -510,11 +545,11 @@ public class TestSQLRepositoryQuery {
         assertEquals(1, returnedChildDocs.length);
 
         childFile1 = returnedChildDocs[0];
-        childFile1.setProperty("file", "filename", "f1");
 
         // add a blob
         String s = "<html><head/><body>La la la!</body></html>";
         Blob blob = Blobs.createBlob(s, "text/html");
+        blob.setFilename("f1");
         childFile1.setProperty("file", "content", blob);
 
         session.saveDocument(childFile1);
@@ -553,19 +588,19 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' ORDER BY dc:description";
+        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' AND ecm:isVersion = 0 ORDER BY dc:description";
         dml = session.query(sql);
         assertEquals(4, dml.size());
         assertEquals("testfile1_description", dml.get(0).getPropertyValue("dc:description"));
 
         // without proxies as well
-        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' AND ecm:isProxy = 0 ORDER BY dc:description";
+        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' AND ecm:isProxy = 0 AND ecm:isVersion = 0 ORDER BY dc:description";
         dml = session.query(sql);
         assertEquals(4, dml.size());
         assertEquals("testfile1_description", dml.get(0).getPropertyValue("dc:description"));
 
         // desc
-        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' ORDER BY dc:description DESC";
+        sql = "SELECT * FROM Document WHERE dc:title LIKE 'testfile%' AND ecm:isVersion = 0 ORDER BY dc:description DESC";
         dml = session.query(sql);
         assertEquals(4, dml.size());
         assertEquals("testfile4_DESCRIPTION4", dml.get(0).getPropertyValue("dc:description"));
@@ -624,7 +659,7 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        sql = "SELECT * FROM Document ORDER BY ecm:path";
+        sql = "SELECT * FROM Document WHERE ecm:isVersion = 0 ORDER BY ecm:path";
         dml = session.query(sql);
         assertEquals(7, dml.size());
         assertEquals("/testfolder1", dml.get(0).getPathAsString());
@@ -635,7 +670,7 @@ public class TestSQLRepositoryQuery {
         assertEquals("/testfolder2/testfolder3", dml.get(5).getPathAsString());
         assertEquals("/testfolder2/testfolder3/testfile4", dml.get(6).getPathAsString());
 
-        sql = "SELECT * FROM Document ORDER BY ecm:path DESC";
+        sql = "SELECT * FROM Document WHERE ecm:isVersion = 0 ORDER BY ecm:path DESC";
         dml = session.query(sql);
         assertEquals(7, dml.size());
         assertEquals("/testfolder2/testfolder3/testfile4", dml.get(0).getPathAsString());
@@ -643,7 +678,7 @@ public class TestSQLRepositoryQuery {
 
         // then with batching
 
-        sql = "SELECT * FROM Document ORDER BY ecm:path";
+        sql = "SELECT * FROM Document WHERE ecm:isVersion = 0 ORDER BY ecm:path";
         dml = session.query(sql, null, 2, 3, false);
         assertEquals(2, dml.size());
         assertEquals("/testfolder1/testfile3", dml.get(0).getPathAsString());
@@ -708,7 +743,7 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        String sql = "SELECT * FROM Document ORDER BY ecm:name";
+        String sql = "SELECT * FROM Document WHERE ecm:isVersion = 0 ORDER BY ecm:name";
 
         dml = session.query(sql);
         assertEquals(7, dml.size());
@@ -773,7 +808,7 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        String sql = "SELECT * FROM Document ORDER BY ecm:name";
+        String sql = "SELECT * FROM Document WHERE ecm:isVersion = 0 ORDER BY ecm:name";
 
         dml = session.query(sql);
         assertEquals(7, dml.size());
@@ -869,6 +904,7 @@ public class TestSQLRepositoryQuery {
     @Test
     public void testQueryConstantsLeft() throws Exception {
         assumeTrue("DBS MongoDB cannot query const = const", !isDBSMongoDB());
+        assumeTrue("DBS MarkLogic cannot query const = const", !isDBSMarkLogic());
 
         String sql;
         DocumentModelList dml;
@@ -880,7 +916,7 @@ public class TestSQLRepositoryQuery {
 
         sql = "SELECT * FROM Document WHERE 0 = 0";
         dml = session.query(sql);
-        assertEquals(7, dml.totalSize());
+        assertEquals(8, dml.totalSize());
     }
 
     // from TestSQLWithPath
@@ -890,16 +926,16 @@ public class TestSQLRepositoryQuery {
         DocumentModelList dml;
         createDocs();
 
-        sql = "SELECT * FROM document WHERE ecm:path = '/testfolder1'";
+        sql = "SELECT * FROM document WHERE ecm:path = '/testfolder1' AND ecm:isVersion = 0";
         dml = session.query(sql);
         assertEquals(1, dml.size());
 
         // trailing slash accepted
-        sql = "SELECT * FROM document WHERE ecm:path = '/testfolder1/'";
+        sql = "SELECT * FROM document WHERE ecm:path = '/testfolder1/' AND ecm:isVersion = 0";
         dml = session.query(sql);
         assertEquals(1, dml.size());
 
-        sql = "SELECT * FROM document WHERE ecm:path <> '/testfolder1'";
+        sql = "SELECT * FROM document WHERE ecm:path <> '/testfolder1' AND ecm:isVersion = 0";
         dml = session.query(sql);
         assertEquals(6, dml.size());
     }
@@ -960,6 +996,29 @@ public class TestSQLRepositoryQuery {
     }
 
     @Test
+    public void testStartsWithCopy() throws Exception {
+        String sql;
+        DocumentModelList dml;
+        createDocs();
+
+        // copy folder2 into folder1
+        session.copy(new PathRef("/testfolder2"), new PathRef("/testfolder1"), null);
+        // session.save() not needed, implicit in DBS to follow VCS behavior
+
+        sql = "SELECT * FROM document WHERE ecm:path STARTSWITH '/testfolder1'";
+        dml = session.query(sql);
+        assertEquals(6, dml.size());
+
+        sql = "SELECT * FROM document WHERE ecm:path STARTSWITH '/testfolder1/testfolder2'";
+        dml = session.query(sql);
+        assertEquals(2, dml.size());
+
+        sql = "SELECT * FROM document WHERE ecm:path STARTSWITH '/testfolder2'";
+        dml = session.query(sql);
+        assertEquals(2, dml.size());
+    }
+
+    @Test
     public void testAncestorId() throws Exception {
         DocumentModelList dml;
         createDocs();
@@ -978,18 +1037,18 @@ public class TestSQLRepositoryQuery {
         assertEquals(2, dml.size());
 
         // negative query
-        dml = session.query(String.format("SELECT * FROM Document WHERE ecm:ancestorId <> '%s'",
+        dml = session.query(String.format("SELECT * FROM Document WHERE ecm:ancestorId <> '%s' AND ecm:isVersion = 0",
                 session.getDocument(new PathRef("/testfolder1")).getId()));
         assertEquals(4, dml.size());
 
-        dml = session.query(
-                String.format("SELECT * FROM document WHERE dc:title='testfile1_Title' AND ecm:ancestorId = '%s'",
-                        session.getRootDocument().getId()));
+        dml = session.query(String.format(
+                "SELECT * FROM document WHERE dc:title='testfile1_Title' AND ecm:ancestorId = '%s' AND ecm:isVersion = 0",
+                session.getRootDocument().getId()));
         assertEquals(1, dml.size());
 
-        dml = session.query(
-                String.format("SELECT * FROM document WHERE dc:title LIKE 'testfile%%' AND ecm:ancestorId = '%s'",
-                        session.getRootDocument().getId()));
+        dml = session.query(String.format(
+                "SELECT * FROM document WHERE dc:title LIKE 'testfile%%' AND ecm:ancestorId = '%s' AND ecm:isVersion = 0",
+                session.getRootDocument().getId()));
         assertEquals(4, dml.size());
     }
 
@@ -1135,7 +1194,8 @@ public class TestSQLRepositoryQuery {
     // new-style date comparisons (casting to native DATE type)
     @Test
     public void testDateNew() throws Exception {
-        assumeTrue("MongoDB does not support NXQL DATE casts", !isDBSMongoDB());
+        assumeFalse("MongoDB does not support NXQL DATE casts", isDBSMongoDB());
+        assumeFalse("MarkLogic does not support NXQL DATE casts", isDBSMarkLogic());
 
         String sql;
         DocumentModelList dml;
@@ -1322,16 +1382,16 @@ public class TestSQLRepositoryQuery {
         createDocs();
         DocumentModelList dml;
 
-        dml = session.query("SELECT * FROM Document");
+        dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0");
         assertEquals(7, dml.size());
         assertEquals(7, dml.totalSize());
-        dml = session.query("SELECT * FROM Document", null, 2, 0, true);
+        dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 0, true);
         assertEquals(2, dml.size());
         assertEquals(7, dml.totalSize());
-        dml = session.query("SELECT * FROM Document", null, 2, 5, true);
+        dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 5, true);
         assertEquals(2, dml.size());
         assertEquals(7, dml.totalSize());
-        dml = session.query("SELECT * FROM Document", null, 2, 6, true);
+        dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 6, true);
         assertEquals(1, dml.size());
         assertEquals(7, dml.totalSize());
     }
@@ -1357,16 +1417,16 @@ public class TestSQLRepositoryQuery {
         // needs a user who is not really an administrator
         // otherwise security policies are bypassed
         try (CoreSession admSession = CoreInstance.openCoreSession(session.getRepositoryName(), "Administrator")) {
-            dml = admSession.query("SELECT * FROM Document");
+            dml = admSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0");
             assertEquals(4, dml.size());
             assertEquals(4, dml.totalSize());
-            dml = admSession.query("SELECT * FROM Document", null, 2, 0, true);
+            dml = admSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 0, true);
             assertEquals(2, dml.size());
             assertEquals(4, dml.totalSize());
-            dml = admSession.query("SELECT * FROM Document", null, 2, 2, true);
+            dml = admSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 2, true);
             assertEquals(2, dml.size());
             assertEquals(4, dml.totalSize());
-            dml = admSession.query("SELECT * FROM Document", null, 2, 3, true);
+            dml = admSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 3, true);
             assertEquals(1, dml.size());
             assertEquals(4, dml.totalSize());
 
@@ -1389,16 +1449,16 @@ public class TestSQLRepositoryQuery {
         }
 
         try (CoreSession bobSession = CoreInstance.openCoreSession(session.getRepositoryName(), "bob")) {
-            dml = bobSession.query("SELECT * FROM Document");
+            dml = bobSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0");
             assertEquals(3, dml.size());
             assertEquals(3, dml.totalSize());
-            dml = bobSession.query("SELECT * FROM Document", null, 2, 0, true);
+            dml = bobSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 0, true);
             assertEquals(2, dml.size());
             assertEquals(3, dml.totalSize());
-            dml = bobSession.query("SELECT * FROM Document", null, 2, 1, true);
+            dml = bobSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 1, true);
             assertEquals(2, dml.size());
             assertEquals(3, dml.totalSize());
-            dml = bobSession.query("SELECT * FROM Document", null, 2, 2, true);
+            dml = bobSession.query("SELECT * FROM Document WHERE ecm:isVersion = 0", null, 2, 2, true);
             assertEquals(1, dml.size());
             assertEquals(3, dml.totalSize());
         }
@@ -1587,6 +1647,7 @@ public class TestSQLRepositoryQuery {
     @Test
     public void testQueryWithProxies() throws Exception {
         createDocs();
+        String noteVersionId = session.getLastDocumentVersionRef(new PathRef("/testfolder1/testfile3")).toString();
         DocumentModel proxy = publishDoc();
 
         DocumentModel doc = session.getDocument(new PathRef("/testfolder2/testfolder3/testfile4"));
@@ -1611,12 +1672,12 @@ public class TestSQLRepositoryQuery {
         assertIdSet(dml, proxyId);
 
         dml = session.query("SELECT * FROM Document WHERE ecm:isProxy = 0");
-        assertEquals(8, dml.size()); // 7 folder/docs, 1 version
+        assertEquals(9, dml.size()); // 7 folder/docs, 2 versions
         dml = session.query("SELECT * FROM Document WHERE ecm:isProxy <> 1");
-        assertEquals(8, dml.size());
+        assertEquals(9, dml.size());
 
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedInVersion = 1");
-        assertIdSet(dml, versionId);
+        assertIdSet(dml, versionId, noteVersionId);
 
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedInVersion = 0");
         assertEquals(8, dml.size()); // 7 folder/docs, 1 proxy
@@ -1663,6 +1724,24 @@ public class TestSQLRepositoryQuery {
                 1, false);
         assertEquals(1, secondPage.size());
         assertEquals(whole.get(1).getId(), secondPage.get(0).getId());
+    }
+
+    @Test
+    public void testQueryProjectionPaging() throws Exception {
+        createDocs();
+        PartialList<Map<String, Serializable>> whole = session.queryProjection(
+                "SELECT * FROM Document ORDER BY dc:modified, ecm:uuid", 5, 0, true);
+        assertTrue(whole.totalSize >= 5);
+        PartialList<Map<String, Serializable>> firstPage = session.queryProjection(
+                "SELECT * from Document ORDER BY dc:modified, ecm:uuid", 1, 0);
+        assertEquals(1, firstPage.list.size());
+        assertEquals(-1, firstPage.totalSize);
+        assertEquals(whole.list.get(0).get(NXQL.ECM_UUID), firstPage.list.get(0).get(NXQL.ECM_UUID));
+        PartialList<Map<String, Serializable>> secondPage = session.queryProjection(
+                "SELECT * from Document ORDER BY dc:modified, ecm:uuid", 1, 1);
+        assertEquals(1, secondPage.list.size());
+        assertEquals(-1, secondPage.totalSize);
+        assertEquals(whole.list.get(1).get(NXQL.ECM_UUID), secondPage.list.get(0).get(NXQL.ECM_UUID));
     }
 
     @Test
@@ -1763,13 +1842,13 @@ public class TestSQLRepositoryQuery {
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType = 'Folder'");
         assertEquals(3, dml.size());
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType <> 'Folder'");
-        assertEquals(6, dml.size()); // 3 files, 1 note, 1 proxy, 1 version
+        assertEquals(7, dml.size()); // 3 files, 1 note, 1 proxy, 2 versions
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType = 'Note'");
-        assertEquals(1, dml.size());
+        assertEquals(2, dml.size()); // 1 note, 1 version
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType = 'File'");
         assertEquals(5, dml.size()); // 3 files, 1 proxy, 1 version
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType IN ('Folder', 'Note')");
-        assertEquals(4, dml.size());
+        assertEquals(5, dml.size()); // 3 folders, 1 note, 1 version
         dml = session.query("SELECT * FROM Document WHERE ecm:primaryType NOT IN ('Folder', 'Note')");
         assertEquals(5, dml.size()); // 3 files, 1 proxy, 1 version
 
@@ -1782,11 +1861,11 @@ public class TestSQLRepositoryQuery {
         dml = session.query("SELECT * FROM Document WHERE ecm:mixinType = 'Downloadable'");
         assertEquals(5, dml.size()); // 3 files, 1 proxy, 1 version
         dml = session.query("SELECT * FROM Document WHERE ecm:mixinType = 'Versionable'");
-        assertEquals(6, dml.size()); // 1 note, 3 files, 1 proxy, 1 version
+        assertEquals(7, dml.size()); // 1 note, 3 files, 1 proxy, 2 versions
         dml = session.query("SELECT * FROM Document WHERE ecm:mixinType IN ('Folderish', 'Downloadable')");
         assertEquals(8, dml.size()); // 3 folders, 3 files, 1 proxy, 1 version
         dml = session.query("SELECT * FROM Document WHERE ecm:mixinType NOT IN ('Folderish', 'Downloadable')");
-        assertEquals(1, dml.size()); // 1 note
+        assertEquals(2, dml.size()); // 1 note, 1 version
         // same with facet
         FacetFilter filter;
         filter = new FacetFilter(FacetNames.FOLDERISH, true);
@@ -1794,16 +1873,16 @@ public class TestSQLRepositoryQuery {
         assertEquals(3, dml.size());
         filter = new FacetFilter(FacetNames.FOLDERISH, false);
         dml = session.query("SELECT * FROM Document ", filter);
-        assertEquals(6, dml.size());
+        assertEquals(7, dml.size()); // 1 note, 3 files, 1 proxy, 2 versions
         filter = new FacetFilter(FacetNames.DOWNLOADABLE, true);
         dml = session.query("SELECT * FROM Document ", filter);
         assertEquals(5, dml.size()); // 3 files, 1 proxy, 1 version
         filter = new FacetFilter(FacetNames.DOWNLOADABLE, false);
         dml = session.query("SELECT * FROM Document ", filter);
-        assertEquals(4, dml.size());
+        assertEquals(5, dml.size()); // 3 folders, 1 note, 1 version
         filter = new FacetFilter(FacetNames.VERSIONABLE, true);
         dml = session.query("SELECT * FROM Document ", filter);
-        assertEquals(6, dml.size()); // 1 note, 3 files, 1 proxy, 1 version
+        assertEquals(7, dml.size()); // 1 note, 3 files, 1 proxy, 2 versions
         filter = new FacetFilter(FacetNames.VERSIONABLE, false);
         dml = session.query("SELECT * FROM Document ", filter);
         assertEquals(3, dml.size());
@@ -1812,8 +1891,8 @@ public class TestSQLRepositoryQuery {
          * ecm:currentLifeCycleState
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:currentLifeCycleState = 'project'");
-        // 3 folders, 1 note, 3 files, 1 proxy, 1 version
-        assertEquals(9, dml.size());
+        // 3 folders, 1 note, 3 files, 1 proxy, 2 versions
+        assertEquals(10, dml.size());
 
         // to observe locks, which have been set from another transaction
         // we may need to actually commit and re-open a transaction (MySQL)
@@ -1832,26 +1911,30 @@ public class TestSQLRepositoryQuery {
             assertIdSet(dml, file1.getId());
         }
         dml = session.query("SELECT * FROM Document ORDER BY ecm:lockOwner");
-        assertEquals(9, dml.size());
+        assertEquals(10, dml.size());
 
         /*
          * ecm:lockCreated
          */
         dml = session.query("SELECT * FROM Document ORDER BY ecm:lockCreated");
-        assertEquals(9, dml.size());
+        assertEquals(10, dml.size());
     }
 
     @Test
     public void testQuerySpecialFieldsVersioning() throws Exception {
         createDocs();
+        String noteVersionId = session.getLastDocumentVersionRef(new PathRef("/testfolder1/testfile3")).toString();
         DocumentModel doc = session.getDocument(new PathRef("/testfolder2/testfolder3/testfile4"));
         DocumentModel proxy = publishDoc(); // testfile4 to testfolder1
         DocumentModel version = session.getDocument(new IdRef(proxy.getSourceId()));
         DocumentModel file1 = session.getDocument(new PathRef("/testfolder1/testfile1"));
         DocumentRef v1 = session.checkIn(file1.getRef(), VersioningOption.MAJOR, "comment1");
         session.checkOut(file1.getRef());
+        maybeSleepToNextSecond();
         DocumentRef v2 = session.checkIn(file1.getRef(), VersioningOption.MAJOR, "comment2");
         session.save();
+        // note is automatically versioned
+        DocumentModel note = session.getDocument(new PathRef("/testfolder1/testfile3"));
 
         DocumentModelList dml;
 
@@ -1859,7 +1942,7 @@ public class TestSQLRepositoryQuery {
          * ecm:isCheckedIn
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedIn = 1");
-        assertIdSet(dml, doc.getId(), file1.getId());
+        assertIdSet(dml, note.getId(), doc.getId(), file1.getId());
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedIn = 0");
         assertEquals(9, dml.size());
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedIn = 0 AND ecm:isProxy = 0");
@@ -1868,7 +1951,7 @@ public class TestSQLRepositoryQuery {
         session.checkOut(file1.getRef());
         session.save();
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedIn = 1");
-        assertIdSet(dml, doc.getId());
+        assertIdSet(dml, doc.getId(), note.getId());
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedIn = 0");
         assertEquals(10, dml.size());
 
@@ -1876,12 +1959,12 @@ public class TestSQLRepositoryQuery {
          * ecm:isVersion / ecm:isCheckedInVersion
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 1");
-        assertIdSet(dml, version.getId(), v1.toString(), v2.toString());
+        assertIdSet(dml, version.getId(), noteVersionId, v1.toString(), v2.toString());
         dml = session.query("SELECT * FROM Document WHERE ecm:isVersion = 0");
         assertEquals(8, dml.size()); // 7 folder/docs, 1 proxy
         // old spelling ecm:isCheckedInVersion
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedInVersion = 1");
-        assertIdSet(dml, version.getId(), v1.toString(), v2.toString());
+        assertIdSet(dml, version.getId(), noteVersionId, v1.toString(), v2.toString());
         dml = session.query("SELECT * FROM Document WHERE ecm:isCheckedInVersion = 0");
         assertEquals(8, dml.size()); // 7 folder/docs, 1 proxy
 
@@ -1889,9 +1972,9 @@ public class TestSQLRepositoryQuery {
          * ecm:isLatestVersion
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestVersion = 1");
-        assertIdSet(dml, version.getId(), v2.toString(), proxy.getId());
+        assertIdSet(dml, version.getId(), noteVersionId, v2.toString(), proxy.getId());
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestVersion = 1 AND ecm:isProxy = 0");
-        assertIdSet(dml, version.getId(), v2.toString());
+        assertIdSet(dml, version.getId(), noteVersionId, v2.toString());
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestVersion = 0");
         assertEquals(8, dml.size()); // 7 folder/docs, 1 proxy
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestVersion = 0 AND ecm:isProxy = 0");
@@ -1903,16 +1986,16 @@ public class TestSQLRepositoryQuery {
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 1");
         assertIdSet(dml, v2.toString());
         dml = session.query("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 0");
-        assertEquals(10, dml.size());
+        assertEquals(11, dml.size());
 
         /*
          * ecm:versionLabel
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:versionLabel = '0.1'");
         // we can check the version label on a proxy
-        assertIdSet(dml, version.getId(), proxy.getId());
+        assertIdSet(dml, version.getId(), proxy.getId(), noteVersionId);
         dml = session.query("SELECT * FROM Document WHERE ecm:versionLabel = '0.1' AND ecm:isProxy = 0");
-        assertIdSet(dml, version.getId());
+        assertIdSet(dml, version.getId(), noteVersionId);
 
         /*
          * ecm:versionDescription
@@ -1926,9 +2009,9 @@ public class TestSQLRepositoryQuery {
          * ecm:versionCreated
          */
         dml = session.query("SELECT * FROM Document WHERE ecm:versionCreated IS NOT NULL");
-        assertIdSet(dml, version.getId(), v1.toString(), v2.toString(), proxy.getId());
+        assertIdSet(dml, version.getId(), noteVersionId, v1.toString(), v2.toString(), proxy.getId());
         dml = session.query("SELECT * FROM Document WHERE ecm:versionCreated IS NOT NULL and ecm:isProxy = 0");
-        assertIdSet(dml, version.getId(), v1.toString(), v2.toString());
+        assertIdSet(dml, version.getId(), noteVersionId, v1.toString(), v2.toString());
 
         /*
          * ecm:versionVersionableId
@@ -1956,7 +2039,7 @@ public class TestSQLRepositoryQuery {
     public void testEmptyLifecycle() throws Exception {
         DocumentModelList dml;
         createDocs();
-        String sql = "SELECT * FROM Document WHERE ecm:currentLifeCycleState <> 'deleted'";
+        String sql = "SELECT * FROM Document WHERE ecm:currentLifeCycleState <> 'deleted' AND ecm:isVersion = 0";
 
         dml = session.query(sql);
         assertEquals(7, dml.size());
@@ -2060,7 +2143,7 @@ public class TestSQLRepositoryQuery {
         createDocs();
         IterableQueryResult res;
 
-        res = session.queryAndFetch("SELECT * FROM Document", "NXQL");
+        res = session.queryAndFetch("SELECT * FROM Document WHERE ecm:isVersion = 0", "NXQL");
         assertEquals(4, res.size()); // instead of 7 without security policy
         res.close();
     }
@@ -2068,9 +2151,9 @@ public class TestSQLRepositoryQuery {
     @Test
     public void testQueryComplexTypeFiles() throws Exception {
         DocumentModel doc = new DocumentModelImpl("/", "myfile", "File");
-        List<Object> files = new LinkedList<Object>();
-        Map<String, Object> f = new HashMap<String, Object>();
-        f.put("filename", "f1");
+        List<Object> files = new LinkedList<>();
+        Map<String, Object> f = new HashMap<>();
+        f.put("file", Blobs.createBlob("b1", "text/plain", "UTF-8", "f1"));
         files.add(f);
         doc.setProperty("files", "files", files);
         doc = session.createDocument(doc);
@@ -2192,6 +2275,15 @@ public class TestSQLRepositoryQuery {
         IterableQueryResult res = session.queryAndFetch(query, "NXQL");
         assertEquals(1, res.size());
         res.close();
+    }
+
+    @Test
+    public void testQueryProjectionDistinctId() throws Exception {
+        makeComplexDoc();
+
+        String query = "SELECT DISTINCT ecm:uuid FROM TestDoc WHERE tst:friends/*/firstname = 'John'";
+        PartialList<Map<String, Serializable>> res = session.queryProjection(query, 10, 0);
+        assertEquals(1, res.list.size());
     }
 
     @Test
@@ -2936,10 +3028,10 @@ public class TestSQLRepositoryQuery {
 
         clause = "tst:title = 'hello world' ORDER BY tst:subjects/*1";
         it = session.queryAndFetch("SELECT tst:title" + FROM_WHERE + clause, "NXQL");
-        // MongoDB query projecting on a non-wildcard values doesn't repeat matches
+        // MongoDB/MarkLogic query projecting on a non-wildcard values doesn't repeat matches
         // as this would entail re-evaluating the projection from the full state
         // just to get duplicated identical rows
-        assertEquals(isDBSMongoDB() ? 1 : 3, it.size());
+        assertEquals(isDBSMongoDB() || isDBSMarkLogic() ? 1 : 3, it.size());
         it.close();
     }
 
@@ -3164,31 +3256,302 @@ public class TestSQLRepositoryQuery {
         doc1 = session.createDocument(doc1);
 
         DocumentModel doc2 = new DocumentModelImpl("/", "doc2", "File");
+        doc2.setPropertyValue("dc:source", doc1.getId());
         doc2 = session.createDocument(doc2);
+        session.save();
 
+        DocumentModelList dml = session.query("SELECT dc:source FROM File WHERE ecm:name = 'doc2'");
+        assertEquals(1, dml.size());
+        DocumentModel doc = dml.get(0);
+        assertEquals(doc1.getId(), doc.getId());
+    }
+
+    @Test
+    public void testQueryIdListNotFromUuid() throws Exception {
+        DocumentModel doc1 = new DocumentModelImpl("/", "doc1", "File");
+        doc1 = session.createDocument(doc1);
+        DocumentModel doc2 = new DocumentModelImpl("/", "doc2", "File");
+        doc2 = session.createDocument(doc2);
         DocumentModel doc3 = new DocumentModelImpl("/", "doc3", "File");
-        doc3.setPropertyValue("dc:source", doc1.getId());
-        doc3.setPropertyValue("dc:subjects",
-                new String[] { "not-a-valid-id", doc1.getId(), doc1.getId(), doc2.getId() });
         doc3 = session.createDocument(doc3);
+
+        // test both orders
+        for (Pair<DocumentModel, DocumentModel> pair : Arrays.asList(Pair.of(doc1, doc2), Pair.of(doc2, doc1))) {
+            DocumentModel doca = pair.getLeft();
+            DocumentModel docb = pair.getRight();
+            String[] prop = new String[] { "not-a-valid-id", doca.getId(), doca.getId(), docb.getId() };
+            List<String> expected = Arrays.asList(prop[1], prop[2], prop[3]);
+            doc3.setPropertyValue("dc:subjects", prop);
+            doc3 = session.saveDocument(doc3);
+            session.save();
+
+            DocumentModelList dml;
+            List<String> actual;
+            String query = "SELECT dc:subjects/* FROM File WHERE ecm:name = 'doc3'";
+
+            // expect a specific order (NXP-19484)
+            // test with proxies
+            dml = session.query(query);
+            assertEquals(3, dml.size());
+            actual = Arrays.asList(dml.get(0).getId(), dml.get(1).getId(), dml.get(2).getId());
+            assertEquals(expected, actual);
+
+            // same without proxies
+            dml = session.query(query + " AND ecm:isProxy = 0");
+            assertEquals(3, dml.size());
+            actual = Arrays.asList(dml.get(0).getId(), dml.get(1).getId(), dml.get(2).getId());
+            assertEquals(expected, actual);
+        }
+    }
+
+    @Test
+    public void testScrollApi() throws Exception {
+        final int nbDocs = 127;
+        final int batchSize = 13;
+        DocumentModel doc;
+        for (int i=0; i<nbDocs; i++) {
+            doc = new DocumentModelImpl("/", "doc" + i, "File");
+            session.createDocument(doc);
+        }
+        session.save();
+        DocumentModelList dml;
+        dml = session.query("SELECT * FROM Document");
+        assertEquals(nbDocs, dml.size());
+
+        ScrollResult ret = session.scroll("SELECT * FROM Document", batchSize, 10);
+        int total = 0;
+        while (ret.hasResults()) {
+            List<String> ids = ret.getResultIds();
+            ids.stream().forEach(id -> assertFalse(id.isEmpty()));
+            total += ids.size();
+            ret = session.scroll(ret.getScrollId());
+        }
+        assertEquals(nbDocs, total);
+
+        // the scroll id is now closed
+        exception.expect(NuxeoException.class);
+        exception.expectMessage("Unknown or timed out scrollId");
+        ret = session.scroll(ret.getScrollId());
+        assertFalse(ret.hasResults());
+    }
+
+    @Test
+    @LogCaptureFeature.FilterOn(logLevel = "WARN")
+    public void testScrollApiEmtpy() throws Exception {
+        // do a scroll that return nothing
+        ScrollResult ret = session.scroll("SELECT * FROM File", 10, 1);
+        assertFalse(ret.hasResults());
+        // wait for the scroll timeout
+        Thread.sleep(1100);
+        // A new scroll call will warn about timed out scroll
+        ret = session.scroll("SELECT * FROM File", 10, 1);
+        assertFalse(ret.hasResults());
+        // we expect to have no warn because empty scroll should not maintain any cursor
+        List<LoggingEvent> events = logCaptureResult.getCaughtEvents();
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    public void testScrollApiRequiresAdminRights() throws Exception {
+        ScrollResult ret = session.scroll("SELECT * FROM Document", 3, 1);
+        assertFalse(ret.hasResults());
+
+        try (CoreSession bobSession = CoreInstance.openCoreSession(session.getRepositoryName(), "bob")) {
+            exception.expect(NuxeoException.class);
+            exception.expectMessage("Only Administrators can scroll");
+            // raise an illegal access
+            ret = bobSession.scroll("SELECT * FROM Document", 3, 1);
+            assertFalse(ret.hasResults());
+        }
+    }
+
+    @Test
+    public void testScrollApiRequiresAdminRightsBis() throws Exception {
+        assumeTrue("Backend must support true scrolling", supportsScroll());
+
+        DocumentModel doc1 = new DocumentModelImpl("/", "doc1", "File");
+        session.createDocument(doc1);
+        DocumentModel doc2 = new DocumentModelImpl("/", "doc2", "File");
+        session.createDocument(doc2);
+        session.save();
+
+        ScrollResult ret = session.scroll("SELECT * FROM Document", 1, 10);
+        assertTrue(ret.hasResults());
+        assertEquals(1, ret.getResultIds().size());
+
+        try (CoreSession bobSession = CoreInstance.openCoreSession(session.getRepositoryName(), "bob")) {
+            exception.expect(NuxeoException.class);
+            exception.expectMessage("Only Administrators can scroll");
+            // raise an illegal access
+            ret = bobSession.scroll(ret.getScrollId());
+            assertFalse(ret.hasResults());
+        }
+    }
+
+    @Test
+    public void testScrollTimeout() throws Exception {
+        assumeTrue("Backend must support true scrolling", supportsScroll());
+
+        DocumentModel doc1 = new DocumentModelImpl("/", "doc1", "File");
+        session.createDocument(doc1);
+        DocumentModel doc2 = new DocumentModelImpl("/", "doc2", "File");
+        session.createDocument(doc2);
+        session.save();
+
+        ScrollResult ret = session.scroll("SELECT * FROM Document", 1, 1);
+        assertTrue(ret.hasResults());
+        assertEquals(1, ret.getResultIds().size());
+        // wait for scroll timeout
+        Thread.sleep(1100);
+
+        exception.expect(NuxeoException.class);
+        exception.expectMessage("Timed out scrollId");
+        ret = session.scroll(ret.getScrollId());
+        assertFalse(ret.hasResults());
+    }
+
+    @Test
+    public void testScrollBadUsageInvalidScrollId() throws Exception {
+        exception.expect(NuxeoException.class);
+        exception.expectMessage("Unknown or timed out scrollId");
+        ScrollResult ret = session.scroll("foo");
+        assertFalse(ret.hasResults());
+    }
+
+    @Test
+    public void testScrollBadUsage() throws Exception {
+        assumeTrue("Backend must support true scrolling", supportsScroll());
+
+        DocumentModel doc1 = new DocumentModelImpl("/", "doc1", "File");
+        session.createDocument(doc1);
+        DocumentModel doc2 = new DocumentModelImpl("/", "doc2", "File");
+        session.createDocument(doc2);
+        session.save();
+
+        ScrollResult ret1 = session.scroll("SELECT * FROM Document", 1, 1);
+        ScrollResult ret2 = session.scroll("SELECT * FROM Document", 1, 1);
+        ScrollResult ret3 = session.scroll("SELECT * FROM Document", 1, 1);
+        assertTrue(ret1.hasResults());
+        assertEquals(1, ret1.getResultIds().size());
+
+        Thread.sleep(1100);
+        // normal timeout on ret1
+        try {
+            session.scroll(ret1.getScrollId());
+        } catch (NuxeoException e) {
+            assertEquals("Timed out scrollId", e.getMessage());
+        }
+        // This new call will clean leaked scroll
+        ScrollResult ret4 = session.scroll("SELECT * FROM Document", 1, 1);
+        assertTrue(ret4.hasResults());
+
+        // ret2 is now unknown because it has been cleaned
+        exception.expect(NuxeoException.class);
+        exception.expectMessage("Unknown or timed out scrollId");
+        session.scroll(ret2.getScrollId());
+    }
+
+    @Test
+    public void testScrollApiConcurrency() throws Exception {
+        final int nbDocs = 127;
+        final int batchSize = 13;
+        final int nbThread = nbDocs/batchSize + 1;
+        // System.out.println("nbDocs: " + nbDocs + ", batch: " + batchSize + ", thread: " + nbThread);
+        DocumentModel doc;
+        for (int i=0; i<nbDocs; i++) {
+            doc = new DocumentModelImpl("/", "doc" + i, "File");
+            session.createDocument(doc);
+        }
         session.save();
 
         DocumentModelList dml;
-        DocumentModel doc;
+        dml = session.query("SELECT * FROM Document");
+        assertEquals(nbDocs, dml.size());
 
-        dml = session.query("SELECT dc:source FROM File WHERE ecm:name = 'doc3'");
-        assertEquals(1, dml.size());
-        doc = dml.get(0);
-        assertEquals(doc1.getId(), doc.getId());
+        ScrollResult ret = session.scroll("SELECT * FROM Document", batchSize, 10);
+        List<String> ids = ret.getResultIds();
+        int total = ids.size();
+        String scrollId = ret.getScrollId();
+        // System.out.println("first call: " + total);
+        List<CompletableFuture<Integer>> futures = new ArrayList<>(nbThread);
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(nbThread);
+        final CountDownLatch latch = new CountDownLatch(nbThread);
+        for (int n=0; n < nbThread; n++) {
+            CompletableFuture completableFuture = CompletableFuture.supplyAsync(() -> {
+                TransactionHelper.startTransaction();
+                try {
+                    // make sure all threads ask to scroll at the same time
+                    latch.countDown();
+                    try {
+                        latch.await();
+                    } catch (InterruptedException e) {
+                        ExceptionUtils.checkInterrupt(e);
+                    }
+                    int nb = session.scroll(scrollId).getResultIds().size();
+                    // System.out.println(Thread.currentThread().getName() + ": return: " + nb);
+                    return nb;
+                } finally {
+                    TransactionHelper.commitOrRollbackTransaction();
+                }
+            }, executor);
+            futures.add(completableFuture);
+        }
+        for (int n=0; n < nbThread; n++) {
+            int count = futures.get(n).get();
+            total += count;
+        }
+        assertEquals(nbDocs, total);
+    }
 
-        dml = session.query("SELECT dc:subjects/* FROM File WHERE ecm:name = 'doc3'");
-        assertEquals(3, dml.size());
-        // order is not fixed for VCS
-        List<String> expectedList = new ArrayList<>(Arrays.asList(doc1.getId(), doc1.getId(), doc2.getId()));
-        List<String> list = new ArrayList<>(Arrays.asList(dml.get(0).getId(), dml.get(1).getId(), dml.get(2).getId()));
-        Collections.sort(expectedList);
-        Collections.sort(list);
-        assertEquals(expectedList, list);
+    @Test
+    public void testScrollCleaningConcurrency() throws Exception {
+        final int NB_TRHEADS = 15;
+        final int NB_SCROLLS = 100;
+
+        assumeTrue("Backend must support true scrolling", supportsScroll());
+
+        DocumentModel doc = new DocumentModelImpl("/", "doc1", "File");
+        session.createDocument(doc);
+        doc = new DocumentModelImpl("/", "doc2", "File");
+        session.createDocument(doc);
+        session.save();
+        ScrollResult ret;
+        for (int i = 0; i < NB_SCROLLS; i++) {
+            session.scroll("SELECT * FROM Document", 1, 1).getScrollId();
+        }
+        // wait for timeout
+        Thread.sleep(1100);
+
+        List<CompletableFuture<Integer>> futures = new ArrayList<>(NB_TRHEADS);
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(NB_TRHEADS);
+        final CountDownLatch latch = new CountDownLatch(NB_TRHEADS);
+        for (int n=0; n < NB_TRHEADS; n++) {
+
+            CompletableFuture completableFuture = CompletableFuture.supplyAsync(() -> {
+                TransactionHelper.startTransaction();
+                try {
+                    // make sure all threads ask to scroll at the same time
+                    latch.countDown();
+                    try {
+                        latch.await();
+                    } catch (InterruptedException e) {
+                        ExceptionUtils.checkInterrupt(e);
+                    }
+                    session.scroll("SELECT * FROM Document", 1, 1).getResultIds().size();
+                    return 1;
+                } finally {
+                    TransactionHelper.commitOrRollbackTransaction();
+                }
+            }, executor);
+            futures.add(completableFuture);
+        }
+        int total = 0;
+        for (int n=0; n < NB_TRHEADS; n++) {
+            int count = futures.get(n).get();
+            total += count;
+        }
+        assertEquals(NB_TRHEADS, total);
     }
 
 }
+

@@ -14,13 +14,9 @@
  * limitations under the License.
  *
  * tmartins
- *
  */
-
 package org.nuxeo.ecm.core.cache;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.reload.ReloadEventNames;
 import org.nuxeo.runtime.services.event.Event;
@@ -28,20 +24,12 @@ import org.nuxeo.runtime.services.event.EventListener;
 
 public class CacheReloadListener implements EventListener {
 
-    private static final Log log = LogFactory.getLog(CacheReloadListener.class);
-
-    @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return true;
-    }
-
     @Override
     public void handleEvent(Event event) {
         if (!ReloadEventNames.FLUSH_EVENT_ID.equals(event.getId())) {
             return;
         }
-        CacheRegistry registry = Framework.getService(CacheRegistry.class);
-        registry.start();
+        Framework.getService(CacheRegistry.class).invalidateAll();
     }
 
 }

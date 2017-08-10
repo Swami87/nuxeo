@@ -21,6 +21,7 @@ package org.nuxeo.ecm.automation.core.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.Serializable;
@@ -30,13 +31,11 @@ import java.util.Map;
 
 import javax.inject.Inject;
 
-import junit.framework.Assert;
-
+import org.apache.commons.io.FileUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.AutomationService;
 import org.nuxeo.ecm.automation.OperationChain;
 import org.nuxeo.ecm.automation.OperationContext;
@@ -150,7 +149,7 @@ public class BlobOperationsTest {
         File file = Framework.createTempFile("nx-test-blob-", ".tmp");
         try {
             CreateBlob.skipProtocolCheck = true;
-            FileUtils.writeFile(file, "blob content");
+            FileUtils.writeStringToFile(file, "blob content");
             OperationChain chain = new OperationChain("testChain");
             chain.add(FetchContextDocument.ID);
             chain.add(CreateDocument.ID).set("type", "File").set("name", "file").set("properties", "dc:title=MyDoc");
@@ -214,26 +213,31 @@ public class BlobOperationsTest {
         chain.add(CreateDocument.ID).set("type", "File").set("name", "file").set("properties", "dc:title=MyDoc");
         chain.add(SetDocumentBlob.ID).set("xpath", "files:files").set("file", Blobs.createBlob("blob1"));
         chain.add(SetDocumentBlob.ID).set("xpath", "files:files").set("file", Blobs.createBlob("blob2"));
+        chain.add(SetDocumentBlob.ID).set("xpath", "files:files").set("file", Blobs.createBlob("blob3"));
         chain.add(GetDocumentBlobs.ID);
 
         BlobList out = (BlobList) service.run(ctx, chain);
-        assertEquals(2, out.size());
+        assertEquals(3, out.size());
         assertEquals("blob1", out.get(0).getString());
         assertEquals("blob2", out.get(1).getString());
+        assertEquals("blob3", out.get(2).getString());
 
-        // chain 2 is removing the blobs we constructed earlier.
+        // chain 2 is removing blob2.
         chain = new OperationChain("testRemoveChain");
         chain.add(FetchDocument.ID).set("value", new PathRef("/src/file"));
-        chain.add(RemoveDocumentBlob.ID).set("xpath", "files:files/file[0]");
+        chain.add(RemoveDocumentBlob.ID).set("xpath", "files:files/file[1]");
         chain.add(GetDocumentBlobs.ID);
 
         out = (BlobList) service.run(ctx, chain);
-        assertEquals(1, out.size());
+        assertEquals(2, out.size());
+        assertEquals("blob1", out.get(0).getString());
+        assertEquals("blob3", out.get(1).getString());
     }
 
     @Test
     public void testExportBlobToFile() throws Exception {
-        File dir = Framework.createTempFile("autoamtion-test-", ".tmp");
+        File dir = File.createTempFile("automation-test-", ".tmp",
+                org.apache.commons.io.FileUtils.getTempDirectory().getParentFile().getParentFile());
         dir.delete();
         dir.mkdirs();
 
@@ -248,7 +252,7 @@ public class BlobOperationsTest {
         assertSame(blob, out);
 
         File file = new File(dir, "test-" + blob.getFilename());
-        assertEquals(blob.getString(), FileUtils.readFile(file));
+        assertEquals(blob.getString(), FileUtils.readFileToString(file));
 
         file.delete();
 
@@ -259,7 +263,7 @@ public class BlobOperationsTest {
         assertSame(blob, out);
 
         file = new File(dir, blob.getFilename());
-        assertEquals(blob.getString(), FileUtils.readFile(file));
+        assertEquals(blob.getString(), FileUtils.readFileToString(file));
         file.delete();
 
         dir.delete();
@@ -305,11 +309,11 @@ public class BlobOperationsTest {
         ArrayList<Map<String, Serializable>> files = new ArrayList<>();
         // Attach one file to the list
         File tmpFile = Framework.createTempFile("test", ".txt");
-        FileUtils.writeFile(tmpFile, "Content");
+        FileUtils.writeStringToFile(tmpFile, "Content");
         Blob blob = Blobs.createBlob(tmpFile);
+        blob.setFilename("initial_name.txt");
         Framework.trackFile(tmpFile, blob);
         file.put("file", (Serializable) blob);
-        file.put("filename", "initial_name.txt");
         files.add(file);
         // Create document
         DocumentModel docFile = session.createDocumentModel(src.getPathAsString(), "blobWithName", "File");
@@ -332,8 +336,8 @@ public class BlobOperationsTest {
     @Test
     public void testPDFMerge() throws Exception {
         // Fetch two files
-        File pdfMerge1 = FileUtils.getResourceFileFromContext("pdfMerge1.pdf");
-        File pdfMerge2 = FileUtils.getResourceFileFromContext("pdfMerge2.pdf");
+        File pdfMerge1 = org.nuxeo.common.utils.FileUtils.getResourceFileFromContext("pdfMerge1.pdf");
+        File pdfMerge2 = org.nuxeo.common.utils.FileUtils.getResourceFileFromContext("pdfMerge2.pdf");
         Blob pdf1 = Blobs.createBlob(pdfMerge1);
         Blob pdf2 = Blobs.createBlob(pdfMerge2);
         pdf1.setMimeType("application/pdf");
@@ -369,9 +373,9 @@ public class BlobOperationsTest {
         try {
             service.run(ctx, ConcatenatePDFs.ID, params);
             // Should fails before
-            Assert.fail();
+            fail();
         } catch (OperationException e) {
-            assertEquals("Blob pdfMerge1.pdf is not a PDF.", e.getCause().getMessage());
+            assertEquals("Blob pdfMerge1.pdf is not a PDF.", e.getMessage());
         }
 
         // Test check on context blob failure
@@ -389,10 +393,10 @@ public class BlobOperationsTest {
         try {
             service.run(ctx, ConcatenatePDFs.ID, params);
             // Should fails before
-            Assert.fail();
+            fail();
         } catch (OperationException e) {
             assertNotNull("The blob to append from variable context: 'blobToAppend' is not a blob.",
-                    e.getCause().getMessage());
+                    e.getMessage());
         }
     }
     // TODO add post and file2pdf tests

@@ -3,7 +3,7 @@
   <parent>
     <artifactId>nuxeo-services-parent</artifactId>
     <groupId>org.nuxeo.ecm.platform</groupId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
 
   <groupId>org.nuxeo.ecm.platform</groupId>
@@ -20,6 +20,8 @@
     <module>nuxeo-platform-directory-types-contrib</module>
     <module>nuxeo-platform-directory-ldap</module>
     <module>nuxeo-platform-directory-multi</module>
+    <module>nuxeo-platform-directory-mongodb</module>
+    <module>nuxeo-platform-directory-test</module>
   </modules>
 
 </project>

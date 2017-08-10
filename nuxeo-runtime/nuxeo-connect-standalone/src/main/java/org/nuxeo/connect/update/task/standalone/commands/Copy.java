@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
  * limitations under the License.
  *
  * Contributors:
- *     bstefanescu, jcarsique
+ *     bstefanescu
+ *     jcarsique
+ *     Yannis JULIENNE
  */
 package org.nuxeo.connect.update.task.standalone.commands;
 
@@ -23,12 +25,12 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.Map;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.Environment;
 import org.nuxeo.common.utils.FileMatcher;
 import org.nuxeo.common.utils.FileRef;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.FileVersion;
 import org.nuxeo.connect.update.PackageException;
 import org.nuxeo.connect.update.ValidationStatus;
@@ -153,7 +155,13 @@ public class Copy extends AbstractCommand {
         }
         try {
             FileMatcher filenameMatcher = FileMatcher.getMatcher("{n:.*-}[0-9]+.*\\.jar");
-            if (filenameMatcher.match(fileToCopy.getName()) && (overwriteIfNewerVersion || upgradeOnly)) {
+            boolean isVersionnedJarFile = filenameMatcher.match(fileToCopy.getName());
+            if (isVersionnedJarFile) {
+                log.warn(String.format(
+                        "Use of the <copy /> command on JAR files is not recommended, prefer using <update /> command to ensure a safe rollback. (%s)",
+                        fileToCopy.getName()));
+            }
+            if (isVersionnedJarFile && (overwriteIfNewerVersion || upgradeOnly)) {
                 // Compare source and destination versions set in filename
                 FileVersion fileToCopyVersion, dstVersion = null;
                 String filenameWithoutVersion = filenameMatcher.getValue();
@@ -196,8 +204,8 @@ public class Copy extends AbstractCommand {
             }
             if (dst.exists()) { // backup the destination file if exist.
                 if (!doOverwrite && !append) { // force a rollback
-                    throw new PackageException("Copy command has overwrite flag on false but destination file exists: "
-                            + dst);
+                    throw new PackageException(
+                            "Copy command has overwrite flag on false but destination file exists: " + dst);
                 }
                 if (task instanceof UninstallTask) {
                     // no backup for uninstall task
@@ -227,13 +235,13 @@ public class Copy extends AbstractCommand {
                         rfile.close();
                     }
                 }
-                FileUtils.writeFile(dst, content, append);
+                FileUtils.writeStringToFile(dst, content, append);
             } else {
                 File tmp = new File(dst.getPath() + ".tmp");
-                FileUtils.copy(fileToCopy, tmp);
+                org.nuxeo.common.utils.FileUtils.copy(fileToCopy, tmp);
                 if (!tmp.renameTo(dst)) {
                     tmp.delete();
-                    FileUtils.copy(fileToCopy, dst);
+                    org.nuxeo.common.utils.FileUtils.copy(fileToCopy, dst);
                 }
             }
             // check whether the copied or restored file was the launcher
@@ -273,7 +281,7 @@ public class Copy extends AbstractCommand {
         }
         if (append) {
             try {
-                return FileUtils.readFile(fileToCopy);
+                return FileUtils.readFileToString(fileToCopy);
             } catch (IOException e) {
                 throw new PackageException("Couldn't read " + fileToCopy.getName(), e);
             }

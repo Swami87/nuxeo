@@ -18,13 +18,19 @@
  */
 package org.nuxeo.ecm.platform.oauth2.request;
 
+import static org.nuxeo.ecm.platform.oauth2.Constants.AUTHORIZATION_CODE_PARAM;
+import static org.nuxeo.ecm.platform.oauth2.Constants.CLIENT_SECRET_PARAM;
+import static org.nuxeo.ecm.platform.oauth2.Constants.CODE_VERIFIER_PARAM;
+import static org.nuxeo.ecm.platform.oauth2.Constants.GRANT_TYPE_PARAM;
+import static org.nuxeo.ecm.platform.oauth2.Constants.REFRESH_TOKEN_PARAM;
+
 import javax.servlet.http.HttpServletRequest;
 
 /**
  * @author <a href="mailto:ak@nuxeo.com">Arnaud Kervern</a>
  * @since 5.9.2
  */
-public class TokenRequest extends Oauth2Request {
+public class TokenRequest extends OAuth2Request {
 
     protected String grantType;
 
@@ -34,12 +40,15 @@ public class TokenRequest extends Oauth2Request {
 
     protected String refreshToken;
 
+    protected String codeVerifier;
+
     public TokenRequest(HttpServletRequest request) {
         super(request);
-        grantType = request.getParameter("grant_type");
-        code = request.getParameter("code");
-        clientSecret = request.getParameter("client_secret");
-        refreshToken = request.getParameter("refresh_token");
+        grantType = request.getParameter(GRANT_TYPE_PARAM);
+        code = request.getParameter(AUTHORIZATION_CODE_PARAM);
+        clientSecret = request.getParameter(CLIENT_SECRET_PARAM);
+        refreshToken = request.getParameter(REFRESH_TOKEN_PARAM);
+        codeVerifier = request.getParameter(CODE_VERIFIER_PARAM);
     }
 
     public String getGrantType() {
@@ -56,5 +65,9 @@ public class TokenRequest extends Oauth2Request {
 
     public String getRefreshToken() {
         return refreshToken;
+    }
+
+    public String getCodeVerifier() {
+        return codeVerifier;
     }
 }

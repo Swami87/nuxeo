@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,17 +55,18 @@ public class MetricsServiceImpl extends DefaultComponent implements MetricsServi
     }
 
     @Override
+    public void activate(ComponentContext context) {
+        SharedMetricRegistries.getOrCreate(MetricsService.class.getName());;
+    }
+
+    @Override
     public void deactivate(ComponentContext context) {
-        try {
-            config.disable(registry);
-        } finally {
-            instanceUp.dec();
-        }
+        SharedMetricRegistries.remove(MetricsService.class.getName());;
         log.debug("Deactivate component.");
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         if (config == null) {
             // Use a default config
             config = new MetricsDescriptor();
@@ -73,6 +74,23 @@ public class MetricsServiceImpl extends DefaultComponent implements MetricsServi
         log.info("Setting up metrics configuration");
         config.enable(registry);
         instanceUp.inc();
+    }
+
+    @Override
+    public void stop(ComponentContext context) {
+        try {
+            config.disable(registry);
+        } finally {
+            instanceUp.dec();
+        }
+    }
+
+    @Override
+    public <T> T getAdapter(Class<T> adapter) {
+        if (adapter.isAssignableFrom(MetricRegistry.class)) {
+            return adapter.cast(registry);
+        }
+        return super.getAdapter(adapter);
     }
 
 }

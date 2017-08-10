@@ -20,6 +20,7 @@
 package org.nuxeo.ecm.core.cache;
 
 import java.io.Serializable;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.logging.Log;
@@ -72,6 +73,11 @@ public class InMemoryCacheImpl extends AbstractCache {
     }
 
     @Override
+    public Set<String> keySet() {
+        return cache.asMap().keySet();
+    }
+
+    @Override
     public void invalidate(String key) {
         if (key != null) {
             cache.invalidate(key);
@@ -97,6 +103,11 @@ public class InMemoryCacheImpl extends AbstractCache {
     @Override
     public boolean hasEntry(String key) {
         return cache.asMap().containsKey(key);
+    }
+
+    @Override
+    public long getSize() {
+        return cache.size();
     }
 
 }

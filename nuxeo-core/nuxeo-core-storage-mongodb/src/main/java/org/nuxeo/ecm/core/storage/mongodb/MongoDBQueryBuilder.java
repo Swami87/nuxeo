@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,10 @@ package org.nuxeo.ecm.core.storage.mongodb;
 
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
-import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACE_GRANT;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACL;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACL_NAME;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACP;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_FULLTEXT_SCORE;
-import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ID;
-import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_NAME;
-import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_PARENT_ID;
 import static org.nuxeo.ecm.core.storage.mongodb.MongoDBRepository.MONGODB_ID;
 import static org.nuxeo.ecm.core.storage.mongodb.MongoDBRepository.MONGODB_META;
 import static org.nuxeo.ecm.core.storage.mongodb.MongoDBRepository.MONGODB_TEXT_SCORE;
@@ -68,7 +64,6 @@ import org.nuxeo.ecm.core.query.sql.model.OrderByClause;
 import org.nuxeo.ecm.core.query.sql.model.OrderByExpr;
 import org.nuxeo.ecm.core.query.sql.model.Reference;
 import org.nuxeo.ecm.core.query.sql.model.SelectClause;
-import org.nuxeo.ecm.core.query.sql.model.SelectList;
 import org.nuxeo.ecm.core.query.sql.model.StringLiteral;
 import org.nuxeo.ecm.core.schema.DocumentType;
 import org.nuxeo.ecm.core.schema.SchemaManager;
@@ -81,11 +76,11 @@ import org.nuxeo.ecm.core.schema.types.primitives.BooleanType;
 import org.nuxeo.ecm.core.schema.types.primitives.DateType;
 import org.nuxeo.ecm.core.storage.ExpressionEvaluator;
 import org.nuxeo.ecm.core.storage.ExpressionEvaluator.PathResolver;
-import org.nuxeo.ecm.core.storage.dbs.DBSDocument;
-import org.nuxeo.ecm.core.storage.dbs.DBSSession;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer.FulltextQuery;
 import org.nuxeo.ecm.core.storage.FulltextQueryAnalyzer.Op;
+import org.nuxeo.ecm.core.storage.dbs.DBSDocument;
+import org.nuxeo.ecm.core.storage.dbs.DBSSession;
 import org.nuxeo.runtime.api.Framework;
 
 import com.mongodb.BasicDBObject;
@@ -111,6 +106,10 @@ public class MongoDBQueryBuilder {
 
     protected final SchemaManager schemaManager;
 
+    protected final MongoDBConverter converter;
+
+    protected final String idKey;
+
     protected List<String> documentTypes;
 
     protected final Expression expression;
@@ -135,9 +134,11 @@ public class MongoDBQueryBuilder {
 
     private boolean fulltextSearchDisabled;
 
-    public MongoDBQueryBuilder(Expression expression, SelectClause selectClause, OrderByClause orderByClause,
-            PathResolver pathResolver, boolean fulltextSearchDisabled) {
+    public MongoDBQueryBuilder(MongoDBRepository repository, Expression expression, SelectClause selectClause,
+            OrderByClause orderByClause, PathResolver pathResolver, boolean fulltextSearchDisabled) {
         schemaManager = Framework.getLocalService(SchemaManager.class);
+        converter = repository.converter;
+        idKey = repository.idKey;
         this.expression = expression;
         this.selectClause = selectClause;
         this.orderByClause = orderByClause;
@@ -199,12 +200,8 @@ public class MongoDBQueryBuilder {
 
     protected void walkProjection() {
         projection = new BasicDBObject();
-        projection.put(KEY_ID, ONE); // always useful
-        projection.put(KEY_NAME, ONE); // used in ORDER BY ecm:path
-        projection.put(KEY_PARENT_ID, ONE); // used in ORDER BY ecm:path
         boolean projectionOnFulltextScore = false;
-        for (int i = 0; i < selectClause.elements.size(); i++) {
-            Operand op = selectClause.elements.get(i);
+        for (Operand op : selectClause.getSelectList().values()) {
             if (!(op instanceof Reference)) {
                 throw new QueryParseException("Projection not supported: " + op);
             }
@@ -332,9 +329,9 @@ public class MongoDBQueryBuilder {
             return new BasicDBObject(MONGODB_ID, "__nosuchid__");
         }
         if (op == Operator.EQ) {
-            return new BasicDBObject(DBSDocument.KEY_ID, id);
+            return new BasicDBObject(idKey, id);
         } else {
-            return new BasicDBObject(DBSDocument.KEY_ID, new BasicDBObject(QueryOperators.NE, id));
+            return new BasicDBObject(idKey, new BasicDBObject(QueryOperators.NE, id));
         }
     }
 
@@ -782,7 +779,7 @@ public class MongoDBQueryBuilder {
     }
 
     public List<Object> walkLiteralList(LiteralList litList) {
-        List<Object> list = new ArrayList<Object>(litList.size());
+        List<Object> list = new ArrayList<>(litList.size());
         for (Literal lit : litList) {
             list.add(walkLiteral(lit));
         }
@@ -974,7 +971,8 @@ public class MongoDBQueryBuilder {
             // simple field
             String field = DBSSession.convToInternal(prop);
             Type type = DBSSession.getType(field);
-            return new FieldInfo(prop, field, field, field, type, true);
+            String queryField = converter.keyToBson(field);
+            return new FieldInfo(prop, field, queryField, field, type, true);
         } else {
             String first = parts[0];
             Field field = schemaManager.getField(first);
@@ -1122,12 +1120,12 @@ public class MongoDBQueryBuilder {
          */
         Set<String> matchPrimaryTypes;
         if (include) {
-            matchPrimaryTypes = new HashSet<String>();
+            matchPrimaryTypes = new HashSet<>();
             for (String mixin : mixins) {
                 matchPrimaryTypes.addAll(getMixinDocumentTypes(mixin));
             }
         } else {
-            matchPrimaryTypes = new HashSet<String>(getDocumentTypes());
+            matchPrimaryTypes = new HashSet<>(getDocumentTypes());
             for (String mixin : mixins) {
                 matchPrimaryTypes.removeAll(getMixinDocumentTypes(mixin));
             }
@@ -1135,7 +1133,7 @@ public class MongoDBQueryBuilder {
         /*
          * Instance mixins that match.
          */
-        Set<String> matchMixinTypes = new HashSet<String>();
+        Set<String> matchMixinTypes = new HashSet<>();
         for (String mixin : mixins) {
             if (!isNeverPerInstanceMixin(mixin)) {
                 matchMixinTypes.add(mixin);

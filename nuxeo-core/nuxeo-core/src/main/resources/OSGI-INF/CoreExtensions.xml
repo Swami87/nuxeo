@@ -36,6 +36,7 @@
       <!--prefetch>common, dublincore</prefetch-->
       <prefetch>common.icon, dc:title, dc:description, dc:created, dc:modified,
         dc:lastContributor, dc:creator</prefetch>
+      <clearComplexPropertyBeforeSet>true</clearComplexPropertyBeforeSet> <!-- false is DEPRECATED since 9.3 -->
     </configuration>
   </extension>
 
@@ -57,6 +58,8 @@
     <facet name="HiddenInNavigation" perDocumentQuery="false"/>
     <facet name="SystemDocument" />
     <facet name="NotFulltextIndexable" />
+    <facet name="BigFolder" />
+    <facet name="HiddenInCreation" perDocumentQuery="false"/>
 
     <!-- facet to be used for full-text indexing of related text content
       (e.g. comments, annotations, tags...) -->
@@ -70,6 +73,7 @@
       <facet name="Folderish"/>
       <subtypes>
         <type>Folder</type>
+        <type>OrderedFolder</type>
         <type>File</type>
         <type>Note</type>
       </subtypes>
@@ -77,6 +81,12 @@
 
     <doctype name="OrderedFolder" extends="Folder">
       <facet name="Orderable"/>
+      <subtypes>
+        <type>Folder</type>
+        <type>OrderedFolder</type>
+        <type>File</type>
+        <type>Note</type>
+      </subtypes>
     </doctype>
 
     <doctype name="HiddenFolder" extends="Folder">
@@ -106,6 +116,7 @@
 
     <doctype name="WorkspaceRoot" extends="Folder">
       <facet name="SuperSpace"/>
+      <facet name="HiddenInCreation" />
       <subtypes>
         <type>Workspace</type>
       </subtypes>
@@ -122,6 +133,7 @@
       <subtypes>
         <type>Workspace</type>
         <type>Folder</type>
+        <type>OrderedFolder</type>
         <type>File</type>
         <type>Note</type>
       </subtypes>
@@ -129,6 +141,7 @@
 
     <doctype name="TemplateRoot" extends="Folder">
       <facet name="SuperSpace"/>
+      <facet name="HiddenInCreation" />
       <subtypes>
         <type>Workspace</type>
       </subtypes>
@@ -136,6 +149,7 @@
 
     <doctype name="SectionRoot" extends="Folder">
       <facet name="SuperSpace"/>
+      <facet name="HiddenInCreation" />
       <facet name="MasterPublishSpace" />
       <subtypes>
         <type>Section</type>
@@ -177,6 +191,14 @@
       <facet name="HasRelatedText"/>
     </doctype>
 
+  </extension>
+
+  <extension target="org.nuxeo.ecm.core.schema.TypeService" point="deprecation">
+    <documentation>The deprecated core properties</documentation>
+    <!-- Removed since 9.1 -->
+    <property schema="common" name="size" />
+    <property schema="file" name="filename" fallback="content/name" />
+    <property schema="files" name="files/*/filename" fallback="files/*/file/name" />
   </extension>
 
    <extension target="org.nuxeo.ecm.core.event.EventServiceComponent"

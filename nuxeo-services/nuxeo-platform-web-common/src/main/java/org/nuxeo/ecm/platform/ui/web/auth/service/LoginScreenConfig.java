@@ -20,16 +20,20 @@ package org.nuxeo.ecm.platform.ui.web.auth.service;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import javax.ws.rs.core.UriBuilder;
 
 import org.apache.commons.lang.StringUtils;
-
 import org.nuxeo.common.Environment;
 import org.nuxeo.common.xmap.XMap;
 import org.nuxeo.common.xmap.annotation.XNode;
 import org.nuxeo.common.xmap.annotation.XNodeList;
+import org.nuxeo.common.xmap.annotation.XNodeMap;
 import org.nuxeo.common.xmap.annotation.XObject;
 import org.nuxeo.runtime.api.Framework;
 
@@ -44,13 +48,19 @@ public class LoginScreenConfig implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * @since 8.4
+     */
+    @XNodeMap(value = "startupPages/startupPage", key = "@id", type = HashMap.class, componentType = LoginStartupPage.class)
+    protected Map<String, LoginStartupPage> startupPages = new HashMap<>();
+
     @XNodeList(value = "loginProviders/loginProvider", type = ArrayList.class, componentType = LoginProviderLink.class)
     protected List<LoginProviderLink> providers;
 
     /**
      * @since 7.10
      */
-    @XNodeList(value = "videos/video", type = ArrayList.class, componentType = LoginVideo.class)
+    @XNodeList(value = "videos/video", type = ArrayList.class, componentType = LoginVideo.class, nullByDefault = true)
     protected List<LoginVideo> videos;
 
     /**
@@ -77,7 +87,7 @@ public class LoginScreenConfig implements Serializable {
 
     protected String footerStyle;
 
-    protected String newsIframeUrl = "//www.nuxeo.com/standalone-login-page/";
+    protected String newsIframeUrl = "//www.nuxeo.com/login-page-embedded/";
 
     protected String newsIframeFullUrl = null;
 
@@ -119,6 +129,24 @@ public class LoginScreenConfig implements Serializable {
      */
     @XNode("loginButtonBackgroundColor")
     protected String loginButtonBackgroundColor;
+
+    /**
+     * @since 8.4
+     */
+    @XNode("defaultLocale")
+    protected String defaultLocale;
+
+    /**
+     * @since 8.4
+     */
+    @XNode("supportedLocales@append")
+    boolean appendSupportedLocales;
+
+    /**
+     * @since 8.4
+     */
+    @XNodeList(value = "supportedLocales/locale", type = ArrayList.class, componentType = String.class)
+    List<String> supportedLocales;
 
     public LoginScreenConfig() {
     }
@@ -164,6 +192,13 @@ public class LoginScreenConfig implements Serializable {
             }
             providers.add(newProvider);
         }
+    }
+
+    /**
+     * @since 8.4
+     */
+    public Map<String, LoginStartupPage> getStartupPages() {
+        return startupPages;
     }
 
     public String getHeaderStyle() {
@@ -296,6 +331,34 @@ public class LoginScreenConfig implements Serializable {
         return disableBackgroundSizeCover;
     }
 
+    /**
+     * @since 8.4
+     */
+    public String getDefaultLocale() {
+        return defaultLocale;
+    }
+
+    /**
+     * @since 8.4
+     */
+    public boolean isAppendSupportedLocales() {
+        return appendSupportedLocales;
+    }
+
+    /**
+     * @since 8.4
+     */
+    public List<String> getSupportedLocales() {
+        List<String> res = new ArrayList<>();
+        if (supportedLocales != null) {
+            res.addAll(supportedLocales);
+        }
+        if (!res.contains(getDefaultLocale())) {
+            res.add(getDefaultLocale());
+        }
+        return res;
+    }
+
     protected void merge(LoginScreenConfig newConfig) {
         if (newConfig.newsIframeUrl != null) {
             setNewsIframeUrl(newConfig.newsIframeUrl);
@@ -369,6 +432,33 @@ public class LoginScreenConfig implements Serializable {
                 }
             }
         }
+
+        if (startupPages == null) {
+            startupPages = newConfig.startupPages;
+        } else if (newConfig.startupPages != null && !newConfig.startupPages.isEmpty()) {
+            for (Map.Entry<String, LoginStartupPage> startupPage : newConfig.startupPages.entrySet()) {
+                if (startupPages.containsKey(startupPage.getKey())) {
+                    startupPages.get(startupPage.getKey()).merge(startupPage.getValue());
+                } else {
+                    startupPages.put(startupPage.getKey(), startupPage.getValue());
+                }
+            }
+        }
+
+        if (newConfig.defaultLocale != null) {
+            defaultLocale = newConfig.defaultLocale;
+        }
+
+        boolean append = newConfig.isAppendSupportedLocales();
+        List<String> newLocales = newConfig.getSupportedLocales();
+        Set<String> mergedLocales = new HashSet<String>();
+        if (append && supportedLocales != null) {
+            mergedLocales.addAll(supportedLocales);
+        }
+        if (newLocales != null) {
+            mergedLocales.addAll(newLocales);
+        }
+        supportedLocales = new ArrayList<>(mergedLocales);
     }
 
     /**
@@ -398,12 +488,23 @@ public class LoginScreenConfig implements Serializable {
                 clone.providers.add(l.clone());
             }
         }
+        if (startupPages != null) {
+            clone.startupPages = new HashMap<String, LoginStartupPage>();
+            for (Map.Entry<String, LoginStartupPage> startupPage : startupPages.entrySet()) {
+                clone.startupPages.put(startupPage.getKey(), startupPage.getValue().clone());
+            }
+        }
         clone.removeNews = removeNews;
         if (videos != null) {
             clone.videos = new ArrayList<LoginVideo>();
             for (LoginVideo v : videos) {
                 clone.videos.add(v.clone());
             }
+        }
+        clone.defaultLocale = defaultLocale;
+        clone.appendSupportedLocales = appendSupportedLocales;
+        if (supportedLocales != null) {
+            clone.supportedLocales = new ArrayList<>(supportedLocales);
         }
         return clone;
     }

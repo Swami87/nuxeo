@@ -83,6 +83,8 @@
       <category>DOCUMENT_UPPER_ACTION</category>
       <filter-id>hasNoSubscriptions</filter-id>
       <filter-id>canSubscribe</filter-id>
+      <filter-id>isNotVersion</filter-id>
+      <filter-id>canFollow</filter-id>
       <properties>
         <property name="ajaxSupport">true</property>
       </properties>
@@ -94,6 +96,8 @@
       <category>DOCUMENT_UPPER_ACTION</category>
       <filter-id>hasSubscriptions</filter-id>
       <filter-id>canSubscribe</filter-id>
+      <filter-id>isNotVersion</filter-id>
+      <filter-id>canFollow</filter-id>
       <properties>
         <property name="ajaxSupport">true</property>
       </properties>
@@ -165,6 +169,12 @@
     <filter id="layoutDevModeDisabled">
       <rule grant="true">
         <condition>#{nxDevModeSet and not nuxeoLayoutManagerBean.devModeSet}</condition>
+      </rule>
+    </filter>
+
+    <filter id="isNotVersion">
+      <rule grant="true">
+        <condition>!document.isVersion()</condition>
       </rule>
     </filter>
 
@@ -255,6 +265,12 @@
     <filter id="isExportableToPDF">
       <rule grant="true">
         <condition>#{conversionActions.isExportableToPDF(blob)}</condition>
+      </rule>
+    </filter>
+
+    <filter id="canFollow">
+      <rule grant="true">
+        <condition>#{subscriptionAction.canFollow()}</condition>
       </rule>
     </filter>
 

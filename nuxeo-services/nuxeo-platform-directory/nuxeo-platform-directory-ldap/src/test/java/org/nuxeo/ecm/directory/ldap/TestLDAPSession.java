@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.directory.ldap;
 
 import static org.junit.Assert.assertEquals;
@@ -27,6 +24,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.File;
 import java.io.Serializable;
@@ -41,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.junit.Ignore;
 import org.junit.Test;
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.core.api.Blob;
@@ -72,7 +71,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertEquals("Administrator", entry.getId());
             assertEquals("Manager", entry.getProperty(USER_SCHEMANAME, "lastName"));
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 assertEquals(Long.valueOf(1), entry.getProperty(USER_SCHEMANAME, "intField"));
                 assertEquals("uid=Administrator,ou=people,dc=example,dc=com", entry.getProperty(USER_SCHEMANAME, "dn"));
             }
@@ -82,7 +81,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             List<String> val = (List<String>) entry.getProperty(USER_SCHEMANAME, "employeeType");
             assertTrue(val.isEmpty());
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // LDAP references do not work with the internal test server
                 List<String> groups = (List<String>) entry.getProperty(USER_SCHEMANAME, "groups");
                 assertEquals(2, groups.size());
@@ -105,12 +104,12 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             }
             assertEquals(Arrays.asList("Boss"), entry2.getProperty(USER_SCHEMANAME, "employeeType"));
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // default value for missing attribute
                 assertEquals(Long.valueOf(0), entry2.getProperty(USER_SCHEMANAME, "intField"));
 
                 // LDAP references do not work with the internal test server
-                if (HAS_DYNGROUP_SCHEMA) {
+                if (hasDynGroupSchema()) {
                     assertEquals(Arrays.asList("dyngroup1", "dyngroup2", "dyngroup3", "members", "subgroup"),
                             entry2.getProperty(USER_SCHEMANAME, "groups"));
                 } else {
@@ -130,7 +129,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertNull(entry3);
 
             // test special character escaping
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // for some reason this do not work with the internal
                 // ApacheDS server (bug?)
                 DocumentModel entry4 = session.getEntry("Admi*");
@@ -154,7 +153,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertEquals("administrators", entry.getId());
             assertEquals("administrators", entry.getProperty(GROUP_SCHEMANAME, "groupname"));
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // LDAP references do not work with the internal test server
                 List<String> members = (List<String>) entry.getProperty(GROUP_SCHEMANAME, "members");
                 assertNotNull(members);
@@ -175,7 +174,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertEquals("members", entry.getId());
             assertEquals("members", entry.getProperty(GROUP_SCHEMANAME, "groupname"));
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // LDAP references do not work with the internal test server
                 List<String> members = (List<String>) entry.getProperty(GROUP_SCHEMANAME, "members");
                 assertEquals(3, members.size());
@@ -195,12 +194,12 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertEquals("submembers", entry.getId());
             assertEquals("submembers", entry.getProperty(GROUP_SCHEMANAME, "groupname"));
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // LDAP references do not work with the internal test server
                 assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
                 assertEquals(Arrays.asList(), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
 
-                if (HAS_DYNGROUP_SCHEMA) {
+                if (hasDynGroupSchema()) {
                     assertEquals(Arrays.asList("dyngroup1", "members"),
                             entry.getProperty(GROUP_SCHEMANAME, "parentGroups"));
                 } else {
@@ -213,9 +212,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
     @SuppressWarnings("unchecked")
     @Test
     public void testGetEntry3() {
-        if (!HAS_DYNGROUP_SCHEMA) {
-            return;
-        }
+        assumeTrue(hasDynGroupSchema());
         try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
             DocumentModel entry = session.getEntry("dyngroup1");
             assertNotNull(entry);
@@ -290,16 +287,13 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             assertNotNull(profiles);
             assertEquals(1, profiles.size());
             assertEquals("FUNCTIONAL_ADMINISTRATOR", profiles.get(0));
-
         }
     }
 
     @SuppressWarnings("unchecked")
     @Test
     public void testGetEntryWithLdapTreeRef() {
-        if (!USE_EXTERNAL_TEST_LDAP_SERVER) {
-            return;
-        }
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("groupDirectory").getSession();
                 Session unitSession = getLDAPDirectory("unitDirectory").getSession()) {
             DocumentModel entry = session.getEntry("subgroup");
@@ -318,7 +312,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
             List<String> parentGroups = (List<String>) entry.getProperty(GROUP_SCHEMANAME, "parentGroups");
             assertNotNull(parentGroups);
-            if (HAS_DYNGROUP_SCHEMA) {
+            if (hasDynGroupSchema()) {
                 assertEquals(1, parentGroups.size());
                 assertEquals(Arrays.asList("dyngroup1"), parentGroups);
             } else {
@@ -380,7 +374,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             DocumentModelList entries = session.getEntries();
             assertNotNull(entries);
             assertEquals(4, entries.size());
-            List<String> entryIds = new ArrayList<String>();
+            List<String> entryIds = new ArrayList<>();
             for (DocumentModel entry : entries) {
                 entryIds.add(entry.getId());
             }
@@ -394,363 +388,350 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
     @Test
     public void testCreateEntry() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session session = getLDAPDirectory("userDirectory").getSession()) {
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("userDirectory").getSession()) {
 
-                assertNotNull(session);
-                Map<String, Object> map = new HashMap<String, Object>();
-                map.put("username", "user0");
-                map.put("password", "pass0");
-                map.put("firstName", "User");
-                map.put("lastName", "");
-                map.put("intField", Long.valueOf(0));
+            assertNotNull(session);
+            Map<String, Object> map = new HashMap<>();
+            map.put("username", "user0");
+            map.put("password", "pass0");
+            map.put("firstName", "User");
+            map.put("lastName", "");
+            map.put("intField", Long.valueOf(0));
 
-                // special DN read only field should be ignored
-                map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
+            // special DN read only field should be ignored
+            map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
 
-                map.put("email", "nobody@nowhere.com");
-                map.put("employeeType", Arrays.asList("item1", "item2"));
-                if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-                    map.put("groups", Arrays.asList("members", "administrators"));
-                }
-                DocumentModel dm = session.createEntry(map);
+            map.put("email", "nobody@nowhere.com");
+            map.put("employeeType", Arrays.asList("item1", "item2"));
+            map.put("groups", Arrays.asList("members", "administrators"));
+            DocumentModel dm = session.createEntry(map);
 
-                dm = session.getEntry("user0");
-                assertNotNull(dm);
+            dm = session.getEntry("user0");
+            assertNotNull(dm);
 
-                String id = dm.getId();
-                assertNotNull(id);
+            String id = dm.getId();
+            assertNotNull(id);
 
-                String[] schemaNames = dm.getSchemas();
-                assertEquals(1, schemaNames.length);
+            String[] schemaNames = dm.getSchemas();
+            assertEquals(1, schemaNames.length);
 
-                assertEquals(USER_SCHEMANAME, schemaNames[0]);
+            assertEquals(USER_SCHEMANAME, schemaNames[0]);
 
-                assertEquals("user0", dm.getProperty(USER_SCHEMANAME, "username"));
-                assertEquals("User", dm.getProperty(USER_SCHEMANAME, "firstName"));
-                assertEquals("", dm.getProperty(USER_SCHEMANAME, "lastName"));
-                assertEquals(Long.valueOf(0), dm.getProperty(USER_SCHEMANAME, "intField"));
-                assertEquals("uid=user0,ou=people,dc=example,dc=com", dm.getProperty(USER_SCHEMANAME, "dn"));
-                assertEquals("nobody@nowhere.com", dm.getProperty(USER_SCHEMANAME, "email"));
-                assertEquals(Arrays.asList("item1", "item2"), dm.getProperty(USER_SCHEMANAME, "employeeType"));
-                assertEquals(Arrays.asList("administrators", "members"), dm.getProperty(USER_SCHEMANAME, "groups"));
-                assertTrue(session.authenticate("user0", "pass0"));
-            }
-            try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = session.getEntry("administrators");
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("Administrator", "user0"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                entry = session.getEntry("members");
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("Administrator", "user0", "user1", "user2"),
-                        entry.getProperty(GROUP_SCHEMANAME, "members"));
-            }
+            assertEquals("user0", dm.getProperty(USER_SCHEMANAME, "username"));
+            assertEquals("User", dm.getProperty(USER_SCHEMANAME, "firstName"));
+            assertEquals("", dm.getProperty(USER_SCHEMANAME, "lastName"));
+            assertEquals(Long.valueOf(0), dm.getProperty(USER_SCHEMANAME, "intField"));
+            assertEquals("uid=user0,ou=people,dc=example,dc=com", dm.getProperty(USER_SCHEMANAME, "dn"));
+            assertEquals("nobody@nowhere.com", dm.getProperty(USER_SCHEMANAME, "email"));
+            assertEquals(Arrays.asList("item1", "item2"), dm.getProperty(USER_SCHEMANAME, "employeeType"));
+            assertEquals(Arrays.asList("administrators", "members"), dm.getProperty(USER_SCHEMANAME, "groups"));
+            assertTrue(session.authenticate("user0", "pass0"));
+        }
+        try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = session.getEntry("administrators");
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("Administrator", "user0"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            entry = session.getEntry("members");
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("Administrator", "user0", "user1", "user2"),
+                    entry.getProperty(GROUP_SCHEMANAME, "members"));
         }
     }
 
     @Test
     public void testCreateEntry2() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
-                assertNotNull(session);
-                Map<String, Object> map = new HashMap<String, Object>();
-                map.put("groupname", "group2");
-                map.put("members", Arrays.asList("user1", "user2"));
-                DocumentModel dm = session.createEntry(map);
-                dm = session.getEntry("group2");
-                assertNotNull(dm);
-                assertEquals(Arrays.asList("user1", "user2"), dm.getProperty(GROUP_SCHEMANAME, "members"));
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
+            assertNotNull(session);
+            Map<String, Object> map = new HashMap<>();
+            map.put("groupname", "group2");
+            map.put("members", Arrays.asList("user1", "user2"));
+            DocumentModel dm = session.createEntry(map);
+            dm = session.getEntry("group2");
+            assertNotNull(dm);
+            assertEquals(Arrays.asList("user1", "user2"), dm.getProperty(GROUP_SCHEMANAME, "members"));
 
-                map = new HashMap<String, Object>();
-                map.put("groupname", "group1");
-                map.put("members", Arrays.asList("Administrator"));
-                map.put("subGroups", Arrays.asList("group2"));
-                dm = session.createEntry(map);
-                dm = session.getEntry("group1");
-                assertNotNull(dm);
-                assertEquals(Arrays.asList("Administrator"), dm.getProperty(GROUP_SCHEMANAME, "members"));
-                assertEquals(Arrays.asList("group2"), dm.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            map = new HashMap<>();
+            map.put("groupname", "group1");
+            map.put("members", Arrays.asList("Administrator"));
+            map.put("subGroups", Arrays.asList("group2"));
+            dm = session.createEntry(map);
+            dm = session.getEntry("group1");
+            assertNotNull(dm);
+            assertEquals(Arrays.asList("Administrator"), dm.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList("group2"), dm.getProperty(GROUP_SCHEMANAME, "subGroups"));
 
-                dm = session.getEntry("group2");
-                assertNotNull(dm);
-                assertEquals(Arrays.asList("group1"), dm.getProperty(GROUP_SCHEMANAME, "parentGroups"));
+            dm = session.getEntry("group2");
+            assertNotNull(dm);
+            assertEquals(Arrays.asList("group1"), dm.getProperty(GROUP_SCHEMANAME, "parentGroups"));
 
-                map = new HashMap<String, Object>();
-                map.put("groupname", "emptygroup");
-                map.put("members", new ArrayList<String>());
-                dm = session.createEntry(map);
-                dm = session.getEntry("emptygroup");
-                assertNotNull(dm);
-                assertEquals("emptygroup", dm.getId());
-                assertEquals("emptygroup", dm.getProperty(GROUP_SCHEMANAME, "groupname"));
+            map = new HashMap<>();
+            map.put("groupname", "emptygroup");
+            map.put("members", new ArrayList<String>());
+            dm = session.createEntry(map);
+            dm = session.getEntry("emptygroup");
+            assertNotNull(dm);
+            assertEquals("emptygroup", dm.getId());
+            assertEquals("emptygroup", dm.getProperty(GROUP_SCHEMANAME, "groupname"));
 
-                assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "members"));
 
-                assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "subGroups"));
 
-                assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "parentGroups"));
-            }
+            assertEquals(Arrays.asList(), dm.getProperty(GROUP_SCHEMANAME, "parentGroups"));
         }
     }
 
     @Test
     public void testCreateEntry3() throws Exception {
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-                assertNotNull(session);
+            assertNotNull(session);
 
-                Map<String, Object> map = new HashMap<String, Object>();
-                map.put("username", "user123");
-                map.put("password", "pwd123");
-                map.put("firstName", "John");
-                map.put("lastName", "Doh");
+            Map<String, Object> map = new HashMap<>();
+            map.put("username", "user123");
+            map.put("password", "pwd123");
+            map.put("firstName", "John");
+            map.put("lastName", "Doh");
 
-                // special DN read only field should be ignored
-                map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
+            // special DN read only field should be ignored
+            map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
 
-                map.put("employeeType", new ArrayList<Serializable>());
-                DocumentModel user = session.getEntry(session.createEntry(map).getId());
+            map.put("employeeType", new ArrayList<Serializable>());
+            DocumentModel user = session.getEntry(session.createEntry(map).getId());
 
+            assertNotNull(user);
+            assertEquals(Collections.<String> emptyList(), user.getProperty(USER_SCHEMANAME, "employeeType"));
+
+            map = new HashMap<>();
+            map.put("username", "anotherUser");
+            map.put("password", "secret");
+            map.put("firstName", "Mister");
+            map.put("lastName", "Untel");
+            map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
+
+            map.put("employeeType", Collections.<String> emptyList());
+
+            if (!(this instanceof TestLDAPPOSIXSession)) {
+                // Create a fake certificate for the test
+                X509Certificate myCert = createCertificate("cn=Mister Untel");
+                Blob cert = Blobs.createBlob(myCert.getEncoded());
+                map.put("certificate", cert);
+
+                user = session.getEntry(session.createEntry(map).getId());
                 assertNotNull(user);
                 assertEquals(Collections.<String> emptyList(), user.getProperty(USER_SCHEMANAME, "employeeType"));
-
-                map = new HashMap<String, Object>();
-                map.put("username", "anotherUser");
-                map.put("password", "secret");
-                map.put("firstName", "Mister");
-                map.put("lastName", "Untel");
-                map.put("dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
-
-                map.put("employeeType", Collections.<String> emptyList());
-
-                if (!(this instanceof TestLDAPPOSIXSession)) {
-                    // Create a fake certificate for the test
-                    X509Certificate myCert = createCertificate("cn=Mister Untel");
-                    Blob cert = Blobs.createBlob(myCert.getEncoded());
-                    map.put("certificate", cert);
-
-                    user = session.getEntry(session.createEntry(map).getId());
-                    assertNotNull(user);
-                    assertEquals(Collections.<String> emptyList(), user.getProperty(USER_SCHEMANAME, "employeeType"));
-                    // Get the certificate to compare it with the one created
-                    // above
-                    Blob cert2 = (Blob) user.getProperty(USER_SCHEMANAME, "certificate");
-                    assertEquals(new String(cert.getByteArray()), new String(cert2.getByteArray()));
-                }
+                // Get the certificate to compare it with the one created
+                // above
+                Blob cert2 = (Blob) user.getProperty(USER_SCHEMANAME, "certificate");
+                assertEquals(new String(cert.getByteArray()), new String(cert2.getByteArray()));
             }
         }
     }
 
     @Test
     public void testUpdateEntry() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session session = getLDAPDirectory("userDirectory").getSession();
-                    Session groupSession = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = session.getEntry("user1");
-                assertNotNull(entry);
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("userDirectory").getSession();
+                Session groupSession = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = session.getEntry("user1");
+            assertNotNull(entry);
 
-                // check that this entry is editable:
-                assertFalse(BaseSession.isReadOnlyEntry(entry));
+            // check that this entry is editable:
+            assertFalse(BaseSession.isReadOnlyEntry(entry));
 
-                entry.setProperty(USER_SCHEMANAME, "firstName", "toto");
-                entry.setProperty(USER_SCHEMANAME, "lastName", "");
-                entry.setProperty(USER_SCHEMANAME, "password", "toto");
-                entry.setProperty(USER_SCHEMANAME, "intField", Long.valueOf(123));
+            entry.setProperty(USER_SCHEMANAME, "firstName", "toto");
+            entry.setProperty(USER_SCHEMANAME, "lastName", "");
+            entry.setProperty(USER_SCHEMANAME, "password", "toto");
+            entry.setProperty(USER_SCHEMANAME, "intField", Long.valueOf(123));
 
-                // try to tweak the DN read-only field
-                entry.setProperty(USER_SCHEMANAME, "dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
+            // try to tweak the DN read-only field
+            entry.setProperty(USER_SCHEMANAME, "dn", "cn=this,ou=is,ou=a,ou=fake,o=dn");
 
-                entry.setProperty(USER_SCHEMANAME, "employeeType", Arrays.asList("item3", "item4"));
-                List<String> groups = Arrays.asList("administrators", "members");
-                entry.setProperty(USER_SCHEMANAME, "groups", groups);
-                session.updateEntry(entry);
+            entry.setProperty(USER_SCHEMANAME, "email", "nobody@nowhere.com");
+            entry.setProperty(USER_SCHEMANAME, "employeeType", Arrays.asList("item3", "item4"));
+            List<String> groups = Arrays.asList("administrators", "members");
+            entry.setProperty(USER_SCHEMANAME, "groups", groups);
+            session.updateEntry(entry);
 
-                entry = session.getEntry("user1");
-                assertNotNull(entry);
-                assertEquals("toto", entry.getProperty(USER_SCHEMANAME, "firstName"));
-                assertEquals("", entry.getProperty(USER_SCHEMANAME, "lastName"));
-                assertEquals(Long.valueOf(123), entry.getProperty(USER_SCHEMANAME, "intField"));
-                assertEquals(Arrays.asList("item3", "item4"), entry.getProperty(USER_SCHEMANAME, "employeeType"));
-                if (HAS_DYNGROUP_SCHEMA) {
-                    assertEquals(Arrays.asList("administrators", "dyngroup1", "dyngroup2", "dyngroup3", "members"),
-                            entry.getProperty(USER_SCHEMANAME, "groups"));
-                } else {
-                    assertEquals(Arrays.asList("administrators", "members"),
-                            entry.getProperty(USER_SCHEMANAME, "groups"));
-                }
-
-                // check that the referenced groups where edited properly
-                entry = groupSession.getEntry("administrators");
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("Administrator", "user1"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                assertEquals(Arrays.asList(), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-
-                entry = groupSession.getEntry("members");
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("Administrator", "user1", "user2"),
-                        entry.getProperty(GROUP_SCHEMANAME, "members"));
-                assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-
+            entry = session.getEntry("user1");
+            assertNotNull(entry);
+            assertEquals("toto", entry.getProperty(USER_SCHEMANAME, "firstName"));
+            assertEquals("", entry.getProperty(USER_SCHEMANAME, "lastName"));
+            assertEquals(Long.valueOf(123), entry.getProperty(USER_SCHEMANAME, "intField"));
+            assertEquals(Arrays.asList("item3", "item4"), entry.getProperty(USER_SCHEMANAME, "employeeType"));
+            if (hasDynGroupSchema()) {
+                assertEquals(Arrays.asList("administrators", "dyngroup1", "dyngroup2", "dyngroup3", "members"),
+                        entry.getProperty(USER_SCHEMANAME, "groups"));
+            } else {
+                assertEquals(Arrays.asList("administrators", "members"), entry.getProperty(USER_SCHEMANAME, "groups"));
             }
-            try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = session.getEntry("administrators");
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("Administrator", "user1"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-            }
+
+            // check that the referenced groups where edited properly
+            entry = groupSession.getEntry("administrators");
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("Administrator", "user1"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList(), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+
+            entry = groupSession.getEntry("members");
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("Administrator", "user1", "user2"),
+                    entry.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+
+        }
+        try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = session.getEntry("administrators");
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("Administrator", "user1"), entry.getProperty(GROUP_SCHEMANAME, "members"));
         }
     }
 
     @Test
     public void testUpdateEntry2() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = session.getEntry("members");
-                assertNotNull(entry);
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = session.getEntry("members");
+            assertNotNull(entry);
 
-                // check that this entry is editable:
-                assertFalse(BaseSession.isReadOnlyEntry(entry));
-                assertEquals("cn=members,ou=editable,ou=groups,dc=example,dc=com",
-                        entry.getProperty(GROUP_SCHEMANAME, "dn"));
+            // check that this entry is editable:
+            assertFalse(BaseSession.isReadOnlyEntry(entry));
+            assertEquals("cn=members,ou=editable,ou=groups,dc=example,dc=com",
+                    entry.getProperty(GROUP_SCHEMANAME, "dn"));
 
-                assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
 
-                // edit description and members but not subGroups
-                entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
-                entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
-                session.updateEntry(entry);
+            // edit description and members but not subGroups
+            entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
+            entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
+            session.updateEntry(entry);
 
-                entry = session.getEntry("members");
-                assertNotNull(entry);
-                assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
-                assertEquals(Arrays.asList("user1", "user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            entry = session.getEntry("members");
+            assertNotNull(entry);
+            assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
+            assertEquals(Arrays.asList("user1", "user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
 
-                // edit both members and subGroups at the same time
-                entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user3"));
-                entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList("submembers", "administrators"));
-                session.updateEntry(entry);
+            // edit both members and subGroups at the same time
+            entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user3"));
+            entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList("submembers", "administrators"));
+            session.updateEntry(entry);
 
-                entry = session.getEntry("members");
-                assertNotNull(entry);
-                assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
-                assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                assertEquals(Arrays.asList("administrators", "submembers"),
-                        entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-            }
+            entry = session.getEntry("members");
+            assertNotNull(entry);
+            assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
+            assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals(Arrays.asList("administrators", "submembers"),
+                    entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
         }
     }
 
     @Test
     public void testUpdateEntry3() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER && HAS_DYNGROUP_SCHEMA) {
-            try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = session.getEntry("dyngroup1");
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = session.getEntry("dyngroup1");
 
-                // check that this entry is editable:
-                assertFalse(BaseSession.isReadOnlyEntry(entry));
-                assertEquals("cn=dyngroup1,ou=dyngroups,ou=editable,ou=groups,dc=example,dc=com",
-                        entry.getProperty(GROUP_SCHEMANAME, "dn"));
+            // check that this entry is editable:
+            assertFalse(BaseSession.isReadOnlyEntry(entry));
+            assertEquals("cn=dyngroup1,ou=dyngroups,ou=editable,ou=groups,dc=example,dc=com",
+                    entry.getProperty(GROUP_SCHEMANAME, "dn"));
 
-                assertNotNull(entry);
-                assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                if (HAS_DYNGROUP_SCHEMA) {
-                    assertEquals(Arrays.asList("subgroup", "submembers", "subsubgroup", "subsubsubgroup"),
-                            entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-                } else {
-                    assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-                }
-
-                // try to edit dynamic references values along with regular
-                // fields
-                entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
-                entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
-                entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList());
-                session.updateEntry(entry);
-
-                entry = session.getEntry("dyngroup1");
-                assertNotNull(entry);
-
-                // the stored field has been edited
-                assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
-
-                // dynamically resolved references have not been edited
-                assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
-                if (HAS_DYNGROUP_SCHEMA) {
-                    assertEquals(Arrays.asList("subgroup", "submembers", "subsubgroup", "subsubsubgroup"),
-                            entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-                } else {
-                    assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
-                }
-
-                // edit both members and subGroups at the same time
-                entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user3"));
-                entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList("submembers", "administrators"));
-                session.updateEntry(entry);
+            assertNotNull(entry);
+            assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            if (hasDynGroupSchema()) {
+                assertEquals(Arrays.asList("subgroup", "submembers", "subsubgroup", "subsubsubgroup"),
+                        entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            } else {
+                assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
             }
+
+            // try to edit dynamic references values along with regular
+            // fields
+            entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
+            entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
+            entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList());
+            session.updateEntry(entry);
+
+            entry = session.getEntry("dyngroup1");
+            assertNotNull(entry);
+
+            // the stored field has been edited
+            assertEquals("blablabla", entry.getProperty(GROUP_SCHEMANAME, "description"));
+
+            // dynamically resolved references have not been edited
+            assertEquals(Arrays.asList("user1", "user3"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            if (hasDynGroupSchema()) {
+                assertEquals(Arrays.asList("subgroup", "submembers", "subsubgroup", "subsubsubgroup"),
+                        entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            } else {
+                assertEquals(Arrays.asList("submembers"), entry.getProperty(GROUP_SCHEMANAME, "subGroups"));
+            }
+
+            // edit both members and subGroups at the same time
+            entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user3"));
+            entry.setProperty(GROUP_SCHEMANAME, "subGroups", Arrays.asList("submembers", "administrators"));
+            session.updateEntry(entry);
         }
     }
 
     @Test
     public void testUpdateEntry4() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER && HAS_DYNGROUP_SCHEMA) {
-            try (Session userSession = getLDAPDirectory("userDirectory").getSession();
-                    Session groupSession = getLDAPDirectory("groupDirectory").getSession()) {
-                DocumentModel entry = groupSession.getEntry("readonlygroup1");
-                assertNotNull(entry);
+        assumeTrue(isExternalServer());
+        try (Session userSession = getLDAPDirectory("userDirectory").getSession();
+                Session groupSession = getLDAPDirectory("groupDirectory").getSession()) {
+            DocumentModel entry = groupSession.getEntry("readonlygroup1");
+            assertNotNull(entry);
 
-                // check that this entry is NOT editable:
-                assertTrue(BaseSession.isReadOnlyEntry(entry));
-                assertEquals("cn=readonlygroup1,ou=readonly,ou=groups,dc=example,dc=com",
-                        entry.getProperty(GROUP_SCHEMANAME, "dn"));
+            // check that this entry is NOT editable:
+            assertTrue(BaseSession.isReadOnlyEntry(entry));
+            assertEquals("cn=readonlygroup1,ou=readonly,ou=groups,dc=example,dc=com",
+                    entry.getProperty(GROUP_SCHEMANAME, "dn"));
 
-                assertEquals("Statically defined group that is not editable",
-                        entry.getProperty(GROUP_SCHEMANAME, "description"));
-                assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            assertEquals("Statically defined group that is not editable",
+                    entry.getProperty(GROUP_SCHEMANAME, "description"));
+            assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
 
-                // check that updates to a readonly entry are not taken into
-                // account
+            // check that updates to a readonly entry are not taken into
+            // account
 
-                // edit description and members but not subGroups
-                entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
-                entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
-                groupSession.updateEntry(entry);
+            // edit description and members but not subGroups
+            entry.setProperty(GROUP_SCHEMANAME, "description", "blablabla");
+            entry.setProperty(GROUP_SCHEMANAME, "members", Arrays.asList("user1", "user2"));
+            groupSession.updateEntry(entry);
 
-                // fetch the entry again
-                entry = groupSession.getEntry("readonlygroup1");
-                assertNotNull(entry);
+            // fetch the entry again
+            entry = groupSession.getEntry("readonlygroup1");
+            assertNotNull(entry);
 
-                // values should not have changed
-                assertEquals("Statically defined group that is not editable",
-                        entry.getProperty(GROUP_SCHEMANAME, "description"));
-                assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            // values should not have changed
+            assertEquals("Statically defined group that is not editable",
+                    entry.getProperty(GROUP_SCHEMANAME, "description"));
+            assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
 
-                // check that we cannot edit readonlygroup1 indirectly by adding
-                // it as a group of user1
-                DocumentModel user1 = userSession.getEntry("user1");
-                user1.setProperty(USER_SCHEMANAME, "groups", Arrays.asList("readonlygroup1"));
-                userSession.updateEntry(user1);
+            // check that we cannot edit readonlygroup1 indirectly by adding
+            // it as a group of user1
+            DocumentModel user1 = userSession.getEntry("user1");
+            user1.setProperty(USER_SCHEMANAME, "groups", Arrays.asList("readonlygroup1"));
+            userSession.updateEntry(user1);
 
-                // fetch the group entry again
-                entry = groupSession.getEntry("readonlygroup1");
-                assertNotNull(entry);
+            // fetch the group entry again
+            entry = groupSession.getEntry("readonlygroup1");
+            assertNotNull(entry);
 
-                // values should not have changed
-                assertEquals("Statically defined group that is not editable",
-                        entry.getProperty(GROUP_SCHEMANAME, "description"));
-                assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
+            // values should not have changed
+            assertEquals("Statically defined group that is not editable",
+                    entry.getProperty(GROUP_SCHEMANAME, "description"));
+            assertEquals(Arrays.asList("user2"), entry.getProperty(GROUP_SCHEMANAME, "members"));
 
-            }
         }
     }
 
     @Test
     public void testDeleteEntry() {
-        if (!USE_EXTERNAL_TEST_LDAP_SERVER) {
-            // this does not work with the internal server which has
-            // a suffixed context that prevent it from looking up
-            // the entry to delete
-            return;
-        }
+        // The internal server has a suffixed context that prevents it from looking up the entry to delete
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
             session.deleteEntry("user1");
             DocumentModel entry = session.getEntry("user1");
@@ -784,19 +765,15 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
     @Test
     public void testDeleteEntry2() {
-        if (!USE_EXTERNAL_TEST_LDAP_SERVER) {
-            // this does not work with the internal server which has
-            // a suffixed context that prevent it from looking up
-            // the entry to delete
-            return;
-        }
+        // The internal server has a suffixed context that prevents it from looking up the entry to delete
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("groupDirectory").getSession()) {
             session.deleteEntry("submembers");
             DocumentModel entry = session.getEntry("submembers");
             assertNull(entry);
 
             DocumentModelList entries = session.getEntries();
-            if (HAS_DYNGROUP_SCHEMA) {
+            if (hasDynGroupSchema()) {
                 // 3 dynamic groups
                 assertEquals(10, entries.size());
             } else {
@@ -817,16 +794,16 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
     @Test
     public void testQuery1() {
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-            Map<String, Serializable> filter = new HashMap<String, Serializable>();
+            Map<String, Serializable> filter = new HashMap<>();
             DocumentModelList entries;
 
             // empty filter means everything (like getEntries)
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
+            if (isExternalServer()) {
                 // empty filters do not work with ApacheDS
                 entries = session.query(filter);
                 assertNotNull(entries);
                 assertEquals(4, entries.size());
-                List<String> entryIds = new ArrayList<String>();
+                List<String> entryIds = new ArrayList<>();
                 for (DocumentModel entry : entries) {
                     entryIds.add(entry.getId());
                 }
@@ -867,13 +844,11 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
     @Test
     public void testQuery2() {
-        if (!USE_EXTERNAL_TEST_LDAP_SERVER) {
-            // query does not work at all with internal apache
-            return;
-        }
+        // query does not work at all with internal apache
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-            Map<String, Serializable> filter = new HashMap<String, Serializable>();
-            Set<String> fulltext = new HashSet<String>();
+            Map<String, Serializable> filter = new HashMap<>();
+            Set<String> fulltext = new HashSet<>();
 
             // empty filter means everything (like getEntries)
             DocumentModelList entries = session.query(filter, fulltext);
@@ -898,12 +873,10 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
             entries = session.query(filter, fulltext);
             assertEquals(0, entries.size());
 
-            if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-                // trying to cheat
-                filter.put("lastName", "*");
-                entries = session.query(filter, fulltext);
-                assertEquals(0, entries.size());
-            }
+            // trying to cheat
+            filter.put("lastName", "*");
+            entries = session.query(filter, fulltext);
+            assertEquals(0, entries.size());
 
             // more fulltext with the permission
             filter.put("lastName", "on");
@@ -926,7 +899,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
     @Test
     public void testQueryWithNullFilter() {
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-            Map<String, Serializable> filter = new HashMap<String, Serializable>();
+            Map<String, Serializable> filter = new HashMap<>();
             DocumentModelList entries;
 
             // negative filter
@@ -947,12 +920,12 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
     @Test
     public void testQueryOrderBy() {
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-            Map<String, Serializable> filter = new HashMap<String, Serializable>();
-            Map<String, String> orderBy = new HashMap<String, String>();
+            Map<String, Serializable> filter = new HashMap<>();
+            Map<String, String> orderBy = new HashMap<>();
             DocumentModelList entries;
 
             orderBy.put("company", "asc");
-            entries = session.query(filter, Collections.<String> emptySet(), orderBy);
+            entries = session.query(filter, Collections.emptySet(), orderBy);
             assertEquals(4, entries.size());
             // user3: creole
             // Administrator: nuxeo
@@ -967,10 +940,8 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
     @Test
     public void testAuthenticate() {
-        if (!USE_EXTERNAL_TEST_LDAP_SERVER) {
-            // authenticate does not work at all with internal apache
-            return;
-        }
+        // authenticate does not work at all with internal apache
+        assumeTrue(isExternalServer());
         try (Session session = getLDAPDirectory("userDirectory").getSession()) {
             assertTrue(session.authenticate("Administrator", "Administrator"));
             assertTrue(session.authenticate("user1", "user1"));
@@ -990,83 +961,79 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
 
     @Test
     public void testGetMandatoryAttributes() {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (LDAPSession session = (LDAPSession) getLDAPDirectory("userDirectory").getSession()) {
-                List<String> mandatoryAttributes = session.getMandatoryAttributes();
-                assertEquals(Arrays.asList("sn", "cn"), mandatoryAttributes);
-            }
-            try (LDAPSession session = (LDAPSession) getLDAPDirectory("groupDirectory").getSession()) {
-                List<String> mandatoryAttributes = session.getMandatoryAttributes();
-                if (mandatoryAttributes.size() == 2) {
-                    Collections.sort(mandatoryAttributes);
-                    assertEquals(Arrays.asList("cn", "uniqueMember"), mandatoryAttributes);
-                } else {
-                    // on some LDAP servers, the default schema does not make
-                    // uniqueMember a mandatory attribute
-                    assertEquals(Arrays.asList("cn"), mandatoryAttributes);
-                }
+        assumeTrue(isExternalServer());
+        try (LDAPSession session = (LDAPSession) getLDAPDirectory("userDirectory").getSession()) {
+            List<String> mandatoryAttributes = session.getMandatoryAttributes();
+            assertEquals(Arrays.asList("sn", "cn"), mandatoryAttributes);
+        }
+        try (LDAPSession session = (LDAPSession) getLDAPDirectory("groupDirectory").getSession()) {
+            List<String> mandatoryAttributes = session.getMandatoryAttributes();
+            if (mandatoryAttributes.size() == 2) {
+                Collections.sort(mandatoryAttributes);
+                assertEquals(Arrays.asList("cn", "uniqueMember"), mandatoryAttributes);
+            } else {
+                // on some LDAP servers, the default schema does not make
+                // uniqueMember a mandatory attribute
+                assertEquals(Arrays.asList("cn"), mandatoryAttributes);
             }
         }
     }
 
-    public void disable_testDateField() {
-        /*
-         * To make this test working, you must : - rename this method to testDateField() - in the file slapd.conf,
-         * uncomment the line include /etc/ldap/schema/testdateperson.schema - copy the file
-         * ldaptools/testdateperson.schema in the folder /etc/ldap/schema - in the file
-         * TestDirectoriesWithExternalOpenLDAP.xml, uncomment the lines <creationClass>testDatePerson</creationClass>
-         * and <fieldMapping name="dateField">mydate</fieldMapping>
-         */
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session session = getLDAPDirectory("userDirectory").getSession()) {
-                assertNotNull(session);
-                Map<String, Object> map = new HashMap<String, Object>();
-                map.put("username", "user3");
-                map.put("password", "pass3");
-                map.put("firstName", "User");
-                map.put("lastName", "Three");
-                Calendar cal1 = Calendar.getInstance();
-                cal1.set(2007, 2, 25, 12, 34, 56);
-                map.put("dateField", cal1);
-                session.createEntry(map);
+    @Ignore
+    public void testDateField() {
+        // To make this test working:
+        // - in the file slapd.conf, uncomment the line include /etc/ldap/schema/testdateperson.schema
+        // - copy the file ldaptools/testdateperson.schema in the folder /etc/ldap/schema
+        // - in the file TestDirectoriesWithExternalOpenLDAP.xml, uncomment the lines
+        // <creationClass>testDatePerson</creationClass>
+        // and <fieldMapping name="dateField">mydate</fieldMapping>
+        assumeTrue(isExternalServer());
+        try (Session session = getLDAPDirectory("userDirectory").getSession()) {
+            assertNotNull(session);
+            Map<String, Object> map = new HashMap<>();
+            map.put("username", "user3");
+            map.put("password", "pass3");
+            map.put("firstName", "User");
+            map.put("lastName", "Three");
+            Calendar cal1 = Calendar.getInstance();
+            cal1.set(2007, 2, 25, 12, 34, 56);
+            map.put("dateField", cal1);
+            session.createEntry(map);
 
-                DocumentModel entry = session.getEntry("user3");
-                assertNotNull(entry);
-                assertEquals("user3", entry.getId());
-                Calendar cal2 = (Calendar) entry.getProperty(USER_SCHEMANAME, "dateField");
-                assertEquals(cal1.getTimeInMillis() / 1000, cal2.getTimeInMillis() / 1000);
+            DocumentModel entry = session.getEntry("user3");
+            assertNotNull(entry);
+            assertEquals("user3", entry.getId());
+            Calendar cal2 = (Calendar) entry.getProperty(USER_SCHEMANAME, "dateField");
+            assertEquals(cal1.getTimeInMillis() / 1000, cal2.getTimeInMillis() / 1000);
 
-                cal2.add(Calendar.HOUR, 1);
-                entry.setProperty(USER_SCHEMANAME, "dateField", cal2);
-                session.updateEntry(entry);
-                assertTrue(((Calendar) entry.getProperty(USER_SCHEMANAME, "dateField")).after(cal1));
-            }
+            cal2.add(Calendar.HOUR, 1);
+            entry.setProperty(USER_SCHEMANAME, "dateField", cal2);
+            session.updateEntry(entry);
+            assertTrue(((Calendar) entry.getProperty(USER_SCHEMANAME, "dateField")).after(cal1));
         }
     }
 
     @Test
     public void testCreateFromModel() throws Exception {
-        if (USE_EXTERNAL_TEST_LDAP_SERVER) {
-            try (Session dir = getLDAPDirectory("userDirectory").getSession()) {
-                String schema = "user";
-                DocumentModel entry = BaseSession.createEntryModel(null, schema, null, null);
-                entry.setProperty(schema, "username", "omar");
-                // XXX: some values are mandatory on real LDAP
-                entry.setProperty(schema, "password", "sesame");
-                entry.setProperty(schema, "employeeType", new String[] { "Slave" });
+        assumeTrue(isExternalServer());
+        try (Session dir = getLDAPDirectory("userDirectory").getSession()) {
+            String schema = "user";
+            DocumentModel entry = BaseSession.createEntryModel(null, schema, null, null);
+            entry.setProperty(schema, "username", "omar");
+            // XXX: some values are mandatory on real LDAP
+            entry.setProperty(schema, "password", "sesame");
+            entry.setProperty(schema, "employeeType", new String[] { "Slave" });
 
-                assertNull(dir.getEntry("omar"));
-                dir.createEntry(entry);
-                assertNotNull(dir.getEntry("omar"));
+            assertNull(dir.getEntry("omar"));
+            dir.createEntry(entry);
+            assertNotNull(dir.getEntry("omar"));
 
-                // create one with existing same id, must fail
-                entry.setProperty(schema, "username", "Administrator");
-                try {
-                    entry = dir.createEntry(entry);
-                    fail("Should raise an error, entry already exists");
-                } catch (DirectoryException e) {
-                }
-
+            // create one with existing same id, must fail
+            entry.setProperty(schema, "username", "Administrator");
+            try {
+                entry = dir.createEntry(entry);
+                fail("Should raise an error, entry already exists");
+            } catch (DirectoryException e) {
             }
         }
     }
@@ -1082,7 +1049,7 @@ public class TestLDAPSession extends LDAPDirectoryTestCase {
     @Test
     public void testQueryEmptyString() throws Exception {
         Session session = getLDAPDirectory("userDirectory").getSession();
-        Map<String, Serializable> filter = new HashMap<String, Serializable>();
+        Map<String, Serializable> filter = new HashMap<>();
         filter.put("cn", "");
         List<DocumentModel> docs = session.query(filter);
         assertNotNull(docs);

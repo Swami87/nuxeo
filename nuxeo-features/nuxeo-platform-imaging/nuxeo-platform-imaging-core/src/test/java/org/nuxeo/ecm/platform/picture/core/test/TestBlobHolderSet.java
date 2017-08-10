@@ -34,6 +34,7 @@ import java.util.Map;
 
 import javax.inject.Inject;
 
+import org.apache.commons.io.IOUtils;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -56,7 +57,7 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
 @RunWith(FeaturesRunner.class)
 @Features({ AutomationFeature.class })
 @RepositoryConfig(cleanup = Granularity.METHOD)
-@Deploy({ "org.nuxeo.ecm.platform.picture.api", "org.nuxeo.ecm.core.convert",
+@Deploy({ "org.nuxeo.ecm.platform.picture.api", "org.nuxeo.ecm.core.convert", "org.nuxeo.ecm.actions",
         "org.nuxeo.ecm.platform.commandline.executor", "org.nuxeo.ecm.platform.picture.core",
         "org.nuxeo.ecm.platform.picture.convert" })
 @LocalDeploy("org.nuxeo.ecm.platform.picture.core:OSGI-INF/imaging-listeners-override.xml")
@@ -76,9 +77,10 @@ public class TestBlobHolderSet {
         List<Map<String, Serializable>> views = new ArrayList<Map<String, Serializable>>();
         Map<String, Serializable> map = new HashMap<String, Serializable>();
         map.put("title", "Original");
-        map.put("content", (Serializable) Blobs.createBlob(
-                FileUtils.getResourceFileFromContext(ImagingResourcesHelper.TEST_DATA_FOLDER + "test.jpg"),
-                "image/jpeg", null, "test.jpg"));
+        map.put("content",
+                (Serializable) Blobs.createBlob(
+                        FileUtils.getResourceFileFromContext(ImagingResourcesHelper.TEST_DATA_FOLDER + "test.jpg"),
+                        "image/jpeg", null, "test.jpg"));
         map.put("filename", "test.jpg");
         views.add(map);
         return views;
@@ -113,12 +115,12 @@ public class TestBlobHolderSet {
         blob = bh.getBlob();
         assertEquals("logo.jpg", blob.getFilename());
         assertEquals("image/jpeg", blob.getMimeType());
-        byte[] bytes = FileUtils.readBytes(blob.getStream());
+        byte[] bytes = IOUtils.toByteArray(blob.getStream());
         assertEquals(2022140, bytes.length);
         bytes = null;
 
         // generated views
-        assertEquals(5, bh.getBlobs().size());
+        assertEquals(6, bh.getBlobs().size());
 
         // test set null blob
         bh.setBlob(null);

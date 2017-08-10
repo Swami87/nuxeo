@@ -99,6 +99,13 @@ public class TestACE {
 
         ACE ace8 = ACE.fromId(ace7.getId());
         assertEquals(ace6, ace8);
+
+        // NXP-21696: For null permissions
+        ACE ace9 = new ACE("john", null, false);
+        ACE ace10 = new ACE("jane", null, true);
+        ACE ace11 = new ACE("john", null, false);
+        assertFalse(ace9.equals(ace10));
+        assertTrue(ace9.equals(ace11));
     }
 
     @Test
@@ -150,6 +157,17 @@ public class TestACE {
         assertEquals("read", ace.getPermission());
         assertTrue(ace.isGranted());
         assertNull(ace.getCreator());
+        assertEquals(cal1, ace.getBegin());
+        assertNull(ace.getEnd());
+        assertTrue(ace.isEffective());
+
+        // Tests with a username that includes colons ":"
+        aceId = "mycorp:dep:research:project23:read:true::" + cal1.getTimeInMillis() + ":";
+        ace = ACE.fromId(aceId);
+        assertNotNull(ace);
+        assertEquals("mycorp:dep:research:project23", ace.getUsername());
+        assertEquals("read", ace.getPermission());
+        assertTrue(ace.isGranted());
         assertEquals(cal1, ace.getBegin());
         assertNull(ace.getEnd());
         assertTrue(ace.isEffective());

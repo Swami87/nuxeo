@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: Action.java 28512 2008-01-06 11:52:28Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.actions;
 
 import java.io.Serializable;
@@ -49,10 +46,6 @@ public class Action implements Serializable, Cloneable, Comparable<Action> {
     protected String id = "";
 
     protected String link = null;
-
-    @Deprecated
-    @XNodeList(value = "link-params/param", type = Class[].class, componentType = Class.class)
-    private Class<?>[] linkParams;
 
     @XNode("@enabled")
     protected Boolean enabled;
@@ -276,23 +269,6 @@ public class Action implements Serializable, Cloneable, Comparable<Action> {
     }
 
     /**
-     * @deprecated since 5.6: useless now that EL expressions support parameters
-     */
-    @Deprecated
-    @SuppressWarnings("rawtypes")
-    public Class[] getLinkParams() {
-        return linkParams;
-    }
-
-    /**
-     * @deprecated since 5.6: useless now that EL expressions support parameters
-     */
-    @Deprecated
-    public void setLinkParams(Class<?>[] linkParams) {
-        this.linkParams = linkParams;
-    }
-
-    /**
      * Returns the confirm javascript for this element.
      * <p>
      * Since 5.7.3, fallbacks on properties when link is not set and retrieve it using key "confirm".
@@ -417,7 +393,7 @@ public class Action implements Serializable, Cloneable, Comparable<Action> {
      */
     public Map<String, Serializable> getProperties() {
         if (propertiesCache == null) {
-            propertiesCache = new HashMap<String, Serializable>();
+            propertiesCache = new HashMap<>();
             if (properties != null) {
                 propertiesCache.putAll(properties.getAllProperties());
             }
@@ -470,9 +446,6 @@ public class Action implements Serializable, Cloneable, Comparable<Action> {
         Action clone = new Action();
         clone.id = id;
         clone.link = link;
-        if (linkParams != null) {
-            clone.linkParams = linkParams.clone();
-        }
         clone.enabled = enabled;
         clone.label = label;
         clone.icon = icon;
@@ -491,7 +464,7 @@ public class Action implements Serializable, Cloneable, Comparable<Action> {
             clone.categories = categories.clone();
         }
         if (filterIds != null) {
-            clone.filterIds = new ArrayList<String>(filterIds);
+            clone.filterIds = new ArrayList<>(filterIds);
         }
         if (filters != null) {
             clone.filters = new ActionFilter[filters.length];

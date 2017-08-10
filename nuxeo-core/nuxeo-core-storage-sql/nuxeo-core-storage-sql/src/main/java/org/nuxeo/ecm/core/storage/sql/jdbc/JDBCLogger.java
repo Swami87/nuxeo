@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,13 +28,12 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.utils.StringUtils;
 import org.nuxeo.ecm.core.api.model.Delta;
+import org.nuxeo.ecm.core.storage.sql.Model;
 import org.nuxeo.ecm.core.storage.sql.Row;
 import org.nuxeo.ecm.core.storage.sql.jdbc.db.Column;
 
@@ -89,41 +88,57 @@ public class JDBCLogger {
         }
     }
 
-    public void logCounts(int[] counts) {
-        if (!isLogEnabled()) {
-            return;
-        }
-        int count = 0;
-        for (int c : counts) {
-            count += c;
-        }
-        logCount(count);
-    }
-
     public void logResultSet(ResultSet rs, List<Column> columns) throws SQLException {
-        List<String> res = new LinkedList<String>();
+        List<String> res = new LinkedList<>();
         int i = 0;
         for (Column column : columns) {
             i++;
             Serializable v = column.getFromResultSet(rs, i);
             res.add(column.getKey() + "=" + loggedValue(v));
         }
-        log("  -> " + StringUtils.join(res, ", "));
+        log("  -> " + String.join(", ", res));
     }
 
     public void logMap(Map<String, Serializable> map) throws SQLException {
-        List<String> res = new LinkedList<String>();
-        for (Entry<String, Serializable> en : map.entrySet()) {
-            res.add(en.getKey() + "=" + loggedValue(en.getValue()));
+        String result = map.entrySet()
+                           .stream()
+                           .map(entry -> entry.getKey() + "=" + loggedValue(entry.getValue()))
+                           .collect(Collectors.joining(", "));
+        log("  -> " + result);
+    }
+
+    public void logMaps(List<Map<String, Serializable>> maps, boolean countTotal, long totalSize) {
+        List<Map<String, Serializable>> debugMaps = maps;
+        String end = "";
+        if (maps.size() > DEBUG_MAX_ARRAY) {
+            debugMaps = new ArrayList<>(DEBUG_MAX_ARRAY);
+            int i = 0;
+            for (Map<String, Serializable> map : maps) {
+                debugMaps.add(map);
+                i++;
+                if (i == DEBUG_MAX_ARRAY) {
+                    break;
+                }
+            }
+            end = "...(" + maps.size() + " ids)...";
         }
-        log("  -> " + StringUtils.join(res, ", "));
+        if (countTotal) {
+            end += " (total " + totalSize + ')';
+        }
+        String result = debugMaps.stream()
+                                 .map(map -> map.entrySet()
+                                                .stream()
+                                                .map(entry -> entry.getKey() + "=" + loggedValue(entry.getValue()))
+                                                .collect(Collectors.joining(", ")))
+                                 .collect(Collectors.joining(",", "{", "}"));
+        log("  -> " + result + end);
     }
 
     public void logIds(List<Serializable> ids, boolean countTotal, long totalSize) {
         List<Serializable> debugIds = ids;
         String end = "";
         if (ids.size() > DEBUG_MAX_ARRAY) {
-            debugIds = new ArrayList<Serializable>(DEBUG_MAX_ARRAY);
+            debugIds = new ArrayList<>(DEBUG_MAX_ARRAY);
             int i = 0;
             for (Serializable id : ids) {
                 debugIds.add(id);
@@ -141,16 +156,30 @@ public class JDBCLogger {
     }
 
     public void logSQL(String sql, List<Column> columns, Row row) {
-        logSQL(sql, columns, row, Collections.<String> emptySet());
+        logSQL(sql, columns, row, Collections.emptyList(), Collections.emptyMap());
     }
 
-    public void logSQL(String sql, List<Column> columns, Row row, Set<String> deltas) {
-        List<Serializable> values = new ArrayList<Serializable>(columns.size());
+    public void logSQL(String sql, List<Column> columns, Row row, List<Column> whereColumns,
+            Map<String, Serializable> conditions) {
+        List<Serializable> values = new ArrayList<>();
         for (Column column : columns) {
             String key = column.getKey();
             Serializable value = row.get(key);
-            if (deltas.contains(key)) {
-                value = ((Delta) value).getDeltaValue();
+            if (value instanceof Delta) {
+                Delta delta = (Delta) value;
+                if (delta.getBase() != null) {
+                    value = delta.getDeltaValue();
+                }
+            }
+            values.add(value);
+        }
+        for (Column column : whereColumns) {
+            String key = column.getKey();
+            Serializable value;
+            if (column.getKey().equals(Model.MAIN_KEY)) {
+                value = row.get(key);
+            } else {
+                value = conditions.get(key);
             }
             values.add(value);
         }
@@ -226,7 +255,7 @@ public class JDBCLogger {
                 if (i > 0) {
                     b.append(',');
                     if (i > DEBUG_MAX_ARRAY) {
-                        b.append("...(" + v.length + " items)...");
+                        b.append("...(").append(v.length).append(" items)...");
                         break;
                     }
                 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Bogdan Stefanescu
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.api;
 
 import java.io.Serializable;
@@ -71,12 +70,6 @@ public interface CoreSession extends AutoCloseable {
 
     String IMPORT_LIFECYCLE_STATE = "ecm:lifeCycleState";
 
-    /**
-     * @deprecated since 5.4.2, use {@link #IMPORT_LOCK_OWNER} and {@link #IMPORT_LOCK_CREATED} instead
-     */
-    @Deprecated
-    String IMPORT_LOCK = "ecm:lock";
-
     /** @since 5.4.2 */
     String IMPORT_LOCK_OWNER = "ecm:lockOwner";
 
@@ -95,11 +88,50 @@ public interface CoreSession extends AutoCloseable {
     String IMPORT_PROXY_TYPE = "ecm:proxy";
 
     /**
+     * Skip the check to see if a destination exists on importDocument and createDocument
+     *
+     * @since 9.1
+     **/
+    String SKIP_DESTINATION_CHECK_ON_CREATE = "skipDestinationCheck";
+
+    /**
      * Allow version write, Boolean parameter passed in context data at saveDocument time.
      *
      * @since 5.9.2
      */
     String ALLOW_VERSION_WRITE = "allowVersionWrite";
+
+    /**
+     * A context data key which represents the source of current session calls. For example:
+     * <ul>
+     * <li>fileimporter-NoteImporter</li>
+     * <li>drive</li>
+     * <li>rest</li>
+     * </ul>
+     *
+     * @since 9.1
+     */
+    String SOURCE = "source";
+
+    /**
+     * Change token, a String parameter passed in context data at {@link #saveDocument} time.
+     *
+     * @see DocumentModel#putContextData
+     * @see #getChangeToken
+     * @see DocumentModel#getChangeToken
+     * @since 9.1
+     */
+    String CHANGE_TOKEN = "changeToken";
+
+    /**
+     * User change, a Boolean parameter passed in context data at {@link #saveDocument} time.
+     * <p>
+     * When {@linkplain Boolean#TRUE TRUE}, it marks the document as being modified by a user change. This causes an
+     * additional change token increment and check during save.
+     *
+     * @since 9.2
+     */
+    String USER_CHANGE = "userChange";
 
     /**
      * Closes this session.
@@ -123,16 +155,6 @@ public interface CoreSession extends AutoCloseable {
      * @return the type the doc type object
      */
     DocumentType getDocumentType(String type);
-
-    /**
-     * NOT PUBLIC, DO NOT CALL.
-     * <p>
-     * Connects the CoreSession to a low-level Session.
-     *
-     * @param repositoryName the repository name
-     * @param principal the principal
-     */
-    void connect(String repositoryName, NuxeoPrincipal principal);
 
     /**
      * Returns true if the session is currently connected to the repository.
@@ -160,7 +182,10 @@ public interface CoreSession extends AutoCloseable {
 
     /**
      * Returns {@code true} if all sessions in the current thread share the same state.
+     *
+     * @deprecated since 8.4 as it always returns true by design
      */
+    @Deprecated
     boolean isStateSharedByAllThreadSessions();
 
     /**
@@ -179,6 +204,14 @@ public interface CoreSession extends AutoCloseable {
      * Checks if a given principal has the given privilege on the referred document.
      */
     boolean hasPermission(Principal principal, DocumentRef docRef, String permission);
+
+    /**
+     * Filters the supplied permissions based on whether they are granted to a given principal for a given document.
+     *
+     * @since 9.1
+     */
+    Collection<String> filterGrantedPermissions(Principal principal, DocumentRef docRef,
+            Collection<String> permissions);
 
     /**
      * Gets the root document of this repository.
@@ -360,7 +393,8 @@ public interface CoreSession extends AutoCloseable {
     /**
      * Returns the parent ref of the document referenced by {@code docRef} or {@code null} if this is the root document.
      * <p>
-     * This method does not check the permissions on the parent document of this {@code CoreSession}'s {@code Principal}.
+     * This method does not check the permissions on the parent document of this {@code CoreSession}'s {@code Principal}
+     * .
      *
      * @since 5.4.2
      */
@@ -553,22 +587,6 @@ public interface CoreSession extends AutoCloseable {
      * @param src the source document reference
      * @param dst the destination folder reference
      * @param name the new name of the file or null if the original name must be preserved
-     * @deprecated Since 8.2. Use {@link #copy(DocumentRef, DocumentRef, String, CopyOption...)} instead
-     */
-    @Deprecated
-    DocumentModel copy(DocumentRef src, DocumentRef dst, String name);
-
-    /**
-     * Copies the source document to the destination folder under the given name. If the name is null the original name
-     * is preserved.
-     * <p>
-     * If the destination document is not a folder or it doesn't exists then throws an exception.
-     * <p>
-     * If the source is a proxy the destination will be a copy of the proxy.
-     *
-     * @param src the source document reference
-     * @param dst the destination folder reference
-     * @param name the new name of the file or null if the original name must be preserved
      * @param copyOptions the options for copy
      */
     DocumentModel copy(DocumentRef src, DocumentRef dst, String name, CopyOption... copyOptions);
@@ -590,16 +608,6 @@ public interface CoreSession extends AutoCloseable {
      */
     @Deprecated
     DocumentModel copy(DocumentRef src, DocumentRef dst, String name, boolean resetLifeCycle);
-
-    /**
-     * Bulk copy. Destination must be a folder document.
-     *
-     * @param src the documents to copy
-     * @param dst the destination folder
-     * @deprecated Since 8.2. Use {@link #copy(List, DocumentRef, CopyOption...)}
-     */
-    @Deprecated
-    List<DocumentModel> copy(List<DocumentRef> src, DocumentRef dst);
 
     /**
      * Bulk copy. Destination must be a folder document.
@@ -630,18 +638,6 @@ public interface CoreSession extends AutoCloseable {
      * @param src the source document reference
      * @param dst the destination folder reference
      * @param name the new name of the file or null if the original name must be preserved
-     * @deprecated Since 8.2. Use {@link #copyProxyAsDocument(DocumentRef, DocumentRef, String, CopyOption...)} instead
-     */
-    @Deprecated
-    DocumentModel copyProxyAsDocument(DocumentRef src, DocumentRef dst, String name);
-
-    /**
-     * Work like copy but in the case of a source proxy the destination will be a new document instead of a proxy.
-     *
-     * @see CoreSession#copy(DocumentRef, DocumentRef, String, CopyOption...)
-     * @param src the source document reference
-     * @param dst the destination folder reference
-     * @param name the new name of the file or null if the original name must be preserved
      * @param copyOptions the options for copy
      * @since 8.2
      */
@@ -659,16 +655,6 @@ public interface CoreSession extends AutoCloseable {
      */
     @Deprecated
     DocumentModel copyProxyAsDocument(DocumentRef src, DocumentRef dst, String name, boolean resetLifeCycle);
-
-    /**
-     * Bulk copyProxyAsDocument. Destination must be a folder document.
-     *
-     * @param src the documents to copy
-     * @param dst the destination folder
-     * @deprecated Since 8.2. Use {@link #copyProxyAsDocument(List, DocumentRef, CopyOption...)} instead
-     */
-    @Deprecated
-    List<DocumentModel> copyProxyAsDocument(List<DocumentRef> src, DocumentRef dst);
 
     /**
      * Bulk copyProxyAsDocument. Destination must be a folder document.
@@ -790,16 +776,6 @@ public interface CoreSession extends AutoCloseable {
     // -------- Versioning API ---------------
 
     /**
-     * Gets the last version of a document.
-     *
-     * @param docRef the reference to the document
-     * @return the version
-     * @deprecated use {@link #getLastDocumentVersion} instead
-     */
-    @Deprecated
-    VersionModel getLastVersion(DocumentRef docRef);
-
-    /**
      * Gets the document corresponding to the last version for the given document.
      *
      * @param docRef the reference to the document
@@ -889,18 +865,6 @@ public interface CoreSession extends AutoCloseable {
             boolean skipCheckout);
 
     /**
-     * Restores the given document to the specified version permitting to skip the creation of the snapshot for current
-     * document.
-     *
-     * @param docRef the reference to the document
-     * @param version the version to which the document should be restored to - only the label is used for the moment
-     * @param skipSnapshotCreation indicates if skipping snapshot creation
-     * @deprecated use {@link #restoreToVersion(DocumentRef, DocumentRef, boolean, boolean)} instead
-     */
-    @Deprecated
-    DocumentModel restoreToVersion(DocumentRef docRef, VersionModel version, boolean skipSnapshotCreation);
-
-    /**
      * Restores the given document to the specified version.
      *
      * @param docRef the reference to the document
@@ -908,16 +872,6 @@ public interface CoreSession extends AutoCloseable {
      * @since 5.4
      */
     DocumentModel restoreToVersion(DocumentRef docRef, DocumentRef versionRef);
-
-    /**
-     * Restores the given document to the specified version.
-     *
-     * @param docRef the reference to the document
-     * @param version the version to which the document should be restored to - only the label is used for the moment
-     * @deprecated use {@link #restoreToVersion(DocumentRef, DocumentRef)} instead
-     */
-    @Deprecated
-    DocumentModel restoreToVersion(DocumentRef docRef, VersionModel version);
 
     /**
      * Gets the version to which a checked in document is linked.
@@ -934,17 +888,6 @@ public interface CoreSession extends AutoCloseable {
      * @param docRef the reference to the document
      */
     void checkOut(DocumentRef docRef);
-
-    /**
-     * Checks in a modified document, creating a new version.
-     *
-     * @param docRef the reference to the document
-     * @param version the version descriptor
-     * @return the version document just created
-     * @deprecated use {@link #checkIn(DocumentRef, VersioningOption, String)} instead
-     */
-    @Deprecated
-    DocumentModel checkIn(DocumentRef docRef, VersionModel version);
 
     /**
      * Checks in a modified document, creating a new version.
@@ -1122,6 +1065,72 @@ public interface CoreSession extends AutoCloseable {
      */
     IterableQueryResult queryAndFetch(String query, String queryType, boolean distinctDocuments, Object... params);
 
+    /**
+     * Executes the given NXQL query and returns the result that matches the filter.
+     *
+     * @param query the query to execute
+     * @param limit the maximum number of documents to retrieve, or 0 for all of them
+     * @param offset the offset (starting at 0) into the list of documents
+     * @return the query result
+     * @since 7.10-HF25, 8.10-HF06, 9.2
+     */
+    PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset);
+
+    /**
+     * Executes the given NXQL query and returns the result that matches the filter.
+     *
+     * @param query the query to execute
+     * @param limit the maximum number of documents to retrieve, or 0 for all of them
+     * @param offset the offset (starting at 0) into the list of documents
+     * @param countTotal if {@code true}, return a {@link PartialList} that includes a total size of the underlying list
+     *            (size if there was no limit or offset)
+     * @return the query result
+     * @since 7.10-HF25, 8.10-HF06, 9.2
+     */
+    PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset, boolean countTotal);
+
+    /**
+     * Executes the given NXQL query and returns the result that matches the filter.
+     *
+     * @param query the query to execute
+     * @param queryType the query type, like "NXQL"
+     * @param distinctDocuments if {@code true} then a maximum of one row per document will be returned
+     * @param limit the maximum number of documents to retrieve, or 0 for all of them
+     * @param offset the offset (starting at 0) into the list of documents
+     * @param countUpTo if {@code -1}, return a {@link PartialList} that includes a total size of the underlying list
+     *            (size if there was no limit or offset). <br>
+     *            If {@code 0}, don't return the total size of the underlying list. <br>
+     *            If {@code n}, return the total size of the underlying list when the size is smaller than {@code n}
+     *            else return a total size of {@code -1}.
+     * @param params optional query-type-dependent parameters
+     * @return the query result
+     * @since 7.10-HF25, 8.10-HF06, 9.2
+     */
+    PartialList<Map<String, Serializable>> queryProjection(String query, String queryType, boolean distinctDocuments,
+            long limit, long offset, long countUpTo, Object... params);
+
+    /**
+     * Executes the given query and returns the first batch of results, next batch must be requested within the
+     * {@code keepAliveSeconds} delay.
+     *
+     * @param query The NXQL query to execute
+     * @param batchSize The expected result batch size, note that more results can be returned when the backend don't
+     *            implement properly this feature
+     * @param keepAliveSeconds The scroll context lifetime in seconds
+     * @return A {@link ScrollResult} including the search results and a scroll id, to be passed to the subsequent calls
+     *         to {@link #scroll(String)}
+     * @since 8.4
+     */
+    ScrollResult scroll(String query, int batchSize, int keepAliveSeconds);
+
+    /**
+     * Get the next batch of result, the {@code scrollId} is part of the previous {@link ScrollResult} response.
+     *
+     * @throws NuxeoException when the {@code scrollId} is unknown or when the scroll operation has timed out
+     * @since 8.4
+     */
+    ScrollResult scroll(String scrollId);
+
     /** -------------------------- Security API --------------------------- * */
 
     /**
@@ -1221,46 +1230,6 @@ public interface CoreSession extends AutoCloseable {
     Object[] getDataModelsFieldUp(DocumentRef docRef, String schema, String field);
 
     /**
-     * Gets the lock key on the given document if a lock exists or null otherwise.
-     * <p>
-     * A lock key has the form {@code someuser:Nov 29, 2010}.
-     *
-     * @param doc the document reference
-     * @return the lock key if the document is locked, null otherwise
-     * @deprecated since 5.4.2, use {@link #getLockInfo} instead
-     */
-    @Deprecated
-    String getLock(DocumentRef doc);
-
-    /**
-     * Sets a lock on the given document using the given key.
-     * <p>
-     * A lock key must have the form {@code someuser:Nov 29, 2010}.
-     *
-     * @param doc the document reference
-     * @param key the lock key
-     * @throws LockException if the document is already locked
-     * @deprecated since 5.4.2, use {@link #setLock(DocumentRef)} instead
-     */
-    @Deprecated
-    void setLock(DocumentRef doc, String key) throws LockException;
-
-    /**
-     * Removes the lock if one exists.
-     * <p>
-     * The caller principal should be the same as the one who set the lock or to belongs to the administrator group,
-     * otherwise an exception will be throw.
-     * <p>
-     * If the document was not locked, does nothing.
-     *
-     * @param docRef the document to unlock
-     * @return the lock key that was removed
-     * @deprecated since 5.4.2, use {@link #removeLock} instead
-     */
-    @Deprecated
-    String unlock(DocumentRef docRef);
-
-    /**
      * Sets a lock on the given document.
      *
      * @param docRef the document reference
@@ -1309,16 +1278,6 @@ public interface CoreSession extends AutoCloseable {
     void applyDefaultPermissions(String userOrGroupName);
 
     /**
-     * Checks if the given document is dirty.
-     *
-     * @param doc the doc reference
-     * @return true if dirty false otherwise
-     * @deprecated since 5.4, use {@link #isCheckedOut} instead
-     */
-    @Deprecated
-    boolean isDirty(DocumentRef doc);
-
-    /**
      * Publishes the document in a section overwriting any existing proxy to the same document. This is simmilar to
      * publishDocument(docToPublish, section, true);
      *
@@ -1348,20 +1307,6 @@ public interface CoreSession extends AutoCloseable {
      * @since 1.4.1 for the case where docRef is a proxy
      */
     DocumentModelList getProxies(DocumentRef docRef, DocumentRef folderRef);
-
-    /**
-     * Gets all proxy versions to document docRef inside folder folderRef.
-     * <p>
-     * Intended to be used by UI clients to display information about proxies in sections.
-     *
-     * @param docRef the target document for the proxies
-     * @param folderRef the folder where proxies are located
-     * @return an array of the proxy versions, with an empty string being used for a live proxy. {@code null} is
-     *         returned if no proxies are found the specified folder
-     * @deprecated since 5.4, use {@link #getProxies} instead
-     */
-    @Deprecated
-    String[] getProxyVersions(DocumentRef docRef, DocumentRef folderRef);
 
     /**
      * Returns the type of his parent SuperSpace (workspace, section, etc.). SuperSpace is qualified by the SuperSpace
@@ -1447,7 +1392,9 @@ public interface CoreSession extends AutoCloseable {
             Class<T> adapterClass);
 
     /**
-     * Gets the fulltext extracted from the binary fields.
+     * Gets the fulltext extracted from the binary fields. We defined a new API for that to avoid to store in the cache
+     * the fulltext properties which could be huge. This method handle if document is a proxy or not. Historically, VCS
+     * doesn't store fulltext properties for proxies (note that DBS does).
      *
      * @param ref the document reference
      * @return the fulltext map or {@code null} if not supported.
@@ -1463,13 +1410,32 @@ public interface CoreSession extends AutoCloseable {
         RESET_CREATOR;
 
         public static boolean isResetLifeCycle(CopyOption... options) {
-            return options != null && Arrays.asList(options).contains(RESET_LIFE_CYCLE);
+            return Arrays.asList(options).contains(RESET_LIFE_CYCLE);
         }
 
         public static boolean isResetCreator(CopyOption... options) {
-            return options != null && Arrays.asList(options).contains(RESET_CREATOR);
+            return Arrays.asList(options).contains(RESET_CREATOR);
         }
 
     }
+
+    /**
+     * Gets the current change token for the document.
+     * <p>
+     * The change token is an opaque string which is modified every time the document is changed.
+     * <p>
+     * Before saving a document through {@link CoreSession#saveDocument} it's possible to pass an expected change token
+     * in the document context data through {@code doc.putContextData(CoreSession.CHANGE_TOKEN, expectedChangeToken)}.
+     * If the change token does not match the stored one, it means that a concurrent update happened, and a
+     * {@link org.nuxeo.ecm.core.api.ConcurrentUpdateException ConcurrentUpdateException} will be thrown.
+     *
+     * @param ref the document reference
+     * @return the change token
+     * @since 9.1
+     * @see DocumentModel#putContextData
+     * @see #CHANGE_TOKEN
+     * @see #getChangeToken
+     */
+    String getChangeToken(DocumentRef ref);
 
 }

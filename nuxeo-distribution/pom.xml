@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.nuxeo</groupId>
     <artifactId>nuxeo-addons-parent</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
     <relativePath>../addons/pom.xml</relativePath>
   </parent>
 
@@ -19,25 +19,26 @@
   </prerequisites>
 
   <properties>
-    <nuxeo.distribution.version>8.3-SNAPSHOT</nuxeo.distribution.version>
+    <nuxeo.distribution.version>9.3-SNAPSHOT</nuxeo.distribution.version>
   </properties>
 
   <modules>
     <module>nuxeo-functional-tests</module>
     <module>nuxeo-startup-wizard</module>
     <module>nuxeo-launcher</module>
-    <module>nuxeo-distribution-resources</module>
-    <module>nuxeo-distribution-tests</module>
-    <module>nuxeo-distribution-coreserver</module>
-    <module>nuxeo-distribution-cap</module>
+    <module>nuxeo-test-dependencies</module>
+    <module>nuxeo-nxr-server</module>
+    <module>nuxeo-nxr-jsf-ui</module>
     <module>nuxeo-marketplace-dm</module>
-    <module>nuxeo-distribution-tomcat</module>
+    <module>nuxeo-marketplace-jsf-ui</module>
+    <module>nuxeo-server-tomcat</module>
     <!-- Functional Tests -->
-    <module>nuxeo-distribution-tomcat-wizard-tests</module>
-    <module>nuxeo-distribution-cap-webdriver-tests</module>
-    <module>nuxeo-distribution-cap-funkload-tests</module>
-    <module>nuxeo-distribution-cap-selenium-tests</module>
-    <module>nuxeo-distribution-cap-gatling-tests</module>
+    <module>nuxeo-server-tests</module>
+    <module>nuxeo-war-tests</module>
+    <module>nuxeo-wizard-tests</module>
+    <module>nuxeo-jsf-ui-webdriver-tests</module>
+    <module>nuxeo-jsf-ui-funkload-tests</module>
+    <module>nuxeo-jsf-ui-gatling-tests</module>
   </modules>
 
   <profiles>
@@ -133,26 +134,33 @@
   <dependencyManagement>
     <dependencies>
       <dependency>
+        <groupId>org.nuxeo</groupId>
+        <artifactId>nuxeo-addons-core-parent</artifactId>
+        <version>${nuxeo.addons.core.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-coreserver</artifactId>
+        <artifactId>nuxeo-nxr-server</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>zip</type>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-coreserver</artifactId>
+        <artifactId>nuxeo-nxr-server</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>pom</type>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-cap</artifactId>
+        <artifactId>nuxeo-nxr-jsf-ui</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>pom</type>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-cap</artifactId>
+        <artifactId>nuxeo-nxr-jsf-ui</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>zip</type>
       </dependency>
@@ -164,73 +172,22 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-tomcat</artifactId>
+        <artifactId>nuxeo-marketplace-jsf-ui</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>zip</type>
-        <classifier>coreserver</classifier>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-tomcat</artifactId>
+        <artifactId>nuxeo-server-tomcat</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>zip</type>
-        <classifier>coreserver-sdk</classifier>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-tomcat</artifactId>
+        <artifactId>nuxeo-server-tomcat</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>zip</type>
-        <classifier>nuxeo-cap</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-tomcat</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>nuxeo-cap-sdk</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>doc</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>root</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>bin</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>templates-common</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>templates-tomcat</classifier>
-      </dependency>
-      <dependency>
-        <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-resources</artifactId>
-        <version>${nuxeo.distribution.version}</version>
-        <type>zip</type>
-        <classifier>templates-tomcat-coreserver</classifier>
+        <classifier>sdk</classifier>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
@@ -243,6 +200,20 @@
         <artifactId>nuxeo-launcher</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <classifier>jar-with-dependencies</classifier>
+      </dependency>
+
+      <!-- Provided scope -->
+      <dependency>
+        <groupId>org.mongodb</groupId>
+        <artifactId>mongo-java-driver</artifactId>
+        <version>${mongo.java.driver.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.novemberain</groupId>
+        <artifactId>quartz-mongodb</artifactId>
+        <version>${quartz.mongodb.version}</version>
+        <scope>provided</scope>
       </dependency>
 
       <!-- Test scope -->
@@ -261,7 +232,14 @@
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.distribution</groupId>
-        <artifactId>nuxeo-distribution-cap-webdriver-tests</artifactId>
+        <artifactId>nuxeo-jsf-ui-webdriver-tests</artifactId>
+        <version>${nuxeo.distribution.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.distribution</groupId>
+        <artifactId>nuxeo-jsf-ui-gatling-tests</artifactId>
         <version>${nuxeo.distribution.version}</version>
         <type>test-jar</type>
         <scope>test</scope>

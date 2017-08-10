@@ -18,6 +18,7 @@
  */
 package org.nuxeo.functionaltests.pages.forms;
 
+import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
 import org.nuxeo.functionaltests.pages.AbstractPage;
 import org.nuxeo.functionaltests.pages.DocumentBasePage;
@@ -45,12 +46,23 @@ public class DublinCoreCreationDocumentFormPage extends AbstractPage {
     @FindBy(id = "document_create:nxw_documentCreateButtons_CREATE_DOCUMENT")
     public WebElement createButton;
 
+    @Required
+    @FindBy(id = "document_create:nxw_documentCreateButtons_CANCEL_DOCUMENT_CREATION")
+    public WebElement cancelButton;
+
     public DublinCoreCreationDocumentFormPage(WebDriver driver) {
         super(driver);
     }
 
     public void create() {
-        createButton.click();
+        Locator.waitUntilEnabledAndClick(createButton);
+    }
+
+    /**
+     * @since 8.3
+     */
+    public void cancel() {
+        Locator.waitUntilEnabledAndClick(cancelButton);
     }
 
     protected void fillDublinCoreFieldsAndCreate(String title, String description) {

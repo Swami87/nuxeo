@@ -140,6 +140,7 @@
       // custom operation, pass at least the query term
       temp.searchTerm = query.term;
     }
+    temp.searchTerm = temp.searchTerm.split(',').join('\\,');
     // append custom operation parameters if needed
     if (params.additionalOperationParameters && params.additionalOperationParameters.length > 0){
       additionalParamsFunction = eval(params.additionalOperationParameters);
@@ -385,6 +386,11 @@
       select2_params.separator = params.separator;
     }
 
+    // close on select
+    if (params.closeOnSelect) {
+      select2_params.closeOnSelect = params.closeOnSelect === 'true';
+    }
+
     // init select2
     el.select2(select2_params);
 
@@ -423,7 +429,7 @@
             if (select2_params.multiple) {
               var newObj = JSON.parse(initHolder.val());
               newObj.push(e.added);
-              var newValue = JSON.stringify(newObj);
+              newValue = JSON.stringify(newObj);
             } else {
               newValue = JSON.stringify(e.added);
             }

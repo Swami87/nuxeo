@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,19 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: JOOoConvertPluginImpl.java 18651 2007-05-13 20:28:53Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.ui.web.auth;
 
-import org.junit.Before;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
+import java.util.List;
+
+import org.junit.Test;
+import org.nuxeo.ecm.platform.ui.web.auth.interfaces.NuxeoAuthPreFilter;
 import org.nuxeo.ecm.platform.ui.web.auth.service.AuthenticationPluginDescriptor;
 import org.nuxeo.ecm.platform.ui.web.auth.service.PluggableAuthenticationService;
 import org.nuxeo.runtime.api.Framework;
@@ -38,18 +41,16 @@ public class TestAuthPlugins extends NXRuntimeTestCase {
 
     private PluggableAuthenticationService authService;
 
-    @Before
+    @Override
     public void setUp() throws Exception {
-        super.setUp();
-
         deployContrib(WEB_BUNDLE, "OSGI-INF/authentication-framework.xml");
         deployContrib(WEB_BUNDLE, "OSGI-INF/authentication-contrib.xml");
     }
 
     private PluggableAuthenticationService getAuthService() {
         if (authService == null) {
-            authService = (PluggableAuthenticationService) Framework.getRuntime().getComponent(
-                    PluggableAuthenticationService.NAME);
+            authService = (PluggableAuthenticationService) Framework.getRuntime()
+                                                                    .getComponent(PluggableAuthenticationService.NAME);
         }
         return authService;
     }
@@ -75,6 +76,7 @@ public class TestAuthPlugins extends NXRuntimeTestCase {
     @Test
     public void testDescriptorMerge() throws Exception {
         deployBundle(WEB_BUNDLE_TEST);
+        applyInlineDeployments();
         PluggableAuthenticationService service = getAuthService();
         AuthenticationPluginDescriptor plugin = service.getDescriptor("ANONYMOUS_AUTH");
 
@@ -82,6 +84,17 @@ public class TestAuthPlugins extends NXRuntimeTestCase {
         assertTrue(plugin.getNeedStartingURLSaving());
         assertEquals("Dummy_LM", plugin.getLoginModulePlugin());
         assertSame(Class.forName("org.nuxeo.ecm.platform.ui.web.auth.DummyAuthenticator"), plugin.getClassName());
+    }
+
+    @Test
+    public void preFilterCanBeDisabled() throws Exception {
+        pushInlineDeployments(WEB_BUNDLE_TEST + ":OSGI-INF/test-prefilter.xml",
+                WEB_BUNDLE_TEST + ":OSGI-INF/test-prefilter-disable.xml");
+        getAuthService().initPreFilters();
+        List<NuxeoAuthPreFilter> filters = getAuthService().getPreFilters();
+
+        assertEquals(2, filters.size());
+
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.Filter;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.event.EventContext;
+import org.nuxeo.ecm.core.event.impl.ShallowDocumentModel;
 
 /**
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
@@ -89,21 +90,9 @@ public class EventHandler {
     protected Boolean isAdministrator;
 
     /**
-     * @deprecated since 5.7: expression evaluation was inverted so a new attribute condition has been defined, see
-     *             NXP-8630
-     */
-    @Deprecated
-    protected String expression;
-
-    /**
      * @since 5.7: added to replace the 'expression' element as its evaluation is inverted
      */
     protected String condition;
-
-    @XNode("filters/expression")
-    protected void _setExpression(String expr) {
-        expression = convertExpr(expr);
-    }
 
     @XNode("filters/condition")
     protected void _setCondition(String expr) {
@@ -161,14 +150,6 @@ public class EventHandler {
         this.pathStartsWith = pathStartsWith;
     }
 
-    /**
-     * @deprecated since 5.7.1 use {@link #setCondition(String)} instead
-     */
-    @Deprecated
-    public void setExpression(String expression) {
-        this.expression = expression;
-    }
-
     public void setDoctypes(Set<String> doctypes) {
         this.doctypes = doctypes;
     }
@@ -183,14 +164,6 @@ public class EventHandler {
 
     public void setChainId(String chainId) {
         this.chainId = chainId;
-    }
-
-    /**
-     * @deprecated since 5.7: use {@link #getCondition()} instead
-     */
-    @Deprecated
-    public String getExpression() {
-        return expression;
     }
 
     /**
@@ -235,14 +208,6 @@ public class EventHandler {
 
     public Set<String> getDoctypes() {
         return doctypes;
-    }
-
-    /**
-     * @deprecated since 5.7: use
-     */
-    @Deprecated
-    public Expression getExpr() {
-        return Scripting.newExpression(expression);
     }
 
     /**
@@ -327,17 +292,6 @@ public class EventHandler {
             } catch (CompileException e) {
                 // happens for expressions evaluated over a DeletedDocumentModel for instance
                 log.debug("Failed to execute expression: " + e, e);
-                return false;
-            }
-        } else if (!org.apache.commons.lang.StringUtils.isBlank(expression)) {
-            // BBB
-            if (log.isWarnEnabled()) {
-                log.warn(String.format("The 'expression' element with value '%s' "
-                        + "on event handler for chain '%s' is deprecated: please use the 'condition'"
-                        + " attribute instead, as its evaluation will not be inverted.", expression, chainId));
-            }
-            Expression expr = Scripting.newExpression(expression);
-            if (Boolean.TRUE.equals(expr.eval(ctx))) {
                 return false;
             }
         }

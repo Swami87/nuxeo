@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Bogdan Stefanescu
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.api;
 
 import java.io.Serializable;
@@ -44,34 +43,8 @@ import org.nuxeo.ecm.core.schema.Prefetch;
  * <p>
  * Data models are lazily loaded as they are needed. At document model creation only data models corresponding to the
  * default schemas are loaded. The default schemas are configured in the type manager through extension points.
- * <p>
- * The user may overwrite the default schemas by passing the schemas to be used at model creation via
- * {@link CoreSession#getDocument(DocumentRef, String[])}
- * <p>
- * How a lazy data model is loaded depends on the implementation.
- * <p>
- * Anyway the API already provides a mechanism to handle this as follow:
- *
- * <pre>
- * <code>
- * public DataModel getDataModel(String schema) {
- *     DataModel dataModel = dataModels.get(schema);
- *     if (dataModel != null &amp;&amp; !dataModel.isLoaded()) {
- *         CoreSession client = CoreInstance.getInstance().getClient(
- *                 getSessionId());
- *         if (client != null) {
- *             dataModel = client.getDataModel(getRef(), schema);
- *             dataModels.put(schema, dataModel);
- *         }
- *     }
- *     return dataModel;
- * }
- * </code>
- * </pre>
  *
  * @see CoreSession
- * @see DataModel
- * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
 public interface DocumentModel extends Serializable {
 
@@ -286,18 +259,32 @@ public interface DocumentModel extends Serializable {
     boolean removeFacet(String facet);
 
     /**
+     * INTERNAL, not for public use.
+     * <p>
      * Gets a list with the currently fetched data models.
      *
      * @return the data models that are already fetched as a collection
+     * @deprecated since 8.4, internal method
+     * @see #getSchemas
+     * @see #getProperties
+     * @see #getPropertyObject
+     * @see #getPropertyObjects
      */
+    @Deprecated
     Collection<DataModel> getDataModelsCollection();
 
     /**
      * Gets the data models.
      *
      * @return the data models that are already fetched.
+     * @deprecated since 8.4, use direct {@link Property} getters instead
+     * @see #getSchemas
+     * @see #getProperties
+     * @see #getPropertyObject
+     * @see #getPropertyObjects
      */
-    DataModelMap getDataModels();
+    @Deprecated
+    Map<String, DataModel> getDataModels();
 
     /**
      * Gets the data model corresponding to the given schema.
@@ -306,30 +293,21 @@ public interface DocumentModel extends Serializable {
      *
      * @param schema the schema name
      * @return the data model or null if no such schema is supported
+     * @deprecated since 8.4, use direct {@link Property} getters instead
+     * @see #getSchemas
+     * @see #getProperties
+     * @see #getPropertyObject
+     * @see #getPropertyObjects
      */
+    @Deprecated
     DataModel getDataModel(String schema);
 
     /**
      * Sets path info.
      * <p>
      * path and ref attributes will be set according to info
-     *
-     * @param parentPath
-     * @param name
      */
     void setPathInfo(String parentPath, String name);
-
-    /**
-     * Gets the lock key if the document is locked.
-     * <p>
-     * Lock info is cached on the document for performance. Use {@link CoreSession#getLockInfo} to get the non-cached
-     * status.
-     *
-     * @return the lock key if the document is locked or null otherwise
-     * @deprecated since 5.4.2, use {@link #getLockInfo} instead
-     */
-    @Deprecated
-    String getLock();
 
     /**
      * Tests if the document is locked.
@@ -340,27 +318,6 @@ public interface DocumentModel extends Serializable {
      * @return the lock key if the document is locked or null otherwise
      */
     boolean isLocked();
-
-    /**
-     * Locks this document using the given key.
-     * <p>
-     * This is a wrapper for {@link CoreSession#setLock(DocumentRef, String)}.
-     *
-     * @param key the key to use when locking
-     * @throws LockException if the document is already locked
-     * @deprecated since 5.4.2, use {@link #setLock} instead
-     */
-    @Deprecated
-    void setLock(String key) throws LockException;
-
-    /**
-     * Unlocks the given document.
-     *
-     * @throws LockException if the document is locked by someone else
-     * @deprecated since 5.4.2, use {@link #removeLock} instead
-     */
-    @Deprecated
-    void unlock() throws LockException;
 
     /**
      * Sets a lock on the document.
@@ -530,6 +487,16 @@ public interface DocumentModel extends Serializable {
     Object getProperty(String schemaName, String name);
 
     /**
+     * Gets a property object from the given schema.
+     *
+     * @param schema the schema name
+     * @param name the property name
+     * @return the property, or {@code null} if no such property exists
+     * @since 8.4
+     */
+    Property getPropertyObject(String schema, String name);
+
+    /**
      * Sets the property value from the given schema.
      * <p>
      * This operation will not fetch the data model if not already fetched
@@ -680,14 +647,20 @@ public interface DocumentModel extends Serializable {
 
     /**
      * Gets the context data associated to this document.
+     * <p>
+     * NOTE since 9.1 the {@link ScopedMap} return type is deprecated, use {@code java.util.Map<String, Serializable>}
+     * instead
      *
-     * @return serializable map of context data.
+     * @return a map of context data
      */
     ScopedMap getContextData();
 
     /**
      * Gets the context data associated to this document for given scope and given key.
+     *
+     * @deprecated since 9.1, scope is unused, use {@link #getContextData(String)} instead
      */
+    @Deprecated
     Serializable getContextData(ScopeType scope, String key);
 
     /**
@@ -695,7 +668,10 @@ public interface DocumentModel extends Serializable {
      * <p>
      * Context data is like a request map set on the document model to pass additional information to components
      * interacting with the document model (events processing for instance).
+     *
+     * @deprecated since 9.1, scope is unused, use {@link #putContextData(String, Serializable)} instead
      */
+    @Deprecated
     void putContextData(ScopeType scope, String key, Serializable value);
 
     /**
@@ -799,14 +775,34 @@ public interface DocumentModel extends Serializable {
      *
      * @param schema the schema
      * @return the document aprt or null if none exists for that schema
+     * @deprecated since 8.4, use direct {@link Property} getters instead
+     * @see #getPropertyObject
+     * @see #getPropertyObjects
      */
-    // TODO throw an exception if schema is not impl by the doc?
+    @Deprecated
     DocumentPart getPart(String schema);
 
     /**
      * Gets this document's parts.
+     *
+     * @deprecated since 8.4, use direct {@link Property} getters instead
+     * @see #getSchemas
+     * @see #getPropertyObject
+     * @see #getPropertyObjects
      */
+    @Deprecated
     DocumentPart[] getParts();
+
+    /**
+     * Gets the {@link Property} objects for the given schema.
+     * <p>
+     * An empty list is returned if the document doesn't have the schema.
+     *
+     * @param schema the schema
+     * @return the properties
+     * @since 8.4
+     */
+    Collection<Property> getPropertyObjects(String schema);
 
     /**
      * Gets a property given a xpath.
@@ -863,17 +859,17 @@ public interface DocumentModel extends Serializable {
      * </ul>
      * The refresh flags are:
      * <ul>
-     * <li> {@link DocumentModel#REFRESH_STATE}
-     * <li> {@link DocumentModel#REFRESH_PREFETCH}
-     * <li> {@link DocumentModel#REFRESH_ACP_IF_LOADED}
-     * <li> {@link DocumentModel#REFRESH_ACP_LAZY}
-     * <li> {@link DocumentModel#REFRESH_ACP}
-     * <li> {@link DocumentModel#REFRESH_CONTENT_IF_LOADED}
-     * <li> {@link DocumentModel#REFRESH_CONTENT_LAZY}
-     * <li> {@link DocumentModel#REFRESH_CONTENT}
-     * <li> {@link DocumentModel#REFRESH_DEFAULT} same as REFRESH_STATE | REFRESH_DEFAULT | REFRESH_ACP_IF_LOADED |
+     * <li>{@link DocumentModel#REFRESH_STATE}
+     * <li>{@link DocumentModel#REFRESH_PREFETCH}
+     * <li>{@link DocumentModel#REFRESH_ACP_IF_LOADED}
+     * <li>{@link DocumentModel#REFRESH_ACP_LAZY}
+     * <li>{@link DocumentModel#REFRESH_ACP}
+     * <li>{@link DocumentModel#REFRESH_CONTENT_IF_LOADED}
+     * <li>{@link DocumentModel#REFRESH_CONTENT_LAZY}
+     * <li>{@link DocumentModel#REFRESH_CONTENT}
+     * <li>{@link DocumentModel#REFRESH_DEFAULT} same as REFRESH_STATE | REFRESH_DEFAULT | REFRESH_ACP_IF_LOADED |
      * REFRESH_CONTENT_IF_LOADED
-     * <li> {@link DocumentModel#REFRESH_ALL} same as REFRESH_STATE | REFRESH_PREFTECH | REFRESH_ACP | REFRESH_CONTENT
+     * <li>{@link DocumentModel#REFRESH_ALL} same as REFRESH_STATE | REFRESH_PREFTECH | REFRESH_ACP | REFRESH_CONTENT
      * </ul>
      * If XX_IF_LOADED is used then XX will be refreshed only if already loaded in the document - otherwise a lazy
      * refresh will be done
@@ -884,7 +880,7 @@ public interface DocumentModel extends Serializable {
     void refresh(int refreshFlags, String[] schemas);
 
     /** Info fetched internally during a refresh. */
-    public static class DocumentModelRefresh {
+    class DocumentModelRefresh {
 
         public String lifeCycleState;
 
@@ -924,13 +920,20 @@ public interface DocumentModel extends Serializable {
     DocumentModel clone() throws CloneNotSupportedException;
 
     /**
-     * Opaque string that represents the last update state of the DocumentModel.
+     * Gets the current change token for this document.
      * <p>
-     * This token can be used for optimistic locking and avoid dirty updates. See CMIS spec :
-     * http://docs.oasis-open.org/cmis/CMIS/v1.0/os/cmis-spec-v1.0.html#_Toc243905432
+     * The change token is an opaque string which is modified every time the document is changed.
+     * <p>
+     * Before saving a document through {@link CoreSession#saveDocument} it's possible to pass an expected change token
+     * in the document context data through {@code doc.putContextData(CoreSession.CHANGE_TOKEN, expectedChangeToken)}.
+     * If the change token does not match the stored one, it means that a concurrent update happened, and a
+     * {@link org.nuxeo.ecm.core.api.ConcurrentUpdateException ConcurrentUpdateException} will be thrown.
      *
+     * @return the change token
      * @since 5.5
-     * @return the ChangeToken string that can be null for some Document types
+     * @see #putContextData
+     * @see CoreSession#CHANGE_TOKEN
+     * @see CoreSession#getChangeToken
      */
     String getChangeToken();
 

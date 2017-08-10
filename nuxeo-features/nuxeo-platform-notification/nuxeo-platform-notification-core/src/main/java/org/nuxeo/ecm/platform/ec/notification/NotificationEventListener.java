@@ -40,7 +40,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.mvel2.PropertyAccessException;
 import org.nuxeo.ecm.core.api.CoreSession;
-import org.nuxeo.ecm.core.api.DataModel;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
@@ -59,8 +58,8 @@ import org.nuxeo.ecm.platform.ec.notification.service.NotificationService;
 import org.nuxeo.ecm.platform.ec.notification.service.NotificationServiceHelper;
 import org.nuxeo.ecm.platform.notification.api.Notification;
 import org.nuxeo.ecm.platform.url.DocumentViewImpl;
-import org.nuxeo.ecm.platform.url.api.DocumentView;
 import org.nuxeo.ecm.platform.url.api.DocumentViewCodecManager;
+import org.nuxeo.ecm.platform.url.codec.api.DocumentViewCodec;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.api.login.LoginComponent;
@@ -71,7 +70,9 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
 
     private static final String CHECK_READ_PERMISSION_PROPERTY = "notification.check.read.permission";
 
-    private DocumentViewCodecManager docLocator;
+    public static final String NOTIFICATION_DOCUMENT_ID_CODEC_NAME = "notificationDocId";
+
+    public static final String JSF_NOTIFICATION_DOCUMENT_ID_CODEC_PREFIX = "nxdoc";
 
     private UserManager userManager;
 
@@ -105,7 +106,8 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
             return;
         }
         for (Event event : events) {
-            Boolean block = (Boolean) event.getContext().getProperty(NotificationConstants.DISABLE_NOTIFICATION_SERVICE);
+            Boolean block = (Boolean) event.getContext()
+                                           .getProperty(NotificationConstants.DISABLE_NOTIFICATION_SERVICE);
             if (block != null && block) {
                 // ignore the event - we are blocked by the caller
                 continue;
@@ -129,7 +131,7 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
             return;
         }
 
-        if(docCtx.getSourceDocument() instanceof ShallowDocumentModel) {
+        if (docCtx.getSourceDocument() instanceof ShallowDocumentModel) {
             log.trace("Can not handle notification on a event that is bound to a ShallowDocument");
             return;
         }
@@ -228,7 +230,8 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
         }
 
         if (Boolean.parseBoolean(Framework.getProperty(CHECK_READ_PERMISSION_PROPERTY))) {
-            if (!ctx.getCoreSession().hasPermission(principal, ctx.getSourceDocument().getRef(), SecurityConstants.READ)) {
+            if (!ctx.getCoreSession().hasPermission(principal, ctx.getSourceDocument().getRef(),
+                    SecurityConstants.READ)) {
                 log.debug("Notification will not be sent: + '" + subscriptor
                         + "' do not have Read permission on document " + ctx.getSourceDocument().getId());
                 return;
@@ -242,6 +245,13 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
         String author = ctx.getPrincipal().getName();
         Calendar created = (Calendar) ctx.getSourceDocument().getPropertyValue("dc:created");
 
+        // Get notification document codec
+        DocumentViewCodecManager codecService = Framework.getService(DocumentViewCodecManager.class);
+        DocumentViewCodec codec = codecService.getCodec(NOTIFICATION_DOCUMENT_ID_CODEC_NAME);
+        boolean isNotificationCodec = codec != null;
+        boolean isJSFUI = isNotificationCodec && JSF_NOTIFICATION_DOCUMENT_ID_CODEC_PREFIX.equals(codec.getPrefix());
+
+        eventInfo.put(NotificationConstants.IS_JSF_UI, isJSFUI);
         eventInfo.put(NotificationConstants.DESTINATION_KEY, subscriptor);
         eventInfo.put(NotificationConstants.NOTIFICATION_KEY, notification);
         eventInfo.put(NotificationConstants.DOCUMENT_ID_KEY, doc.getId());
@@ -250,9 +260,16 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
         eventInfo.put(NotificationConstants.DOCUMENT_VERSION, doc.getVersionLabel());
         eventInfo.put(NotificationConstants.DOCUMENT_STATE, doc.getCurrentLifeCycleState());
         eventInfo.put(NotificationConstants.DOCUMENT_CREATED, created.getTime());
-        StringBuilder userUrl = new StringBuilder();
-        userUrl.append(notificationService.getServerUrlPrefix()).append("user/").append(ctx.getPrincipal().getName());
-        eventInfo.put(NotificationConstants.USER_URL_KEY, userUrl.toString());
+        if (isNotificationCodec) {
+            StringBuilder userUrl = new StringBuilder();
+            userUrl.append(notificationService.getServerUrlPrefix());
+            if (!isJSFUI) {
+                userUrl.append("ui/");
+                userUrl.append("#!/");
+            }
+            userUrl.append("user/").append(ctx.getPrincipal().getName());
+            eventInfo.put(NotificationConstants.USER_URL_KEY, userUrl.toString());
+        }
         eventInfo.put(NotificationConstants.DOCUMENT_LOCATION, doc.getPathAsString());
         // Main file link for downloading
         BlobHolder bh = doc.getAdapter(BlobHolder.class);
@@ -265,13 +282,10 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
         }
 
         if (!isDeleteEvent(event.getName())) {
-            DocumentView docView = new DocumentViewImpl(doc);
-            DocumentViewCodecManager docLocator = getDocLocator();
-            if (docLocator != null) {
+            if (isNotificationCodec) {
                 eventInfo.put(NotificationConstants.DOCUMENT_URL_KEY,
-                        getDocLocator().getUrlFromDocumentView(docView, true, notificationService.getServerUrlPrefix()));
-            } else {
-                eventInfo.put(NotificationConstants.DOCUMENT_URL_KEY, "");
+                        codecService.getUrlFromDocumentView(NOTIFICATION_DOCUMENT_ID_CODEC_NAME,
+                                new DocumentViewImpl(doc), true, notificationService.getServerUrlPrefix()));
             }
             eventInfo.put(NotificationConstants.DOCUMENT_TITLE_KEY, doc.getTitle());
         }
@@ -299,9 +313,7 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
             log.error("Couldn't find user: " + userDest + " to send her a mail.");
             return;
         }
-        // XXX hack, principals have only one model
-        DataModel model = recepient.getModel().getDataModels().values().iterator().next();
-        String email = (String) model.getData("email");
+        String email = recepient.getEmail();
         if (email == null || "".equals(email)) {
             log.error("No email found for user: " + userDest);
             return;
@@ -442,13 +454,6 @@ public class NotificationEventListener implements PostCommitFilteringEventListen
 
     public boolean isInterestedInNotification(Notification notif) {
         return notif != null && "email".equals(notif.getChannel());
-    }
-
-    public DocumentViewCodecManager getDocLocator() {
-        if (docLocator == null) {
-            docLocator = Framework.getService(DocumentViewCodecManager.class);
-        }
-        return docLocator;
     }
 
     public EmailHelper getEmailHelper() {

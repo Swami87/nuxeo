@@ -21,6 +21,10 @@
     </layout>
   </appender>
 
+  <!-- <logger name="org.nuxeo.connect">
+    <level value="DEBUG" />
+  </logger> -->
+
   <root>
     <priority value="WARN" />
     <appender-ref ref="CONSOLE" />

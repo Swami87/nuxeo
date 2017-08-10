@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import java.net.URL;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.nuxeo.runtime.AbstractRuntimeService;
 import org.nuxeo.runtime.Version;
 import org.nuxeo.runtime.api.Framework;
@@ -83,10 +82,13 @@ public class TestRuntime extends AbstractRuntimeService {
     }
 
     @Override
-    public synchronized void stop() {
-        super.stop();
-        if (workingDir != null) {
-            FileUtils.deleteQuietly(workingDir);
+    public void stop() {
+        try {
+            super.stop();
+        } finally {
+            if (workingDir != null) {
+                FileUtils.deleteQuietly(workingDir);
+            }
         }
     }
 

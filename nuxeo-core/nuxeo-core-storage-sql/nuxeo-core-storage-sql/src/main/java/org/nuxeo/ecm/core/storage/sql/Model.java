@@ -121,6 +121,14 @@ public class Model {
 
     public static final String MAIN_IS_VERSION_KEY = "isversion";
 
+    public static final String MAIN_SYS_CHANGE_TOKEN_PROP = "ecm:systemChangeToken";
+
+    public static final String MAIN_SYS_CHANGE_TOKEN_KEY = "systemchangetoken";
+
+    public static final String MAIN_CHANGE_TOKEN_PROP = "ecm:changeToken";
+
+    public static final String MAIN_CHANGE_TOKEN_KEY = "changetoken";
+
     // for soft-delete
     public static final String MAIN_IS_DELETED_PROP = "ecm:isDeleted";
 
@@ -285,9 +293,15 @@ public class Model {
     // first half of md5 of "nosuchlongid"
     public static final Long NO_SUCH_LONG_ID = Long.valueOf(0x3153147dd69fcea4L);
 
+    public static final Long INITIAL_CHANGE_TOKEN = Long.valueOf(0);
+
+    public static final Long INITIAL_SYS_CHANGE_TOKEN = Long.valueOf(0);
+
     protected final boolean softDeleteEnabled;
 
     protected final boolean proxiesEnabled;
+
+    protected final boolean changeTokenEnabled;
 
     /** Type of ids as seen by the VCS Java layer. */
     public enum IdType {
@@ -446,6 +460,7 @@ public class Model {
         }
         softDeleteEnabled = repositoryDescriptor.getSoftDeleteEnabled();
         proxiesEnabled = repositoryDescriptor.getProxiesEnabled();
+        changeTokenEnabled = repositoryDescriptor.isChangeTokenEnabled();
 
         allDocTypeSchemas = new HashMap<String, Set<String>>();
         mixinsDocumentTypes = new HashMap<String, Set<String>>();
@@ -757,6 +772,12 @@ public class Model {
             // also add the propname/* path for array elements
             if (pi.propertyType.isArray()) {
                 propertyInfoByPath.put(path + "/*", pi);
+                if (!supportsArrayColumns) {
+                    // pseudo-syntax with ending "#" to get to the pos column
+                    String posPropertyName = propertyName + "#";
+                    ModelProperty posPi = map.get(typeName).get(posPropertyName);
+                    propertyInfoByPath.put(path + "#", posPi);
+                }
             }
         }
         done.remove(typeName);
@@ -1281,6 +1302,12 @@ public class Model {
                 LongType.INSTANCE, ColumnType.INTEGER);
         addPropertyInfo(MAIN_IS_VERSION_PROP, PropertyType.BOOLEAN, HIER_TABLE_NAME, MAIN_IS_VERSION_KEY, false,
                 BooleanType.INSTANCE, ColumnType.BOOLEAN);
+        if (changeTokenEnabled) {
+            addPropertyInfo(MAIN_SYS_CHANGE_TOKEN_PROP, PropertyType.LONG, HIER_TABLE_NAME, MAIN_SYS_CHANGE_TOKEN_KEY, false,
+                    LongType.INSTANCE, ColumnType.LONG);
+            addPropertyInfo(MAIN_CHANGE_TOKEN_PROP, PropertyType.LONG, HIER_TABLE_NAME, MAIN_CHANGE_TOKEN_KEY, false,
+                    LongType.INSTANCE, ColumnType.LONG);
+        }
         if (softDeleteEnabled) {
             addPropertyInfo(MAIN_IS_DELETED_PROP, PropertyType.BOOLEAN, HIER_TABLE_NAME, MAIN_IS_DELETED_KEY, true,
                     BooleanType.INSTANCE, ColumnType.BOOLEAN);
@@ -1520,6 +1547,11 @@ public class Model {
                             String fragmentName = collectionFragmentName(propertyName);
                             addPropertyInfo(complexType, propertyName, propertyType, fragmentName, COLL_TABLE_VALUE_KEY,
                                     false, null, columnType);
+                            // pseudo-syntax with ending "#" to get to the pos column
+                            String posPropertyName = propertyName + "#";
+                            PropertyType posPropertyType = PropertyType.LONG;
+                            addPropertyInfo(complexType, posPropertyName, posPropertyType, fragmentName,
+                                    COLL_TABLE_POS_KEY, false, null, ColumnType.INTEGER);
 
                             Map<String, ColumnType> keysType = new LinkedHashMap<String, ColumnType>();
                             keysType.put(COLL_TABLE_POS_KEY, ColumnType.INTEGER);

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.event.impl;
 
 import java.io.Serializable;
@@ -31,7 +28,6 @@ import org.nuxeo.common.collections.ScopedMap;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DataModel;
-import org.nuxeo.ecm.core.api.DataModelMap;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.IdRef;
@@ -93,13 +89,30 @@ public class ShallowDocumentModel implements DocumentModel {
         isVersion = doc.isVersion();
         isProxy = doc.isProxy();
         isImmutable = doc.isImmutable();
-        contextData = doc.getContextData();
+        contextData = new ScopedMap(doc.getContextData());
         facets = doc.getFacets();
         if (doc.isLifeCycleLoaded()) {
             lifecycleState = doc.getCurrentLifeCycleState();
         } else {
             lifecycleState = null;
         }
+    }
+
+    public ShallowDocumentModel(String id, String repoName, String name, Path path, String type, boolean isFolder,
+            boolean isVersion, boolean isProxy, boolean isImmutable, Map<String, Serializable> contextData,
+            Set<String> facets, String lifecycleState) {
+        this.id = id;
+        this.repoName = repoName;
+        this.name = name;
+        this.path = path;
+        this.type = type;
+        this.isFolder = isFolder;
+        this.isVersion = isVersion;
+        this.isProxy = isProxy;
+        this.isImmutable = isImmutable;
+        this.contextData = new ScopedMap(contextData);
+        this.facets = facets;
+        this.lifecycleState = lifecycleState;
     }
 
     @Override
@@ -215,10 +228,7 @@ public class ShallowDocumentModel implements DocumentModel {
 
     @Override
     public Serializable getContextData(ScopeType scope, String key) {
-        if (contextData == null) {
-            return null;
-        }
-        return contextData.getScopedValue(scope, key);
+        return getContextData(key);
     }
 
     @Override
@@ -240,16 +250,19 @@ public class ShallowDocumentModel implements DocumentModel {
     }
 
     @Override
+    @Deprecated
     public DataModel getDataModel(String schema) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public DataModelMap getDataModels() {
+    @Deprecated
+    public Map<String, DataModel> getDataModels() {
         throw new UnsupportedOperationException();
     }
 
     @Override
+    @Deprecated
     public Collection<DataModel> getDataModelsCollection() {
         throw new UnsupportedOperationException();
     }
@@ -285,17 +298,19 @@ public class ShallowDocumentModel implements DocumentModel {
     }
 
     @Override
-    public String getLock() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
+    @Deprecated
     public DocumentPart getPart(String schema) {
         throw new UnsupportedOperationException();
     }
 
     @Override
+    @Deprecated
     public DocumentPart[] getParts() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Collection<Property> getPropertyObjects(String schema) {
         throw new UnsupportedOperationException();
     }
 
@@ -311,6 +326,11 @@ public class ShallowDocumentModel implements DocumentModel {
 
     @Override
     public Object getProperty(String schemaName, String name) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Property getPropertyObject(String schema, String name) {
         throw new UnsupportedOperationException();
     }
 
@@ -455,11 +475,6 @@ public class ShallowDocumentModel implements DocumentModel {
     }
 
     @Override
-    public void setLock(String key) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public Lock setLock() {
         throw new UnsupportedOperationException();
     }
@@ -495,11 +510,6 @@ public class ShallowDocumentModel implements DocumentModel {
     }
 
     @Override
-    public void unlock() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public DocumentModel clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
     }
@@ -509,7 +519,7 @@ public class ShallowDocumentModel implements DocumentModel {
         if (contextData == null) {
             return null;
         }
-        return contextData.getScopedValue(key);
+        return contextData.get(key);
     }
 
     @Override

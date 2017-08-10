@@ -39,7 +39,7 @@ import org.nuxeo.runtime.jtajca.NuxeoConnectionManagerConfiguration;
 /**
  * Low-level VCS Repository Descriptor.
  */
-@XObject(value = "repository")
+@XObject(value = "repository", order = { "@name" })
 public class RepositoryDescriptor {
 
     private static final Log log = LogFactory.getLog(RepositoryDescriptor.class);
@@ -147,7 +147,6 @@ public class RepositoryDescriptor {
     @XNode("@name")
     public void setName(String name) {
         this.name = name;
-        pool.setName("repository/" + name);
     }
 
     @XNode("@label")
@@ -165,7 +164,7 @@ public class RepositoryDescriptor {
     @XNode("repository")
     public RepositoryDescriptor repositoryDescriptor;
 
-    public NuxeoConnectionManagerConfiguration pool = new NuxeoConnectionManagerConfiguration();
+    public NuxeoConnectionManagerConfiguration pool;
 
     @XNode("pool")
     public void setPool(NuxeoConnectionManagerConfiguration pool) {
@@ -277,6 +276,13 @@ public class RepositoryDescriptor {
         arrayColumns = Boolean.valueOf(enabled);
     }
 
+    @XNode("childNameUniqueConstraintEnabled")
+    private Boolean childNameUniqueConstraintEnabled;
+
+    public boolean getChildNameUniqueConstraintEnabled() {
+        return defaultTrue(childNameUniqueConstraintEnabled);
+    }
+
     @XNode("indexing/queryMaker@class")
     public void setQueryMakerDeprecated(String klass) {
         log.warn("Setting queryMaker from repository configuration is now deprecated");
@@ -309,6 +315,11 @@ public class RepositoryDescriptor {
 
     public FulltextDescriptor getFulltextDescriptor() {
         return fulltextDescriptor;
+    }
+
+    @XNode("indexing/fulltext@fieldSizeLimit")
+    public void setFulltextFieldSizeLimit(int fieldSizeLimit) {
+        fulltextDescriptor.setFulltextFieldSizeLimit(fieldSizeLimit);
     }
 
     @XNode("indexing/fulltext@disabled")
@@ -386,11 +397,19 @@ public class RepositoryDescriptor {
     @XNode("usersSeparator@key")
     public String usersSeparatorKey;
 
-    @XNode("xa-datasource")
-    public String xaDataSourceName;
+    /** @since 9.1 */
+    @XNode("changeTokenEnabled")
+    private Boolean changeTokenEnabled;
 
-    @XNodeMap(value = "property", key = "@name", type = HashMap.class, componentType = String.class)
-    public Map<String, String> properties = new HashMap<>();
+    /** @since 9.1 */
+    public boolean isChangeTokenEnabled() {
+        return defaultFalse(changeTokenEnabled);
+    }
+
+    /** @since 9.1 */
+    public void setChangeTokenEnabled(boolean enabled) {
+        this.changeTokenEnabled = Boolean.valueOf(enabled);
+    }
 
     public RepositoryDescriptor() {
     }
@@ -426,8 +445,7 @@ public class RepositoryDescriptor {
         aclOptimizationsEnabled = other.aclOptimizationsEnabled;
         readAclMaxSize = other.readAclMaxSize;
         usersSeparatorKey = other.usersSeparatorKey;
-        xaDataSourceName = other.xaDataSourceName;
-        properties = new HashMap<>(other.properties);
+        changeTokenEnabled = other.changeTokenEnabled;
     }
 
     public void merge(RepositoryDescriptor other) {
@@ -441,7 +459,11 @@ public class RepositoryDescriptor {
             isDefault = other.isDefault;
         }
         if (other.pool != null) {
-            pool = new NuxeoConnectionManagerConfiguration(other.pool);
+            if (pool == null) {
+                pool = new NuxeoConnectionManagerConfiguration(other.pool);
+            } else {
+                pool.merge(other.pool);
+            }
         }
         if (other.backendClass != null) {
             backendClass = other.backendClass;
@@ -520,10 +542,9 @@ public class RepositoryDescriptor {
         if (other.usersSeparatorKey != null) {
             usersSeparatorKey = other.usersSeparatorKey;
         }
-        if (other.xaDataSourceName != null) {
-            xaDataSourceName = other.xaDataSourceName;
+        if (other.changeTokenEnabled != null) {
+            changeTokenEnabled = other.changeTokenEnabled;
         }
-        properties.putAll(other.properties);
     }
 
 }

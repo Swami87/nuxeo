@@ -39,7 +39,7 @@ import org.nuxeo.ecm.core.api.model.DocumentPart;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.api.model.impl.ComplexProperty;
-import org.nuxeo.ecm.core.blob.BlobManager;
+import org.nuxeo.ecm.core.blob.DocumentBlobManager;
 import org.nuxeo.ecm.core.lifecycle.LifeCycle;
 import org.nuxeo.ecm.core.lifecycle.LifeCycleService;
 import org.nuxeo.ecm.core.model.Document;
@@ -201,7 +201,8 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
     }
 
     @Override
-    protected void updateList(Node node, String name, List<Object> values, Field field) throws PropertyException {
+    protected void updateList(Node node, String name, Field field, String xpath, List<Object> values)
+            throws PropertyException {
         List<Node> childNodes = getChildAsList(node, name);
         int oldSize = childNodes.size();
         int newSize = values.size();
@@ -222,8 +223,9 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
         // write values
         int i = 0;
         for (Object v : values) {
-            Node childNode = childNodes.get(i++);
-            setValueComplex(childNode, field, v);
+            Node childNode = childNodes.get(i);
+            setValueComplex(childNode, field, xpath + '/' + i, v);
+            i++;
         }
     }
 
@@ -321,6 +323,48 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
         return (T) value;
     }
 
+    @Override
+    public String getChangeToken() {
+        if (session.isChangeTokenEnabled()) {
+            Long sysChangeToken = (Long) getPropertyValue(Model.MAIN_SYS_CHANGE_TOKEN_PROP);
+            Long changeToken = (Long) getPropertyValue(Model.MAIN_CHANGE_TOKEN_PROP);
+            return buildUserVisibleChangeToken(sysChangeToken, changeToken);
+        } else {
+            Calendar modified;
+            try {
+                modified = (Calendar) getPropertyValue(DC_MODIFIED);
+            } catch (PropertyNotFoundException e) {
+                modified = null;
+            }
+            return getLegacyChangeToken(modified);
+        }
+    }
+
+    @Override
+    public boolean validateUserVisibleChangeToken(String userVisibleChangeToken) {
+        if (userVisibleChangeToken == null) {
+            return true;
+        }
+        if (session.isChangeTokenEnabled()) {
+            Long sysChangeToken = (Long) getPropertyValue(Model.MAIN_SYS_CHANGE_TOKEN_PROP);
+            Long changeToken = (Long) getPropertyValue(Model.MAIN_CHANGE_TOKEN_PROP);
+            return validateUserVisibleChangeToken(sysChangeToken, changeToken, userVisibleChangeToken);
+        } else {
+            Calendar modified;
+            try {
+                modified = (Calendar) getPropertyValue(DC_MODIFIED);
+            } catch (PropertyNotFoundException e) {
+                modified = null;
+            }
+            return validateLegacyChangeToken(modified, userVisibleChangeToken);
+        }
+    }
+
+    @Override
+    public void markUserChange() {
+        session.markUserChange(getNode().getId());
+    }
+
     /*
      * ----- LifeCycle -----
      */
@@ -333,7 +377,7 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
     @Override
     public void setLifeCyclePolicy(String policy) {
         setPropertyValue(Model.MISC_LIFECYCLE_POLICY_PROP, policy);
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         blobManager.notifyChanges(this, Collections.singleton(Model.MISC_LIFECYCLE_POLICY_PROP));
     }
 
@@ -345,7 +389,7 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
     @Override
     public void setCurrentLifeCycleState(String state) {
         setPropertyValue(Model.MISC_LIFECYCLE_STATE_PROP, state);
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         blobManager.notifyChanges(this, Collections.singleton(Model.MISC_LIFECYCLE_STATE_PROP));
     }
 
@@ -406,7 +450,8 @@ public class SQLDocumentLive extends BaseDocument<Node>implements SQLDocument {
     @Override
     public Document checkIn(String label, String checkinComment) {
         Document version = session.checkIn(getNode(), label, checkinComment);
-        Framework.getService(BlobManager.class).freezeVersion(version);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
+        blobManager.freezeVersion(version);
         return version;
     }
 

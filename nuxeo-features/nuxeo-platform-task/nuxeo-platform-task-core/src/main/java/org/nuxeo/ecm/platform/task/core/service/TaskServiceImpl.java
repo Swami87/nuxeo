@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     ldoguin, Antoine Taillefer
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.task.core.service;
 
 import java.io.Serializable;
@@ -32,7 +29,6 @@ import org.apache.commons.lang.StringUtils;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
-import org.nuxeo.ecm.core.api.DocumentModelList;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.IdRef;
@@ -144,9 +140,8 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
             Map<String, String> taskVariables, String parentPath, Map<String, Serializable> eventInfo) {
         List<DocumentModel> docs = new ArrayList<>();
         docs.add(document);
-        return createTaskForProcess(coreSession, principal, docs, taskDocumentType, taskName, taskType, processId,
-                null, actorIds, createOneTaskPerActor, directive, comment, dueDate, taskVariables, parentPath,
-                eventInfo);
+        return createTaskForProcess(coreSession, principal, docs, taskDocumentType, taskName, taskType, processId, null,
+                actorIds, createOneTaskPerActor, directive, comment, dueDate, taskVariables, parentPath, eventInfo);
     }
 
     /**
@@ -157,9 +152,8 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
             String taskName, String taskType, String processId, List<String> prefixedActorIds,
             boolean createOneTaskPerActor, String directive, String comment, Date dueDate,
             Map<String, String> taskVariables, String parentPath) {
-        return createTask(coreSession, principal, document, TaskConstants.TASK_TYPE_NAME, taskName, taskType,
-                processId, prefixedActorIds, createOneTaskPerActor, directive, comment, dueDate, taskVariables,
-                parentPath, null);
+        return createTask(coreSession, principal, document, TaskConstants.TASK_TYPE_NAME, taskName, taskType, processId,
+                prefixedActorIds, createOneTaskPerActor, directive, comment, dueDate, taskVariables, parentPath, null);
     }
 
     @Override
@@ -189,10 +183,9 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
         }
         TaskProvider taskProvider = tasksProviders.get(taskProviderId);
         if (taskProvider == null) {
-            throw new NuxeoException(
-                    String.format(
-                            "No task provider registered, cannot end task. Please contribute at least the default task provider: %s.",
-                            DEFAULT_TASK_PROVIDER));
+            throw new NuxeoException(String.format(
+                    "No task provider registered, cannot end task. Please contribute at least the default task provider: %s.",
+                    DEFAULT_TASK_PROVIDER));
         }
         return taskProvider.endTask(coreSession, principal, task, comment, eventName, isValidated);
     }
@@ -227,11 +220,11 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
                         if (actors.contains(userName.substring(NuxeoPrincipal.PREFIX.length()))) {
                             return true;
                         }
-                    } else  if (userName.startsWith(NuxeoGroup.PREFIX)) {
+                    } else if (userName.startsWith(NuxeoGroup.PREFIX)) {
                         if (actors.contains(userName.substring(NuxeoGroup.PREFIX.length()))) {
                             return true;
                         }
-                    } else if(actors.contains(userName)) {
+                    } else if (actors.contains(userName)) {
                         return true;
                     }
                 }
@@ -268,7 +261,8 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
     @Override
     public DocumentModel getTargetDocumentModel(Task task, CoreSession coreSession) {
         try {
-            return coreSession.getDocument(new IdRef(task.getTargetDocumentId()));
+            // TODO handle while target documents from task
+            return coreSession.getDocument(new IdRef(task.getTargetDocumentsIds().get(0)));
         } catch (DocumentNotFoundException e) {
             return null;
         }
@@ -322,7 +316,6 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
      * Returns a list of task instances assigned to one of the actors in the list or to its pool.
      *
      * @param actors a list used as actorId to retrieve the tasks.
-     * @return
      */
     @Override
     public List<Task> getCurrentTaskInstances(List<String> actors, CoreSession coreSession) {
@@ -416,18 +409,6 @@ public class TaskServiceImpl extends DefaultComponent implements TaskService {
             if (newTasks != null) {
                 tasks.addAll(newTasks);
             }
-        }
-        return tasks;
-    }
-
-    /**
-     * @deprecated since 5.6
-     */
-    @Deprecated
-    protected List<Task> wrapDocModelInTask(DocumentModelList taskDocuments) {
-        List<Task> tasks = new ArrayList<>();
-        for (DocumentModel doc : taskDocuments) {
-            tasks.add(doc.getAdapter(Task.class));
         }
         return tasks;
     }

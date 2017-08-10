@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,8 +12,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  * Contributors:
- * Nuxeo - initial API and implementation
+ *   Nuxeo - initial API and implementation
  */
 package org.nuxeo.ecm.platform.rendition.service;
 
@@ -112,7 +113,7 @@ public class RenditionCreator extends UnrestrictedSessionRunner {
         DocumentModel rendition = createRenditionDocument(sourceDocument);
         removeBlobs(rendition);
         updateMainBlob(rendition);
-        updateIconAndSizeFields(rendition);
+        updateIconField(rendition);
 
         // create a copy of the doc
         if (rendition.getId() == null) {
@@ -171,7 +172,7 @@ public class RenditionCreator extends UnrestrictedSessionRunner {
         DocumentModelList existingRenditions = session.query(query.toString());
         String modificationDatePropertyName = getSourceDocumentModificationDatePropertyName();
         Calendar sourceLastModified = (Calendar) sourceDocument.getPropertyValue(modificationDatePropertyName);
-        DocumentModel rendition = null;
+        DocumentModel rendition;
         if (existingRenditions.size() > 0) {
             rendition = session.getDocument(existingRenditions.get(0).getRef());
             if (!isVersionable) {
@@ -191,7 +192,7 @@ public class RenditionCreator extends UnrestrictedSessionRunner {
         }
 
         rendition.copyContent(sourceDocument);
-        rendition.getContextData().putScopedValue(LifeCycleConstants.INITIAL_LIFECYCLE_STATE_OPTION_NAME,
+        rendition.putContextData(LifeCycleConstants.INITIAL_LIFECYCLE_STATE_OPTION_NAME,
                 sourceDocument.getCurrentLifeCycleState());
 
         rendition.addFacet(RENDITION_FACET);
@@ -221,7 +222,7 @@ public class RenditionCreator extends UnrestrictedSessionRunner {
         bh.setBlob(renditionBlob);
     }
 
-    private void updateIconAndSizeFields(DocumentModel rendition) {
+    private void updateIconField(DocumentModel rendition) {
         if (!rendition.hasSchema("common")) {
             return;
         }
@@ -236,7 +237,6 @@ public class RenditionCreator extends UnrestrictedSessionRunner {
         if (mimetypeEntry != null && mimetypeEntry.getIconPath() != null) {
             rendition.setPropertyValue("common:icon", "/icons/" + mimetypeEntry.getIconPath());
         }
-        rendition.setPropertyValue("common:size", renditionBlob.getLength());
     }
 
     protected void setCorrectVersion(DocumentModel rendition, DocumentModel versionDocument) {

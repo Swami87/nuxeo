@@ -18,6 +18,7 @@
  */
 package org.nuxeo.elasticsearch.fetcher;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -26,12 +27,15 @@ import java.util.List;
 import java.util.Map;
 
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.common.text.Text;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.highlight.HighlightField;
 import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.impl.DocumentModelListImpl;
 import org.nuxeo.ecm.core.query.sql.NXQL;
+import org.nuxeo.ecm.platform.query.api.PageProvider;
 
 /**
  * @since 6.0
@@ -68,6 +72,7 @@ public class VcsFetcher extends Fetcher {
             }
         }
         sortResults(docs);
+        addHighlights(docs);
         DocumentModelListImpl ret = new DocumentModelListImpl(docs.size());
         if (!docs.isEmpty()) {
             ret.addAll(docs);
@@ -124,6 +129,32 @@ public class VcsFetcher extends Fetcher {
         }
         sb.append(")");
         return session.query(sb.toString());
+    }
+
+    private void addHighlights(List<DocumentModel> docs) {
+        for (SearchHit hit : getResponse().getHits()) {
+            for (DocumentModel doc : docs) {
+                String docId = doc.getRepositoryName() + doc.getId();
+                String hitId = getRepoForIndex(hit.getIndex()) + hit.getId();
+                if (docId.equals(hitId)) {
+                    // Add highlight if it exists
+                    Map<String, HighlightField> esHighlights = hit.highlightFields();
+                    if (!esHighlights.isEmpty()) {
+                        Map<String, List<String>> fields = new HashMap<>();
+                        for (Map.Entry<String, HighlightField> entry : esHighlights.entrySet()) {
+                            String field = entry.getKey();
+                            List<String> list = new ArrayList<>();
+                            for (Text fragment : entry.getValue().getFragments()) {
+                                list.add(fragment.toString());
+                            }
+                            fields.put(field, list);
+                        }
+                        doc.putContextData(PageProvider.HIGHLIGHT_CTX_DATA, (Serializable) fields);
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     private void sortResults(List<DocumentModel> docs) {

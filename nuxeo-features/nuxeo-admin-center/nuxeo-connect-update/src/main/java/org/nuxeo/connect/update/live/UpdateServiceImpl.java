@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,14 +31,10 @@ import org.nuxeo.connect.update.task.live.commands.DeployConfig;
 import org.nuxeo.connect.update.task.live.commands.Flush;
 import org.nuxeo.connect.update.task.live.commands.FlushCoreCache;
 import org.nuxeo.connect.update.task.live.commands.FlushJaasCache;
-import org.nuxeo.connect.update.task.live.commands.Install;
-import org.nuxeo.connect.update.task.live.commands.LoadJar;
 import org.nuxeo.connect.update.task.live.commands.ReloadProperties;
 import org.nuxeo.connect.update.task.live.commands.RollbackAndUndeploy;
 import org.nuxeo.connect.update.task.live.commands.Undeploy;
 import org.nuxeo.connect.update.task.live.commands.UndeployConfig;
-import org.nuxeo.connect.update.task.live.commands.Uninstall;
-import org.nuxeo.connect.update.task.live.commands.UnloadJar;
 import org.nuxeo.connect.update.task.live.commands.UpdateAndDeploy;
 import org.nuxeo.connect.update.task.update.Rollback;
 import org.nuxeo.connect.update.task.update.Update;
@@ -56,8 +52,6 @@ public class UpdateServiceImpl extends StandaloneUpdateService implements Packag
     @Override
     protected void addCommands() {
         super.addCommands();
-        addCommand(Install.ID, Install.class);
-        addCommand(Uninstall.ID, Uninstall.class);
         addCommand(FlushCoreCache.ID, FlushCoreCache.class);
         addCommand(FlushJaasCache.ID, FlushJaasCache.class);
         addCommand(Flush.ID, Flush.class);
@@ -69,9 +63,6 @@ public class UpdateServiceImpl extends StandaloneUpdateService implements Packag
 
         addCommand(DeployConfig.ID, DeployConfig.class);
         addCommand(UndeployConfig.ID, UndeployConfig.class);
-
-        addCommand(LoadJar.ID, LoadJar.class);
-        addCommand(UnloadJar.ID, UnloadJar.class);
 
         // override the update command to add hot reload support
         addCommand(Update.ID, UpdateAndDeploy.class);

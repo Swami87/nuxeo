@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,16 @@
  *      Anahide Tchertchian
  *      Florent Guillaume
  */
-
 package org.nuxeo.common.utils;
 
-import java.util.Arrays;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
 import org.junit.Test;
-import static org.junit.Assert.*;
 
 public class TestIdUtils {
 
@@ -68,7 +68,7 @@ public class TestIdUtils {
 
     @Test
     public void testGenerateIdExamples() {
-        Map<String, String> examples = new HashMap<String, String>();
+        Map<String, String> examples = new HashMap<>();
         examples.put("Le ciel est bleu", "Le-ciel-est-bleu");
         examples.put("Le ciel est bleu ", "Le-ciel-est-bleu");
         examples.put(" Le ciel est bleu ", "Le-ciel-est-bleu");
@@ -79,32 +79,6 @@ public class TestIdUtils {
         for (Entry<String, String> example : examples.entrySet()) {
             assertEquals(example.getValue(), IdUtils.generateId(example.getKey(), "-", false, 24));
         }
-    }
-
-    @Test
-    public void testGeneratePathSegment() {
-        String s;
-
-        // stupid ids -> random
-        for (String id : Arrays.asList("", " ", "  ", "-", "./", ".", "..", " . ", " .. ", "\"", "'", "/", "//")) {
-            String newId = IdUtils.generatePathSegment(id);
-            assertTrue(id + " -> " + newId, newId.length() > 6);
-            assertTrue(newId, Character.isDigit(newId.charAt(0)));
-        }
-
-        // keeps normal names
-        s = "My Document.pdf";
-        assertEquals(s, IdUtils.generatePathSegment(s));
-        // keeps non-ascii chars and capitals
-        s = "C'est l'\u00E9t\u00E9   !!";
-        assertEquals(s, IdUtils.generatePathSegment(s));
-        // trims spaces
-        s = "  Foo  bar  ";
-        assertEquals("Foo  bar", IdUtils.generatePathSegment(s));
-        // converts slashes
-        s = "foo/bar";
-        assertEquals("foo-bar", IdUtils.generatePathSegment(s));
-
     }
 
 }

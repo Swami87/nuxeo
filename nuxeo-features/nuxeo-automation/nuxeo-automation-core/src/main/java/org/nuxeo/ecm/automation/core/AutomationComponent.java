@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,8 +53,6 @@ import org.nuxeo.ecm.automation.core.impl.OperationServiceImpl;
 import org.nuxeo.ecm.automation.core.trace.TracerFactory;
 import org.nuxeo.ecm.platform.forms.layout.api.WidgetDefinition;
 import org.nuxeo.ecm.platform.forms.layout.descriptors.WidgetDescriptor;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.management.ServerLocator;
 import org.nuxeo.runtime.model.ComponentContext;
@@ -134,7 +132,7 @@ public class AutomationComponent extends DefaultComponent {
     public void registerContribution(Object contribution, String extensionPoint, ComponentInstance contributor) {
         if (XP_OPERATIONS.equals(extensionPoint)) {
             OperationContribution opc = (OperationContribution) contribution;
-            List<WidgetDefinition> widgetDefinitionList = new ArrayList<WidgetDefinition>();
+            List<WidgetDefinition> widgetDefinitionList = new ArrayList<>();
             if (opc.widgets != null) {
                 for (WidgetDescriptor widgetDescriptor : opc.widgets) {
                     widgetDefinitionList.add(widgetDescriptor.getWidgetDefinition());
@@ -235,31 +233,24 @@ public class AutomationComponent extends DefaultComponent {
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
-        super.applicationStarted(context);
+    public void start(ComponentContext context) {
         if (!tracerFactory.getRecordingState()) {
             log.info("You can activate automation trace mode to get more informations on automation executions");
         }
         try {
             bindManagement();
         } catch (JMException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Cannot bind management", e);
         }
-        Framework.addListener(new RuntimeServiceListener() {
+    }
 
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-                    return;
-                }
-                Framework.removeListener(this);
-                try {
-                    unBindManagement();
-                } catch (MalformedObjectNameException | NotCompliantMBeanException | InstanceAlreadyExistsException
-                        | MBeanRegistrationException | InstanceNotFoundException cause) {
-                    log.error("Cannot unbind management", cause);
-                }
-            }
-        });
+    @Override
+    public void stop(ComponentContext context) {
+        service.flushCompiledChains();
+        try {
+            unBindManagement();
+        } catch (JMException e) {
+            throw new RuntimeException("Cannot unbind management", e);
+        }
     }
 }

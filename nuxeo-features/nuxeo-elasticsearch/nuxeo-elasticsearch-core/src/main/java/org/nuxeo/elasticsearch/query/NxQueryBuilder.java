@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,20 @@
  */
 package org.nuxeo.elasticsearch.query;
 
+import static org.nuxeo.ecm.core.api.security.SecurityConstants.UNSUPPORTED_ACL;
+import static org.nuxeo.elasticsearch.ElasticSearchConstants.ACL_FIELD;
+import static org.nuxeo.elasticsearch.ElasticSearchConstants.FETCH_DOC_FROM_ES_PROPERTY;
+
+import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.index.query.AndFilterBuilder;
-import org.elasticsearch.index.query.FilterBuilder;
-import org.elasticsearch.index.query.FilterBuilders;
+import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
@@ -33,6 +42,7 @@ import org.elasticsearch.search.sort.SortOrder;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.SortInfo;
+import org.nuxeo.ecm.core.schema.SchemaManager;
 import org.nuxeo.ecm.core.schema.types.Type;
 import org.nuxeo.ecm.core.security.SecurityService;
 import org.nuxeo.ecm.platform.query.api.Aggregate;
@@ -44,17 +54,6 @@ import org.nuxeo.elasticsearch.fetcher.EsFetcher;
 import org.nuxeo.elasticsearch.fetcher.Fetcher;
 import org.nuxeo.elasticsearch.fetcher.VcsFetcher;
 import org.nuxeo.runtime.api.Framework;
-
-import java.security.Principal;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.nuxeo.ecm.core.api.security.SecurityConstants.UNSUPPORTED_ACL;
-import static org.nuxeo.elasticsearch.ElasticSearchConstants.ACL_FIELD;
-import static org.nuxeo.elasticsearch.ElasticSearchConstants.FETCH_DOC_FROM_ES_PROPERTY;
 
 /**
  * Elasticsearch query builder for the Nuxeo ES api.
@@ -87,13 +86,15 @@ public class NxQueryBuilder {
 
     private boolean searchOnAllRepo = false;
 
-    private String[] selectFields = {ElasticSearchConstants.ID_FIELD};
+    private String[] selectFields = { ElasticSearchConstants.ID_FIELD };
 
     private Map<String, Type> selectFieldsAndTypes;
 
     private boolean returnsDocuments = true;
 
     private boolean esOnly = false;
+
+    private List<String> highlightFields;
 
     public NxQueryBuilder(CoreSession coreSession) {
         session = coreSession;
@@ -106,9 +107,13 @@ public class NxQueryBuilder {
     }
 
     /**
-     * No more than that many documents will be returned. Default to {DEFAULT_LIMIT}, Use -1 to return all documents.
+     * No more than that many documents will be returned. Default to {DEFAULT_LIMIT}. Since Nuxeo 8.4 and ES 2.x, we can
+     * not give -1 to this method as the default configuration on ES allows to have a search window of 10000 documents
+     * at maximum. This settings could be changed on ES by changing {index.max_result_window}, but it is preferable to
+     * use the scan & scroll API.
      */
     public NxQueryBuilder limit(int limit) {
+        // For compatibility only, deprecated since 8.4
         if (limit < 0) {
             limit = Integer.MAX_VALUE;
         }
@@ -194,6 +199,14 @@ public class NxQueryBuilder {
         return this;
     }
 
+    /**
+     * @since 9.1
+     */
+    public NxQueryBuilder highlight(List<String> highlightFields) {
+        this.highlightFields = highlightFields;
+        return this;
+    }
+
     public int getLimit() {
         return limit;
     }
@@ -245,10 +258,7 @@ public class NxQueryBuilder {
 
     protected boolean nxqlHasSelectClause(String nxql) {
         String lowerNxql = nxql.toLowerCase();
-        if (lowerNxql.startsWith("select") && !lowerNxql.startsWith("select * from")) {
-            return true;
-        }
-        return false;
+        return lowerNxql.startsWith("select") && !lowerNxql.startsWith("select * from");
     }
 
     public SortBuilder[] getSortBuilders() {
@@ -259,42 +269,60 @@ public class NxQueryBuilder {
         ret = new SortBuilder[sortInfos.size()];
         int i = 0;
         for (SortInfo sortInfo : sortInfos) {
-            ret[i++] = new FieldSortBuilder(sortInfo.getSortColumn()).order(sortInfo.getSortAscending() ? SortOrder.ASC
-                    : SortOrder.DESC);
+            String fieldType = guessFieldType(sortInfo.getSortColumn());
+            ret[i++] = new FieldSortBuilder(sortInfo.getSortColumn()).order(
+                    sortInfo.getSortAscending() ? SortOrder.ASC : SortOrder.DESC)
+                    .unmappedType(fieldType);
         }
         return ret;
     }
 
-    protected FilterBuilder getAggregateFilter() {
-        boolean hasFilter = false;
-        AndFilterBuilder ret = FilterBuilders.andFilter();
+    protected String guessFieldType(String field) {
+        String fieldType;
+        try {
+            SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+            fieldType = schemaManager.getField(field).getType().getName();
+        } catch (NullPointerException e) {
+            // probably an internal field without schema
+            fieldType = "string";
+        }
+        switch (fieldType) {
+            case "integer":
+            case "long":
+            case "boolean":
+            case "date":
+            case "string":
+                return fieldType;
+        }
+        return "string";
+    }
+
+    protected QueryBuilder getAggregateFilter() {
+        BoolQueryBuilder ret = QueryBuilders.boolQuery();
         for (AggregateEsBase agg : aggregates) {
-            FilterBuilder filter = agg.getEsFilter();
+            QueryBuilder filter = agg.getEsFilter();
             if (filter != null) {
-                ret.add(filter);
-                hasFilter = true;
+                ret.must(filter);
             }
         }
-        if (!hasFilter) {
+        if (!ret.hasClauses()) {
             return null;
         }
         return ret;
     }
 
-    protected FilterBuilder getAggregateFilterExceptFor(String id) {
-        boolean hasFilter = false;
-        AndFilterBuilder ret = FilterBuilders.andFilter();
+    protected QueryBuilder getAggregateFilterExceptFor(String id) {
+        BoolQueryBuilder ret = QueryBuilders.boolQuery();
         for (AggregateEsBase agg : aggregates) {
             if (!agg.getId().equals(id)) {
-                FilterBuilder filter = agg.getEsFilter();
+                QueryBuilder filter = agg.getEsFilter();
                 if (filter != null) {
-                    ret.add(filter);
-                    hasFilter = true;
+                    ret.must(filter);
                 }
             }
         }
-        if (!hasFilter) {
-            return FilterBuilders.matchAllFilter();
+        if (!ret.hasClauses()) {
+            return QueryBuilders.matchAllQuery();
         }
         return ret;
     }
@@ -328,11 +356,20 @@ public class NxQueryBuilder {
             request.addAggregation(aggregate);
         }
         // Add Aggregate post filter
-        FilterBuilder aggFilter = getAggregateFilter();
+        QueryBuilder aggFilter = getAggregateFilter();
         if (aggFilter != null) {
             request.setPostFilter(aggFilter);
         }
-        // Fields selection
+
+        // Add highlighting
+        if (highlightFields != null && !highlightFields.isEmpty()) {
+            for (String field : highlightFields) {
+                request.addHighlightedField(field);
+            }
+            request.setHighlighterRequireFieldMatch(false);
+        }
+
+       // Fields selection
         if (!isFetchFromElasticsearch()) {
             request.addFields(getSelectFields());
         }
@@ -340,7 +377,6 @@ public class NxQueryBuilder {
     }
 
     protected QueryBuilder addSecurityFilter(QueryBuilder query) {
-        AndFilterBuilder aclFilter;
         Principal principal = session.getPrincipal();
         if (principal == null
                 || (principal instanceof NuxeoPrincipal && ((NuxeoPrincipal) principal).isAdministrator())) {
@@ -349,11 +385,11 @@ public class NxQueryBuilder {
         String[] principals = SecurityService.getPrincipalsToCheck(principal);
         // we want an ACL that match principals but we discard
         // unsupported ACE that contains negative ACE
-        aclFilter = FilterBuilders.andFilter(FilterBuilders.inFilter(ACL_FIELD, principals),
-                FilterBuilders.notFilter(FilterBuilders.inFilter(ACL_FIELD, UNSUPPORTED_ACL)));
-        return QueryBuilders.filteredQuery(query, aclFilter);
+        QueryBuilder aclFilter = QueryBuilders.boolQuery()
+                                              .must(QueryBuilders.termsQuery(ACL_FIELD, principals))
+                                              .mustNot(QueryBuilders.termsQuery(ACL_FIELD, UNSUPPORTED_ACL));
+        return QueryBuilders.boolQuery().must(query).filter(aclFilter);
     }
-
 
     /**
      * Add a specific repository to search. Default search is done on the session repository only.
@@ -382,7 +418,7 @@ public class NxQueryBuilder {
      */
     public List<String> getSearchRepositories() {
         if (searchOnAllRepo) {
-            return Collections.<String>emptyList();
+            return Collections.<String> emptyList();
         }
         return repositories;
     }

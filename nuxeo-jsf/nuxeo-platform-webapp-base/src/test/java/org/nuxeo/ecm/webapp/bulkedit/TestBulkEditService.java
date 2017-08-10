@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2013-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
  * Contributors:
  *     Thomas Roger
  */
-
 package org.nuxeo.ecm.webapp.bulkedit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,18 +32,24 @@ import javax.inject.Inject;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.nuxeo.common.collections.ScopedMap;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.NuxeoException;
+import org.nuxeo.ecm.core.api.VersioningOption;
 import org.nuxeo.ecm.core.api.impl.SimpleDocumentModel;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.core.test.annotations.Granularity;
 import org.nuxeo.ecm.core.test.annotations.RepositoryConfig;
+import org.nuxeo.ecm.core.versioning.VersioningService;
+import org.nuxeo.ecm.platform.tag.Tag;
+import org.nuxeo.ecm.platform.tag.TagService;
+import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
-import org.nuxeo.runtime.test.runner.RuntimeHarness;
+import org.nuxeo.runtime.test.runner.LocalDeploy;
+import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
  * @since 5.7.3
@@ -51,17 +57,21 @@ import org.nuxeo.runtime.test.runner.RuntimeHarness;
 @RunWith(FeaturesRunner.class)
 @Features(CoreFeature.class)
 @RepositoryConfig(cleanup = Granularity.METHOD)
-@Deploy({ "org.nuxeo.ecm.platform.types.api", "org.nuxeo.ecm.platform.types.core", "org.nuxeo.ecm.webapp.base" })
+@Deploy({ "org.nuxeo.ecm.platform.types.api", "org.nuxeo.ecm.platform.types.core", "org.nuxeo.ecm.webapp.base",
+        "org.nuxeo.ecm.platform.tag.api", "org.nuxeo.ecm.platform.tag", "org.nuxeo.ecm.platform.query.api" })
 public class TestBulkEditService {
 
     @Inject
     protected CoreSession session;
 
     @Inject
-    protected RuntimeHarness runtimeHarness;
+    protected CoreFeature coreFeature;
 
     @Inject
     protected EventService eventService;
+
+    @Inject
+    protected TagService tagService;
 
     @Inject
     protected BulkEditService bulkEditService;
@@ -96,19 +106,16 @@ public class TestBulkEditService {
         sourceDoc.setProperty("dublincore", "description", "new description");
         sourceDoc.setPropertyValue("dublincore:creator", "new creator");
         sourceDoc.setPropertyValue("dc:source", "new source");
-        ScopedMap map = sourceDoc.getContextData();
-        map.put(BulkEditService.BULK_EDIT_PREFIX + "dc:title", true);
-        map.put(BulkEditService.BULK_EDIT_PREFIX + "dc:description", false);
-        map.put(BulkEditService.BULK_EDIT_PREFIX + "dc:creator", true);
-        map.put(BulkEditService.BULK_EDIT_PREFIX + "dc:source", false);
+        sourceDoc.putContextData(BulkEditService.BULK_EDIT_PREFIX + "dc:title", true);
+        sourceDoc.putContextData(BulkEditService.BULK_EDIT_PREFIX + "dc:description", false);
+        sourceDoc.putContextData(BulkEditService.BULK_EDIT_PREFIX + "dc:creator", true);
+        sourceDoc.putContextData(BulkEditService.BULK_EDIT_PREFIX + "dc:source", false);
         return sourceDoc;
     }
 
     @Test
+    @LocalDeploy("org.nuxeo.ecm.webapp.base:test-bulkedit-minorversion-contrib.xml")
     public void testBulkEdit() {
-        // for tests, force the versioning policy to be the default one
-        ((BulkEditServiceImpl) bulkEditService).defaultVersioningOption = BulkEditServiceImpl.DEFAULT_VERSIONING_OPTION;
-
         List<DocumentModel> docs = createTestDocuments();
         DocumentModel sourceDoc = buildSimpleDocumentModel();
 
@@ -133,9 +140,47 @@ public class TestBulkEditService {
     }
 
     @Test
+    @LocalDeploy("org.nuxeo.ecm.webapp.base:test-bulkedit-minorversion-before-update-contrib.xml")
+    public void testBulkEditBeforeUpdate() {
+
+        assumeTrue("DBS does not support tags", !coreFeature.getStorageConfiguration().isDBS());
+
+        // behaviour should be compliant with NXP-12225, NXP-22099 provides fix with auto-versioning
+        List<DocumentModel> docs = createTestDocuments();
+        DocumentModel sourceDoc = buildSimpleDocumentModel();
+
+        bulkEditService.updateDocuments(session, sourceDoc, docs);
+
+        String username = session.getPrincipal().getName();
+        for (DocumentModel doc : docs) {
+            tagService.tag(session, doc.getId(), "tag", username);
+        }
+
+        TransactionHelper.commitOrRollbackTransaction();
+        TransactionHelper.startTransaction();
+
+        DocumentModel doc = session.getDocument(docs.get(0).getRef());
+        assertEquals("new title", doc.getPropertyValue("dc:title"));
+        assertEquals("new creator", doc.getProperty("dc:creator").getValue());
+        assertFalse("new description".equals(doc.getPropertyValue("dc:description")));
+        assertFalse("new source".equals(doc.getPropertyValue("dc:source")));
+
+        List<Tag> tags = tagService.getDocumentTags(session, doc.getId(), username);
+        assertEquals(1, tags.size());
+        assertEquals("tag", tags.get(0).getLabel());
+
+        assertEquals("0.1+", doc.getVersionLabel());
+
+        DocumentModel version = session.getLastDocumentVersion(doc.getRef());
+        assertEquals("doc1", version.getPropertyValue("dc:title"));
+        assertEquals("0.1", version.getVersionLabel());
+
+        tags = tagService.getDocumentTags(session, version.getId(), username);
+        assertEquals(0, tags.size());
+    }
+
+    @Test
     public void testBulkEditNoVersion() throws Exception {
-        URL url = getClass().getClassLoader().getResource("test-bulkedit-noversion-contrib.xml");
-        runtimeHarness.deployTestContrib("org.nuxeo.ecm.webapp.base", url);
 
         List<DocumentModel> docs = createTestDocuments();
         DocumentModel sourceDoc = buildSimpleDocumentModel();
@@ -156,9 +201,8 @@ public class TestBulkEditService {
     }
 
     @Test
+    @LocalDeploy("org.nuxeo.ecm.webapp.base:test-bulkedit-majorversion-contrib.xml")
     public void testBulkEditMajorVersion() throws Exception {
-        URL url = getClass().getClassLoader().getResource("test-bulkedit-majorversion-contrib.xml");
-        runtimeHarness.deployTestContrib("org.nuxeo.ecm.webapp.base", url);
 
         List<DocumentModel> docs = createTestDocuments();
         DocumentModel sourceDoc = buildSimpleDocumentModel();
@@ -180,6 +224,24 @@ public class TestBulkEditService {
             assertFalse("new description".equals(doc.getPropertyValue("dc:description")));
             assertFalse("new source".equals(doc.getPropertyValue("dc:source")));
             assertEquals("1.0", version.getVersionLabel());
+        }
+    }
+
+    @Test
+    @LocalDeploy("org.nuxeo.ecm.webapp.base:test-bulkedit-restricted-version-options.xml")
+    public void testBulkEditAutoVersioningFailure() throws Exception {
+
+        List<DocumentModel> docs = createTestDocuments();
+        docs.forEach(doc -> doc.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MINOR));
+        DocumentModel sourceDoc = buildSimpleDocumentModel();
+
+        try {
+            bulkEditService.updateDocuments(session, sourceDoc, docs);
+            fail("Creating documents should have failed as the version option does not exist");
+        } catch (NuxeoException e) {
+            assertEquals(
+                    "Versioning option=MINOR is not allowed by the configuration for type=File/lifeCycleState=project",
+                    e.getMessage());
         }
     }
 

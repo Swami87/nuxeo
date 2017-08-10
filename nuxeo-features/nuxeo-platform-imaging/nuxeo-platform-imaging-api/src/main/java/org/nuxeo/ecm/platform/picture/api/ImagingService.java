@@ -68,6 +68,16 @@ public interface ImagingService {
     Blob rotate(Blob blob, int angle);
 
     /**
+     * Converts an image to PDF.
+     *
+     * @param blob a Blob containing the image
+     * @return a Blob holding the resulting PDF
+     *
+     * @since 8.4
+     */
+    Blob convertToPDF(Blob blob);
+
+    /**
      * Retrieves metadata from an image contained in a {@link Blob}.
      *
      * @return the image metadata as a map String -> Object

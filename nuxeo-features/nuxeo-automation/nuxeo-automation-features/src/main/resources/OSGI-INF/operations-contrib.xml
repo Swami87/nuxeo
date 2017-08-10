@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
-<component name="org.nuxeo.ecm.core.automation.featuresContrib" version="1.0">
+<component name="org.nuxeo.ecm.core.automation.features.operations" version="1.0">
+
+  <alias>org.nuxeo.ecm.core.automation.featuresContrib</alias>
 
   <documentation>@author Bogdan Stefanescu (bs@nuxeo.com)</documentation>
 
@@ -76,6 +78,12 @@
       class="org.nuxeo.ecm.automation.core.operations.users.GetDocumentPrincipalEmails" />
     <operation
       class="org.nuxeo.ecm.automation.core.operations.users.GetDocumentUsersAndGroups" />
+    <operation
+      class="org.nuxeo.ecm.automation.core.operations.users.QueryUsers" />
+    <operation
+      class="org.nuxeo.ecm.automation.core.operations.users.CreateOrUpdateUser" />
+    <operation
+      class="org.nuxeo.ecm.automation.core.operations.users.CreateOrUpdateGroup" />
 
     <operation
       class="org.nuxeo.ecm.automation.core.operations.notification.SendMail" />
@@ -96,7 +104,7 @@
       class="org.nuxeo.ecm.automation.core.operations.services.GetDirectoryEntries" />
 
     <operation
-        class="org.nuxeo.ecm.automation.core.operations.services.UserInvite" />
+      class="org.nuxeo.ecm.automation.core.operations.services.UserInvite" />
 
     <operation
       class="org.nuxeo.ecm.automation.core.operations.services.UserWorkspace" />
@@ -108,20 +116,28 @@
       class="org.nuxeo.ecm.automation.core.operations.services.directory.CreateDirectoryEntries" />
 
     <operation
+      class="org.nuxeo.ecm.automation.core.operations.services.directory.CreateVocabularyEntry" />
+
+    <operation
       class="org.nuxeo.ecm.automation.core.operations.services.directory.DeleteDirectoryEntries" />
 
     <operation
       class="org.nuxeo.ecm.automation.core.operations.services.directory.UpdateDirectoryEntries" />
 
     <operation
-        class="org.nuxeo.ecm.automation.core.operations.services.directory.ReadDirectoryEntries" />
+      class="org.nuxeo.ecm.automation.core.operations.services.directory.ReadDirectoryEntries" />
 
     <operation
-        class="org.nuxeo.ecm.automation.core.operations.services.directory.DirectoryProjection" />
+      class="org.nuxeo.ecm.automation.core.operations.services.directory.DirectoryProjection" />
 
     <operation
-        class="org.nuxeo.ecm.automation.core.operations.users.GetNuxeoPrincipal" />
+      class="org.nuxeo.ecm.automation.core.operations.users.GetNuxeoPrincipal" />
 
+  	<operation
+      class="org.nuxeo.ecm.automation.core.operations.users.SuggestUserEntries" />
+
+    <operation
+      class="org.nuxeo.ecm.automation.core.operations.services.directory.SuggestDirectoryEntries" />
   </extension>
 
   <extension point="chains"
@@ -187,14 +203,4 @@
     </chain>
   </extension>
 
-  <extension target="org.nuxeo.ecm.automation.server.AutomationServer"
-    point="bindings">
-    <!-- don't allow direct access to Audit log -->
-    <binding name="Audit.Query">
-      <administrator>true</administrator>
-    </binding>
-    <binding name="Audit.QueryWithPageProvider">
-      <administrator>true</administrator>
-    </binding>
-  </extension>
 </component>

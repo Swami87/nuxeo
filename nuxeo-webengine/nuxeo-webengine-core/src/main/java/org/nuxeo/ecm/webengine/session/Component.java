@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2008 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     bstefanescu
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.webengine.session;
 
 import java.io.Serializable;
@@ -28,7 +25,7 @@ import java.io.Serializable;
  * <p>
  * A component is instantiate and activated the first time it is requested. It is destroyed when the user session ends.
  * <p>
- * Stateful components are not necessarily thread safe and should be used only from the UserSession thread.
+ * Stateful components are not necessarily thread safe.
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */

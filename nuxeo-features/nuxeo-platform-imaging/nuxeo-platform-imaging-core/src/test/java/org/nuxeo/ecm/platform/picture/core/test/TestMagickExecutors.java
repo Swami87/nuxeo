@@ -26,6 +26,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 
+import org.apache.commons.io.FilenameUtils;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -138,6 +140,20 @@ public class TestMagickExecutors {
         ImageInfo info = ImageIdentifier.getInfo(out.getAbsolutePath());
         assertNotNull(info);
         assertEquals("JPEG", info.getFormat());
+
+        out.delete();
+    }
+
+    @Test
+    public void testConverterToPDF() throws Exception {
+        File file = FileUtils.getResourceFileFromContext("images/test.jpg");
+        File out = Framework.createTempFile(TMP_FILE_PREFIX, ".document.pdf");
+
+        ImageConverter.convert(file.getAbsolutePath(), out.getAbsolutePath());
+
+        assertEquals("pdf", FilenameUtils.getExtension(out.getAbsolutePath()));
+        PDDocument doc = PDDocument.load(out);
+        assertNotNull(doc);
 
         out.delete();
     }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2009 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2009-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.runtime.datasource;
 
 import java.util.HashMap;
@@ -29,13 +28,15 @@ import javax.naming.NamingException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.runtime.datasource.DatasourceExceptionSorter.Configuration;
 import org.nuxeo.runtime.jtajca.NuxeoContainer;
 import org.nuxeo.runtime.model.ComponentContext;
 import org.nuxeo.runtime.model.ComponentInstance;
 import org.nuxeo.runtime.model.DefaultComponent;
 
 /**
- * Nuxeo component allowing the JNDI registration of datasources by extension point contributions.
+ * Nuxeo component allowing the JNDI registration of datasources by extension
+ * point contributions.
  * <p>
  * For now only the internal Nuxeo JNDI server is supported.
  */
@@ -43,41 +44,59 @@ public class DataSourceComponent extends DefaultComponent {
 
     private final Log log = LogFactory.getLog(DataSourceComponent.class);
 
+    static DataSourceComponent instance;
+
     public static final String DATASOURCES_XP = "datasources";
 
     public static final String ENV_CTX_NAME = "java:comp/env/";
 
-    protected final Map<String, DataSourceDescriptor> datasources = new HashMap<String, DataSourceDescriptor>();
+    protected Map<String, DataSourceDescriptor> datasources = new HashMap<>();
 
-    protected final Map<String, DataSourceLinkDescriptor> links = new HashMap<String, DataSourceLinkDescriptor>();
+    protected Map<String, DataSourceLinkDescriptor> links = new HashMap<>();
 
-    protected final PooledDataSourceRegistry registry = new PooledDataSourceRegistry();
+    protected final DatasourceExceptionSorter.Registry sorterRegistry = new DatasourceExceptionSorter.Registry();
+
+    protected final PooledDataSourceRegistry poolRegistry = new PooledDataSourceRegistry();
 
     protected Context namingContext;
 
     @Override
+    public void activate(ComponentContext context) {
+        instance = this;
+        datasources = new HashMap<>();
+        links = new HashMap<>();
+    }
+
+    @Override
+    public void deactivate(ComponentContext context) {
+        super.deactivate(context);
+        links = null;
+        datasources = null;
+        instance = null;
+        //TODO should poolRegistry and sorterRegistry be removed?
+    }
+
+    @Override
     public void registerContribution(Object contrib, String extensionPoint, ComponentInstance component) {
-        if (DATASOURCES_XP.equals(extensionPoint)) {
-            if (contrib instanceof DataSourceDescriptor) {
-                addDataSource((DataSourceDescriptor) contrib);
-            } else if (contrib instanceof DataSourceLinkDescriptor) {
-                addDataSourceLink((DataSourceLinkDescriptor) contrib);
-            } else {
-                log.error("Wrong datasource extension type " + contrib.getClass().getName());
-            }
+        if (contrib instanceof DataSourceDescriptor) {
+            addDataSource((DataSourceDescriptor) contrib);
+        } else if (contrib instanceof DataSourceLinkDescriptor) {
+            addDataSourceLink((DataSourceLinkDescriptor) contrib);
+        } else if (contrib instanceof DatasourceExceptionSorter.Configuration) {
+            sorterRegistry.addContribution((Configuration) contrib);
         } else {
-            log.error("Ignoring unknown extension point: " + extensionPoint);
+            log.error("Wrong datasource extension type " + contrib.getClass().getName());
         }
     }
 
     @Override
     public void unregisterContribution(Object contrib, String extensionPoint, ComponentInstance component) {
-        if (DATASOURCES_XP.equals(extensionPoint)) {
-            if (contrib instanceof DataSourceDescriptor) {
-                removeDataSource((DataSourceDescriptor) contrib);
-            } else if (contrib instanceof DataSourceLinkDescriptor) {
-                removeDataSourceLink((DataSourceLinkDescriptor) contrib);
-            }
+        if (contrib instanceof DataSourceDescriptor) {
+            removeDataSource((DataSourceDescriptor) contrib);
+        } else if (contrib instanceof DataSourceLinkDescriptor) {
+            removeDataSourceLink((DataSourceLinkDescriptor) contrib);
+        } else if (contrib instanceof DatasourceExceptionSorter.Configuration) {
+            sorterRegistry.removeContribution((Configuration) contrib);
         }
     }
 
@@ -91,7 +110,7 @@ public class DataSourceComponent extends DefaultComponent {
     }
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         if (namingContext != null) {
             return;
         }
@@ -126,17 +145,18 @@ public class DataSourceComponent extends DefaultComponent {
     }
 
     @Override
-    public void deactivate(ComponentContext context) {
-        super.deactivate(context);
-        for (DataSourceLinkDescriptor desc : links.values()) {
-            unbindDataSourceLink(desc);
+    public void stop(ComponentContext context) {
+        try {
+            for (DataSourceLinkDescriptor desc : links.values()) {
+                unbindDataSourceLink(desc);
+            }
+            for (DataSourceDescriptor desc : datasources.values()) {
+                unbindDataSource(desc);
+            }
+            namingContext = null;
+        } finally {
+            namingContext = null;
         }
-        links.clear();
-        for (DataSourceDescriptor desc : datasources.values()) {
-            unbindDataSource(desc);
-        }
-        datasources.clear();
-        namingContext = null;
     }
 
     protected void addDataSource(DataSourceDescriptor contrib) {
@@ -210,7 +230,7 @@ public class DataSourceComponent extends DefaultComponent {
     @Override
     public <T> T getAdapter(Class<T> adapter) {
         if (adapter.isAssignableFrom(PooledDataSourceRegistry.class)) {
-            return adapter.cast(registry);
+            return adapter.cast(poolRegistry);
         }
         return super.getAdapter(adapter);
     }

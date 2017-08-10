@@ -30,12 +30,13 @@ import javax.inject.Inject;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.nuxeo.directory.test.DirectoryFeature;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.directory.Session;
 import org.nuxeo.ecm.directory.api.DirectoryService;
+import org.nuxeo.ecm.directory.api.DirectoryDeleteConstraint;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUI;
-import org.nuxeo.ecm.directory.api.ui.DirectoryUIDeleteConstraint;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUIManager;
 import org.nuxeo.ecm.directory.api.ui.HierarchicalDirectoryUIDeleteConstraint;
 import org.nuxeo.runtime.test.runner.Deploy;
@@ -47,10 +48,8 @@ import org.nuxeo.runtime.test.runner.LocalDeploy;
  * @author Anahide Tchertchian
  */
 @RunWith(FeaturesRunner.class)
-@Features(CoreFeature.class)
+@Features({ CoreFeature.class, DirectoryFeature.class })
 @Deploy({
-// deploy directory service + sql factory
-        "org.nuxeo.ecm.directory", "org.nuxeo.ecm.directory.sql", "org.nuxeo.ecm.directory.types.contrib",
         // deploy directory ui service
         "org.nuxeo.ecm.actions", "org.nuxeo.ecm.directory.web" })
 // deploy test dirs + ui config
@@ -78,11 +77,11 @@ public class TestDirectoryUIManager {
         assertEquals("label", continent.getSortField());
         assertNull(continent.getView());
 
-        List<DirectoryUIDeleteConstraint> constraints = continent.getDeleteConstraints();
+        List<DirectoryDeleteConstraint> constraints = continent.getDeleteConstraints();
         assertNotNull(constraints);
         assertEquals(1, constraints.size());
 
-        DirectoryUIDeleteConstraint constraint = constraints.get(0);
+        DirectoryDeleteConstraint constraint = constraints.get(0);
         assertTrue(constraint instanceof HierarchicalDirectoryUIDeleteConstraint);
 
         DirectoryUI country = service.getDirectoryInfo("country");
@@ -109,10 +108,10 @@ public class TestDirectoryUIManager {
 
             DirectoryUI continent = service.getDirectoryInfo("continent");
             assertNotNull(continent);
-            List<DirectoryUIDeleteConstraint> constraints = continent.getDeleteConstraints();
+            List<DirectoryDeleteConstraint> constraints = continent.getDeleteConstraints();
             assertNotNull(constraints);
             assertEquals(1, constraints.size());
-            DirectoryUIDeleteConstraint constraint = constraints.get(0);
+            DirectoryDeleteConstraint constraint = constraints.get(0);
             assertTrue(constraint instanceof HierarchicalDirectoryUIDeleteConstraint);
 
             // test can delete when there a dep in child dir

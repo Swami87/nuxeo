@@ -34,9 +34,6 @@ import javax.faces.context.FacesContext;
 import javax.faces.event.PhaseId;
 import javax.servlet.http.HttpServletRequest;
 
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
-
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -53,16 +50,16 @@ import org.nuxeo.ecm.automation.InvalidChainException;
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.ecm.automation.core.operations.services.DocumentPageProviderOperation;
+import org.nuxeo.ecm.automation.core.operations.services.directory.SuggestDirectoryEntries;
+import org.nuxeo.ecm.automation.core.operations.users.SuggestUserEntries;
+import org.nuxeo.ecm.automation.features.SuggestConstants;
 import org.nuxeo.ecm.automation.jaxrs.io.JsonHelper;
 import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelList;
-import org.nuxeo.ecm.core.api.DocumentRef;
-import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
-import org.nuxeo.ecm.core.api.PathRef;
 import org.nuxeo.ecm.core.api.PropertyException;
 import org.nuxeo.ecm.core.api.repository.RepositoryManager;
 import org.nuxeo.ecm.core.io.marshallers.json.document.DocumentModelJsonWriter;
@@ -80,14 +77,15 @@ import org.nuxeo.ecm.platform.forms.layout.api.Widget;
 import org.nuxeo.ecm.platform.forms.layout.api.WidgetTypeConfiguration;
 import org.nuxeo.ecm.platform.forms.layout.api.WidgetTypeDefinition;
 import org.nuxeo.ecm.platform.forms.layout.api.service.LayoutStore;
-import org.nuxeo.ecm.platform.ui.select2.automation.SuggestDirectoryEntries;
-import org.nuxeo.ecm.platform.ui.select2.automation.SuggestUserEntries;
 import org.nuxeo.ecm.platform.ui.select2.common.Select2Common;
 import org.nuxeo.ecm.platform.url.DocumentViewImpl;
 import org.nuxeo.ecm.platform.url.codec.DocumentIdCodec;
 import org.nuxeo.ecm.platform.usermanager.UserManager;
 import org.nuxeo.ecm.webengine.jaxrs.coreiodelegate.RenderingContextWebUtils;
 import org.nuxeo.runtime.api.Framework;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 
 /**
  * Initialization for Select2.
@@ -317,7 +315,7 @@ public class Select2ActionsBean implements Serializable {
                 SchemaManager schemaManager = Framework.getLocalService(SchemaManager.class);
                 Schema schema = schemaManager.getSchema(schemaName);
                 final Locale locale = org.jboss.seam.core.Locale.instance();
-                final String label = Select2Common.getLabelFieldName(schema, dbl10n, labelFieldName,
+                final String label = SuggestConstants.getLabelFieldName(schema, dbl10n, labelFieldName,
                         locale.getLanguage());
 
                 for (String ref : storedRefs) {
@@ -401,7 +399,8 @@ public class Select2ActionsBean implements Serializable {
                 Schema schema = schemaManager.getSchema(schemaName);
 
                 final Locale locale = org.jboss.seam.core.Locale.instance();
-                final String label = Select2Common.getLabelFieldName(schema, dbl10n, labelFieldName, locale.getLanguage());
+                final String label = SuggestConstants.getLabelFieldName(schema, dbl10n, labelFieldName,
+                        locale.getLanguage());
 
                 JSONObject obj = resolveDirectoryEntry(storedReference, keySeparator, session, schema, label, localize,
                         dbl10n);
@@ -455,12 +454,12 @@ public class Select2ActionsBean implements Serializable {
                 obj.element(key, value);
             }
             String userId = user.getId();
-            obj.put(Select2Common.ID, userId);
-            obj.put(Select2Common.TYPE_KEY_NAME, Select2Common.USER_TYPE);
-            obj.put(Select2Common.PREFIXED_ID_KEY_NAME, NuxeoPrincipal.PREFIX + userId);
-            Select2Common.computeUserLabel(obj, firstLabelField, secondLabelField, thirdLabelField, hideFirstLabel,
+            obj.put(SuggestConstants.ID, userId);
+            obj.put(SuggestConstants.TYPE_KEY_NAME, SuggestConstants.USER_TYPE);
+            obj.put(SuggestConstants.PREFIXED_ID_KEY_NAME, NuxeoPrincipal.PREFIX + userId);
+            SuggestConstants.computeUserLabel(obj, firstLabelField, secondLabelField, thirdLabelField, hideFirstLabel,
                     hideSecondLabel, hideThirdLabel, displayEmailInSuggestion, userId);
-            Select2Common.computeUserGroupIcon(obj, hideIcon);
+            SuggestConstants.computeUserGroupIcon(obj, hideIcon);
         } else if (group != null) {
             Schema schema = schemaManager.getSchema(userManager.getGroupSchemaName());
             for (Field field : schema.getFields()) {
@@ -471,11 +470,11 @@ public class Select2ActionsBean implements Serializable {
             }
             // If the group hasn't an label, let's put the groupid
             String groupId = group.getId();
-            Select2Common.computeGroupLabel(obj, groupId, userManager.getGroupLabelField(), hideFirstLabel);
-            obj.put(Select2Common.ID, groupId);
-            obj.put(Select2Common.TYPE_KEY_NAME, Select2Common.GROUP_TYPE);
-            obj.put(Select2Common.PREFIXED_ID_KEY_NAME, NuxeoGroup.PREFIX + groupId);
-            Select2Common.computeUserGroupIcon(obj, hideIcon);
+            SuggestConstants.computeGroupLabel(obj, groupId, userManager.getGroupLabelField(), hideFirstLabel);
+            obj.put(SuggestConstants.ID, groupId);
+            obj.put(SuggestConstants.TYPE_KEY_NAME, SuggestConstants.GROUP_TYPE);
+            obj.put(SuggestConstants.PREFIXED_ID_KEY_NAME, NuxeoGroup.PREFIX + groupId);
+            SuggestConstants.computeUserGroupIcon(obj, hideIcon);
         } else {
             log.warn("Could not resolve user or group reference: " + storedReference);
             return createNotFoundEntry(storedReference);
@@ -501,6 +500,7 @@ public class Select2ActionsBean implements Serializable {
     /**
      * @deprecated since 7.10: JSF resources mechanism allows to detect resources already included in the page natively.
      */
+    @Deprecated
     public boolean mustIncludeResources() {
         FacesContext facesContext = FacesContext.getCurrentInstance();
         if (facesContext != null) {
@@ -525,22 +525,22 @@ public class Select2ActionsBean implements Serializable {
 
     protected JSONObject createEntryWithWarnMessage(final String label, final String warnMessage) {
         JSONObject obj = new JSONObject();
-        obj.put(Select2Common.ID, label);
-        obj.put(Select2Common.ABSOLUTE_LABEL, label);
-        obj.put(Select2Common.LABEL, label);
-        obj.put(Select2Common.WARN_MESSAGE_LABEL, warnMessage);
+        obj.put(SuggestConstants.ID, label);
+        obj.put(SuggestConstants.ABSOLUTE_LABEL, label);
+        obj.put(SuggestConstants.LABEL, label);
+        obj.put(SuggestConstants.WARN_MESSAGE_LABEL, warnMessage);
         return obj;
     }
 
-    protected JSONObject resolveDirectoryEntry(final String storedReference, String keySeparator,
-            final Session session, final Schema schema, final String label, final boolean localize, final boolean dbl10n) {
+    protected JSONObject resolveDirectoryEntry(final String storedReference, String keySeparator, final Session session,
+            final Schema schema, final String label, final boolean localize, final boolean dbl10n) {
         if (storedReference == null || storedReference.isEmpty()) {
             log.trace("No reference provided ");
             return null;
         }
 
         if (keySeparator == null || keySeparator.isEmpty()) {
-            keySeparator = Select2Common.DEFAULT_KEY_SEPARATOR;
+            keySeparator = SuggestConstants.DEFAULT_KEY_SEPARATOR;
         }
 
         String entryId = storedReference.substring(storedReference.lastIndexOf(keySeparator) + 1,
@@ -561,8 +561,8 @@ public class Select2ActionsBean implements Serializable {
                 if (localize && !dbl10n) {
                     value = messages.get(value);
                 }
-                obj.element(Select2Common.LABEL, value);
-                obj.element(Select2Common.ABSOLUTE_LABEL,
+                obj.element(SuggestConstants.LABEL, value);
+                obj.element(SuggestConstants.ABSOLUTE_LABEL,
                         getParentAbsoluteLabel(storedReference, keySeparator, session, fieldName, localize, dbl10n));
             } else {
                 obj.element(key, value);
@@ -570,11 +570,11 @@ public class Select2ActionsBean implements Serializable {
         }
 
         // Add a warning message if the entity is obsolete
-        if (obj.containsKey(Select2Common.OBSOLETE_FIELD_ID) && obj.getInt(Select2Common.OBSOLETE_FIELD_ID) > 0) {
-            obj.element(Select2Common.WARN_MESSAGE_LABEL, messages.get("label.vocabulary.entry.obsolete"));
+        if (obj.containsKey(SuggestConstants.OBSOLETE_FIELD_ID) && obj.getInt(SuggestConstants.OBSOLETE_FIELD_ID) > 0) {
+            obj.element(SuggestConstants.WARN_MESSAGE_LABEL, messages.get("label.vocabulary.entry.obsolete"));
         }
 
-        obj.element(Select2Common.COMPUTED_ID, storedReference);
+        obj.element(SuggestConstants.COMPUTED_ID, storedReference);
         return obj;
     }
 
@@ -612,8 +612,8 @@ public class Select2ActionsBean implements Serializable {
 
     public List<String> resolveMultipleDirectoryEntryLabels(final Object value, final String directoryName,
             final boolean localize, final String keySeparator, final boolean dbl10n, final String labelFieldName) {
-        return formatList(getMultipleDirectoryEntries(value, directoryName, localize, keySeparator, dbl10n,
-                labelFieldName));
+        return formatList(
+                getMultipleDirectoryEntries(value, directoryName, localize, keySeparator, dbl10n, labelFieldName));
     }
 
     @SuppressWarnings("rawtypes")
@@ -713,10 +713,10 @@ public class Select2ActionsBean implements Serializable {
     }
 
     @SuppressWarnings("rawtypes")
-    public String resolveMultipleUserReference(final Object value, final boolean prefixed,
-            final String firstLabelField, final String secondLabelField, final String thirdLabelField,
-            final boolean hideFirstLabel, final boolean hideSecondLabel, final boolean hideThirdLabel,
-            final boolean displayEmailInSuggestion, final boolean hideIcon) {
+    public String resolveMultipleUserReference(final Object value, final boolean prefixed, final String firstLabelField,
+            final String secondLabelField, final String thirdLabelField, final boolean hideFirstLabel,
+            final boolean hideSecondLabel, final boolean hideThirdLabel, final boolean displayEmailInSuggestion,
+            final boolean hideIcon) {
         if (value == null) {
             return "[]";
         }
@@ -767,51 +767,30 @@ public class Select2ActionsBean implements Serializable {
                 return null;
             }
             if (operationName == null || operationName.isEmpty()) {
-                DocumentRef ref = null;
-
-                if (idProperty != null && !idProperty.isEmpty()) {
-                    String query = " select * from Document where " + idProperty + "='" + storedReference + "'";
-                    DocumentModelList docs = session.query(query);
-                    if (docs.size() > 0) {
-                        return docs.get(0);
-                    } else {
-                        log.warn("Unable to resolve doc using property " + idProperty + " and value " + storedReference);
-                        return null;
-                    }
-                } else {
-                    if (storedReference.startsWith("/")) {
-                        ref = new PathRef(storedReference);
-                    } else {
-                        ref = new IdRef(storedReference);
-                    }
-                    if (session.exists(ref)) {
-                        doc = session.getDocument(ref);
-                    } else {
-                        log.warn("Unable to resolve reference on " + ref);
-                    }
-                }
+                doc = Select2Common.resolveReference(idProperty, storedReference, session);
             } else {
                 AutomationService as = Framework.getLocalService(AutomationService.class);
-                OperationContext ctx = new OperationContext(session);
-                Map<String, Object> params = new HashMap<String, Object>();
+                try (OperationContext ctx = new OperationContext(session)) {
+                    Map<String, Object> params = new HashMap<String, Object>();
 
-                params.put("value", storedReference);
-                params.put("xpath", idProperty);
-                params.put("lang", org.jboss.seam.core.Locale.instance().getLanguage());
-                Object result = as.run(ctx, operationName, params);
+                    params.put("value", storedReference);
+                    params.put("xpath", idProperty);
+                    params.put("lang", org.jboss.seam.core.Locale.instance().getLanguage());
+                    Object result = as.run(ctx, operationName, params);
 
-                if (result == null) {
-                    log.warn("Unable to resolve reference " + storedReference + " using property " + idProperty
-                            + " and operation" + operationName);
-                    doc = null;
-                } else if (result instanceof DocumentModel) {
-                    doc = (DocumentModel) result;
-                } else if (result instanceof DocumentModelList) {
-                    DocumentModelList docs = (DocumentModelList) result;
-                    if (docs.size() > 0) {
-                        doc = docs.get(0);
-                    } else {
-                        log.warn("No document found");
+                    if (result == null) {
+                        log.warn("Unable to resolve reference " + storedReference + " using property " + idProperty
+                                + " and operation" + operationName);
+                        doc = null;
+                    } else if (result instanceof DocumentModel) {
+                        doc = (DocumentModel) result;
+                    } else if (result instanceof DocumentModelList) {
+                        DocumentModelList docs = (DocumentModelList) result;
+                        if (docs.size() > 0) {
+                            doc = docs.get(0);
+                        } else {
+                            log.warn("No document found");
+                        }
                     }
                 }
             }
@@ -830,9 +809,9 @@ public class Select2ActionsBean implements Serializable {
         }
         try {
             jg.writeStartObject();
-            jg.writeStringField(Select2Common.ID, id);
+            jg.writeStringField(SuggestConstants.ID, id);
             jg.writeStringField(Select2Common.TITLE, messages.get("label.documentSuggestion.docNotFoundOrNotVisible"));
-            jg.writeStringField(Select2Common.WARN_MESSAGE_LABEL, id);
+            jg.writeStringField(SuggestConstants.WARN_MESSAGE_LABEL, id);
             jg.writeEndObject();
             jg.flush();
         } catch (IOException e) {
@@ -859,7 +838,7 @@ public class Select2ActionsBean implements Serializable {
         if (obj == null) {
             return "";
         }
-        return obj.optString(Select2Common.LABEL);
+        return obj.optString(SuggestConstants.LABEL);
     }
 
     public String resolveSingleReference(final String storedReference, final String repo, final String operationName,
@@ -920,19 +899,19 @@ public class Select2ActionsBean implements Serializable {
         if (obj == null) {
             return "";
         }
-        return obj.optString(Select2Common.LABEL);
+        return obj.optString(SuggestConstants.LABEL);
     }
 
     protected DocumentModelJsonWriter getDocumentModelWriter(final String schemaNames) {
         MarshallerRegistry registry = Framework.getService(MarshallerRegistry.class);
         String[] schemas = Select2Common.getSchemas(schemaNames);
         HttpServletRequest request = (HttpServletRequest) FacesContext.getCurrentInstance()
-                .getExternalContext()
-                .getRequest();
+                                                                      .getExternalContext()
+                                                                      .getRequest();
         RenderingContext ctx = RenderingContextWebUtils.getBuilder(request)
-                .properties(schemas)
-                .enrichDoc("documentURL")
-                .get();
+                                                       .properties(schemas)
+                                                       .enrichDoc("documentURL")
+                                                       .get();
         return registry.getInstance(ctx, DocumentModelJsonWriter.class);
     }
 

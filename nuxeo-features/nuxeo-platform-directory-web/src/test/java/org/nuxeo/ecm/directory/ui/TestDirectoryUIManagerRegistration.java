@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2009 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2009-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,17 @@
  */
 package org.nuxeo.ecm.directory.ui;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
 import java.util.List;
 
-import org.junit.Before;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
+import org.nuxeo.ecm.directory.api.DirectoryDeleteConstraint;
 import org.nuxeo.ecm.directory.api.DirectoryService;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUI;
-import org.nuxeo.ecm.directory.api.ui.DirectoryUIDeleteConstraint;
 import org.nuxeo.ecm.directory.api.ui.DirectoryUIManager;
 import org.nuxeo.ecm.directory.api.ui.HierarchicalDirectoryUIDeleteConstraint;
 import org.nuxeo.runtime.api.Framework;
@@ -41,10 +43,10 @@ public class TestDirectoryUIManagerRegistration extends NXRuntimeTestCase {
 
     DirectoryUIManager service;
 
-    @Before
+    @Override
     public void setUp() throws Exception {
-        super.setUp();
-
+        // required by directory
+        deployBundle("org.nuxeo.ecm.core.cache");
         // deploy directory
         deployBundle("org.nuxeo.ecm.directory");
         // deploy directory ui service
@@ -52,7 +54,10 @@ public class TestDirectoryUIManagerRegistration extends NXRuntimeTestCase {
 
         // deploy test dirs + ui config
         deployContrib("org.nuxeo.ecm.directory.web.tests", "OSGI-INF/test-directory-ui-contrib.xml");
+    }
 
+    @Override
+    protected void postSetUp() throws Exception {
         service = Framework.getService(DirectoryUIManager.class);
         assertNotNull(service);
 
@@ -74,10 +79,10 @@ public class TestDirectoryUIManagerRegistration extends NXRuntimeTestCase {
         assertEquals("vocabulary", continent.getLayout());
         assertEquals("label", continent.getSortField());
         assertNull(continent.getView());
-        List<DirectoryUIDeleteConstraint> constraints = continent.getDeleteConstraints();
+        List<DirectoryDeleteConstraint> constraints = continent.getDeleteConstraints();
         assertNotNull(constraints);
         assertEquals(1, constraints.size());
-        DirectoryUIDeleteConstraint constraint = constraints.get(0);
+        DirectoryDeleteConstraint constraint = constraints.get(0);
         assertTrue(constraint instanceof HierarchicalDirectoryUIDeleteConstraint);
 
         DirectoryUI country = service.getDirectoryInfo("country");
@@ -93,7 +98,7 @@ public class TestDirectoryUIManagerRegistration extends NXRuntimeTestCase {
 
     @Test
     public void testDirectoryUIOverride() throws Exception {
-        deployContrib("org.nuxeo.ecm.directory.web.tests", "OSGI-INF/test-directory-ui-override-contrib.xml");
+        pushInlineDeployments("org.nuxeo.ecm.directory.web.tests:OSGI-INF/test-directory-ui-override-contrib.xml");
 
         List<String> dirs = service.getDirectoryNames();
         assertNotNull(dirs);
@@ -109,7 +114,7 @@ public class TestDirectoryUIManagerRegistration extends NXRuntimeTestCase {
         assertEquals("country_vocabulary", country.getLayout());
         assertEquals("parent", country.getSortField());
         assertEquals("foo", country.getView());
-        List<DirectoryUIDeleteConstraint> constraints = country.getDeleteConstraints();
+        List<DirectoryDeleteConstraint> constraints = country.getDeleteConstraints();
         assertNotNull(constraints);
         assertEquals(0, constraints.size());
     }

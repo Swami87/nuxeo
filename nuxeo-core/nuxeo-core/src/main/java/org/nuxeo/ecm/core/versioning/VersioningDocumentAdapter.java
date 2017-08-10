@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Dragos Mihalache
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.versioning;
 
 import org.nuxeo.ecm.core.api.DocumentModel;
@@ -39,23 +38,8 @@ public class VersioningDocumentAdapter implements VersioningDocument {
     }
 
     @Override
-    public Long getMajorVersion() {
-        return Long.valueOf(getValidVersionNumber(VersioningService.MAJOR_VERSION_PROP));
-    }
-
-    @Override
-    public Long getMinorVersion() {
-        return Long.valueOf(getValidVersionNumber(VersioningService.MINOR_VERSION_PROP));
-    }
-
-    @Override
     public String getVersionLabel() {
         return service.getVersionLabel(doc);
-    }
-
-    private long getValidVersionNumber(String propName) {
-        Object propVal = doc.getPropertyValue(propName);
-        return (propVal == null || !(propVal instanceof Long)) ? 0 : ((Long) propVal).longValue();
     }
 
 }

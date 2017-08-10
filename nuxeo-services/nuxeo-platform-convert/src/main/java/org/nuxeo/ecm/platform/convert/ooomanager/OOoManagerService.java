@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,25 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
+ *     Laurent Doguin
  */
-
 package org.nuxeo.ecm.platform.convert.ooomanager;
-
-import java.io.IOException;
 
 import org.artofsolving.jodconverter.OfficeDocumentConverter;
 
 /**
  * OOoManagerService can either start or stop OpenOffice pool server and return an OfficeDocumentConverter.
  *
- * @author Laurent Doguin
+ * @deprecated Since 8.4. Use 'soffice' with {@link org.nuxeo.ecm.platform.convert.plugins.CommandLineConverter} instead
  */
+@Deprecated
 public interface OOoManagerService {
 
     OfficeDocumentConverter getDocumentConverter();
 
-    void stopOOoManager();
+    void stopOOoManager() throws Exception;
 
-    void startOOoManager() throws IOException;
+    void startOOoManager() throws Exception;
 
     boolean isOOoManagerStarted();
 

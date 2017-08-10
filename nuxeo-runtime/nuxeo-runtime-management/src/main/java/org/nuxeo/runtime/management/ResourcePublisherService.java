@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2008 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,8 +35,6 @@ import javax.management.modelmbean.RequiredModelMBean;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.runtime.RuntimeServiceEvent;
-import org.nuxeo.runtime.RuntimeServiceListener;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.management.inspector.ModelMBeanInfoFactory;
 import org.nuxeo.runtime.model.ComponentContext;
@@ -150,7 +148,7 @@ public class ResourcePublisherService extends DefaultComponent implements Resour
 
     protected class ResourcesRegistry {
 
-        protected final Map<ObjectName, Resource> registry = new HashMap<ObjectName, Resource>();
+        protected final Map<ObjectName, Resource> registry = new HashMap<>();
 
         protected void doRegisterResource(String qualifiedName, Class<?> info, Object instance) {
             Resource resource = new Resource(ObjectNameFactory.getObjectName(qualifiedName), info, instance);
@@ -215,7 +213,6 @@ public class ResourcePublisherService extends DefaultComponent implements Resour
         protected void doRegisterResource(Resource resource) {
             final ObjectName name = resource.getManagementName();
             if (registry.containsKey(name)) {
-                log.warn("Already registered " + name + ", skipping", new Throwable("Stack trace"));
                 return;
             }
             registry.put(name, resource);
@@ -314,12 +311,12 @@ public class ResourcePublisherService extends DefaultComponent implements Resour
 
     @Override
     public Set<String> getShortcutsName() {
-        return new HashSet<String>(shortcutsRegistry.registry.keySet());
+        return new HashSet<>(shortcutsRegistry.registry.keySet());
     }
 
     @Override
     public Set<ObjectName> getResourcesName() {
-        return new HashSet<ObjectName>(resourcesRegistry.registry.keySet());
+        return new HashSet<>(resourcesRegistry.registry.keySet());
     }
 
     @Override
@@ -347,7 +344,6 @@ public class ResourcePublisherService extends DefaultComponent implements Resour
         for (Resource resource : resourcesRegistry.registry.values()) {
             if (resource.mbean != null) {
                 resourcesRegistry.doUnbind(resource);
-            } else {;
             }
         }
     }
@@ -360,21 +356,16 @@ public class ResourcePublisherService extends DefaultComponent implements Resour
     protected boolean started = false;
 
     @Override
-    public void applicationStarted(ComponentContext context) {
+    public void start(ComponentContext context) {
         started = true;
         factoriesRegistry.doRegisterResources();
         doBindResources();
-        Framework.addListener(new RuntimeServiceListener() {
+    }
 
-            @Override
-            public void handleEvent(RuntimeServiceEvent event) {
-                if (event.id != RuntimeServiceEvent.RUNTIME_ABOUT_TO_STOP) {
-                    return;
-                }
-                Framework.removeListener(this);
-                doUnbindResources();
-            }
-        });
+    @Override
+    public void stop(ComponentContext context) {
+        started = false;
+        doUnbindResources();
     }
 
     @Override

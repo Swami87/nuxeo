@@ -12,6 +12,8 @@
     <operation class="org.nuxeo.ecm.collections.core.automation.GetCollectionsOperation" />
     <operation class="org.nuxeo.ecm.collections.core.automation.GetDocumentsFromCollectionOperation" />
     <operation class="org.nuxeo.ecm.collections.core.automation.GetDocumentsFromFavoritesOperation" />
+    <operation class="org.nuxeo.ecm.collections.core.automation.FetchFavorites" />
+    <operation class="org.nuxeo.ecm.collections.core.automation.MoveCollectionMemberOperation" />
 
   </extension>
 </component>

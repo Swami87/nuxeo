@@ -2,7 +2,6 @@
 <component name="org.nuxeo.automation.rest.test.operationContrib"
   version="1.0">
 
-
   <extension target="org.nuxeo.ecm.core.operation.OperationServiceComponent"
     point="operations">
 
@@ -42,9 +41,6 @@
       <param name="lang" type="string"/>
       <script>
         function run(input, params) {
-
-          print(input["dc:title"]);
-
           return input;
         }
       </script>
@@ -57,9 +53,6 @@
       <param name="lang" type="string"/>
       <script>
         function run(input, params) {
-
-          print(input[0]["dc:title"]);
-
           return input;
         }
       </script>

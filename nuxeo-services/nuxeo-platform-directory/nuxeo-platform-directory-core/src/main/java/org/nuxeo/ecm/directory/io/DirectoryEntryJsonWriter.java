@@ -80,7 +80,6 @@ import com.thoughtworks.xstream.io.json.JsonWriter;
  *             <-- additional property provided by extend() method
  * }
  * </pre>
- *
  * </p>
  *
  * @since 7.2
@@ -111,6 +110,7 @@ public class DirectoryEntryJsonWriter extends ExtensibleEntityJsonWriter<Directo
         String schemaName = directoryService.getDirectorySchema(directoryName);
         String passwordField = directoryService.getDirectoryPasswordField(directoryName);
         jg.writeStringField("directoryName", directoryName);
+        jg.writeStringField("id", document.getId());
         Schema schema = schemaManager.getSchema(schemaName);
         Writer<Property> propertyWriter = registry.getWriter(ctx, Property.class, APPLICATION_JSON_TYPE);
         // for each properties, fetch it

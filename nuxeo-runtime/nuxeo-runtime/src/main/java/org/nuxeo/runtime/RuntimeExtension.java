@@ -27,7 +27,9 @@ package org.nuxeo.runtime;
  * Runtime Extensions may be used to add new functionality to the runtime service.
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
+ * @deprecated since 9.2 seems unused
  */
+@Deprecated
 public interface RuntimeExtension {
 
     /**

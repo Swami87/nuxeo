@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2011-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,84 +17,84 @@
  *     Sun Seng David TAN
  *     Florent Guillaume
  *     Antoine Taillefer
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.pages.tabs;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import org.nuxeo.functionaltests.AjaxRequestManager;
 import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
-import org.nuxeo.functionaltests.pages.DocumentBasePage;
-import org.openqa.selenium.Alert;
+import org.nuxeo.functionaltests.contentView.ContentViewElement;
+import org.nuxeo.functionaltests.contentView.ContentViewSelectionActions;
+import org.nuxeo.functionaltests.fragment.AddAllToCollectionForm;
+import org.nuxeo.functionaltests.pages.AbstractPage;
 import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
-
-import com.google.common.base.Function;
 
 /**
  * The content tab sub page. Most of the time available for folderish documents and displaying the current document's
  * children.
  */
-public class ContentTabSubPage extends DocumentBasePage {
+public class ContentTabSubPage extends AbstractContentTabSubPage {
 
-    private static final String COPY_BUTTON_XPATH = "//input[@value=\"Copy\"]";
+    /**
+     * @since 8.3
+     */
+    public static final String COPY = "Copy";
 
-    private static final String PASTE_BUTTON_XPATH = "//input[@value=\"Paste\"]";
+    /**
+     * @since 8.3
+     */
+    public static final String PASTE = "Paste";
 
-    private static final String DELETE_BUTTON_XPATH = "//input[@value=\"Delete\"]";
+    /**
+     * @since 8.3
+     * @deprecated since 9.1 not used anymore as we now have {@link ContentViewSelectionActions#delete()}
+     */
+    public static final String DELETE = "Delete";
 
-    private static final String ADD_TO_WORKLIST_BUTTON_XPATH = "//input[@value=\"Add to Worklist\"]";
+    /**
+     * @since 8.3
+     */
+    public static final String ADD_TO_WORKLIST = "Add to Worklist";
 
-    private static final String SELECT_ALL_BUTTON_XPATH = "//input[@type=\"checkbox\" and @title=\"Select all / deselect all\"]";
-
-    private static final String CHECK_BOX_XPATH = "td/input[@type=\"checkbox\"]";
-
-    private static final String DOCUMENT_TITLE_XPATH = "td//span[@id[starts-with(.,'title_')]]";
+    /**
+     * @since 9.1
+     */
+    public static final String ADD_TO_COLLECTION = "Add to collection";
 
     @Required
     @FindBy(id = "document_content")
     WebElement documentContentForm;
 
+    @Required
+    @FindBy(id = "cv_document_content_0_panel")
+    WebElement contentView;
+
     @FindBy(linkText = "New")
     WebElement newButton;
-
-    @FindBy(id = "cv_document_content_0_quickFilterForm:nxl_document_content_filter:nxw_search_title")
-    WebElement filterInput;
-
-    @FindBy(id = "cv_document_content_0_quickFilterForm:submitFilter")
-    WebElement filterButton;
-
-    @FindBy(id = "cv_document_content_0_resetFilterForm:resetFilter")
-    WebElement clearFilterButton;
-
-    @FindBy(xpath = "//form[@id=\"document_content\"]//tbody//tr")
-    List<WebElement> childDocumentRows;
-
-    public List<WebElement> getChildDocumentRows() {
-        return childDocumentRows;
-    }
 
     public ContentTabSubPage(WebDriver driver) {
         super(driver);
     }
 
+    @Override
+    protected WebElement getContentViewElement() {
+        return contentView;
+    }
+
     /**
-     * Clicking on one of the child with the title.
-     *
-     * @param documentTitle
+     * @since 9.1 use {@link #getContentView()} instead.
      */
-    public DocumentBasePage goToDocument(String documentTitle) {
-        documentContentForm.findElement(By.linkText(documentTitle)).click();
-        return asPage(DocumentBasePage.class);
+    @Deprecated
+    protected ContentViewElement getElement() {
+        return getContentView();
     }
 
     /**
@@ -105,8 +105,8 @@ public class ContentTabSubPage extends DocumentBasePage {
      * @return The create form page object
      */
     public <T> T getDocumentCreatePage(String docType, Class<T> pageClassToProxy) {
-        newButton.click();
-        WebElement fancyBox = getFancyBoxContent();
+        waitUntilEnabledAndClick(newButton);
+        WebElement fancyBox = AbstractPage.getFancyBoxContent();
         // find the link to doc type that needs to be created
         WebElement link = fancyBox.findElement(By.linkText(docType));
         assertNotNull(link);
@@ -114,60 +114,40 @@ public class ContentTabSubPage extends DocumentBasePage {
         return asPage(pageClassToProxy);
     }
 
-    public DocumentBasePage removeDocument(String documentTitle) {
-        // get all table item and if the link has the documents title, click
-        // (enable) checkbox
-
-        List<WebElement> trelements = documentContentForm.findElement(By.tagName("tbody")).findElements(
-                By.tagName("tr"));
-        for (WebElement trItem : trelements) {
-            try {
-                trItem.findElement(By.linkText(documentTitle));
-                WebElement checkBox = trItem.findElement(By.xpath("td/input[@type=\"checkbox\"]"));
-                checkBox.click();
-                break;
-            } catch (NoSuchElementException e) {
-                // next
-            }
-        }
-        deleteSelectedDocuments();
-
-        return asPage(DocumentBasePage.class);
-    }
-
+    /**
+     * @deprecated since 9.1 no need - use {@link ContentViewElement#selectByTitle(String...)} then the action instead
+     */
+    @Deprecated
     protected void deleteSelectedDocuments() {
-        findElementWaitUntilEnabledAndClick(By.xpath(DELETE_BUTTON_XPATH));
-        Alert alert = driver.switchTo().alert();
-        assertEquals("Delete selected document(s)?", alert.getText());
-        alert.accept();
+        getContentView().getSelectionActions().delete();
     }
 
-    public DocumentBasePage addToWorkList(String documentTitle) {
-        // get all table item and if the link has the documents title, click
-        // (enable) checkbox
-
-        selectByTitle(documentTitle);
-        findElementWaitUntilEnabledAndClick(By.xpath(ADD_TO_WORKLIST_BUTTON_XPATH));
-
-        return asPage(DocumentBasePage.class);
+    public ContentTabSubPage addToWorkList(String documentTitle) {
+        return getContentView().selectByTitle(documentTitle).clickOnActionByTitle(ADD_TO_WORKLIST,
+                ContentTabSubPage.class);
     }
 
     /**
      * Removes all documents visible on current page.
      */
+    @Override
     public ContentTabSubPage removeAllDocuments() {
-        ContentTabSubPage page = asPage(ContentTabSubPage.class);
-        By locator = By.xpath(SELECT_ALL_BUTTON_XPATH);
-        if (!hasElement(locator)) {
-            // no document to remove
-            return page;
-        }
-        AjaxRequestManager arm = new AjaxRequestManager(driver);
-        arm.begin();
-        findElementWaitUntilEnabledAndClick(By.xpath(SELECT_ALL_BUTTON_XPATH));
-        arm.end();
-        deleteSelectedDocuments();
+        return removeAllDocuments(ContentTabSubPage.class);
+    }
 
+    /**
+     * Perform filter on the given string.
+     *
+     * @param filter the string to filter
+     * @since 5.7.2
+     * @deprecated since 9.1 use {@link ContentTabSubPage#filterDocument(String)} instead and assert in your test the
+     *             expected number of results.
+     */
+    @Deprecated
+    public ContentTabSubPage filterDocument(final String filter, final int expectedNbOfDisplayedResult,
+            final int timeout) {
+        filterDocument(filter);
+        assertEquals(expectedNbOfDisplayedResult, getChildDocumentRows().size());
         return asPage(ContentTabSubPage.class);
     }
 
@@ -175,59 +155,35 @@ public class ContentTabSubPage extends DocumentBasePage {
      * Perform filter on the given string.
      *
      * @param filter the string to filter
-     * @param expectedDisplayedElt
-     * @param timeout
-     * @since 5.7.2
+     * @since 9.1
      */
-    public ContentTabSubPage filterDocument(final String filter, final int expectedNbOfDisplayedResult,
-            final int timeout) {
-        filterInput.clear();
-        filterInput.sendKeys(filter);
-        filterButton.click();
-        Locator.waitUntilGivenFunction(new Function<WebDriver, Boolean>() {
-            @Override
-            public Boolean apply(WebDriver driver) {
-                try {
-                    return getChildDocumentRows().size() == expectedNbOfDisplayedResult;
-                } catch (NoSuchElementException e) {
-                    return false;
-                }
-            }
-        });
-        return asPage(ContentTabSubPage.class);
+    @Override
+    public ContentTabSubPage filterDocument(final String filter) {
+        return filterDocument(filter, ContentTabSubPage.class);
+    }
+
+    @Override
+    public ContentTabSubPage clearFilter() {
+        return clearFilter(ContentTabSubPage.class);
     }
 
     /**
      * Reset the filter.
      *
-     * @param expectedNbOfDisplayedResult
-     * @param timeout
      * @since 5.7.2
+     * @deprecated since 9.1 use {@link #clearFilter()} instead and assert the expected number of result in your test
      */
+    @Deprecated
     public ContentTabSubPage clearFilter(final int expectedNbOfDisplayedResult, final int timeout) {
-        clearFilterButton.click();
-        Locator.waitUntilGivenFunction(new Function<WebDriver, Boolean>() {
-            @Override
-            public Boolean apply(WebDriver driver) {
-                try {
-                    return getChildDocumentRows().size() == expectedNbOfDisplayedResult;
-                } catch (NoSuchElementException e) {
-                    return false;
-                }
+        Locator.waitUntilEnabledAndClick(clearFilterButton);
+        Locator.waitUntilGivenFunction(driver -> {
+            try {
+                return getChildDocumentRows().size() == expectedNbOfDisplayedResult;
+            } catch (NoSuchElementException | StaleElementReferenceException e) {
+                return false;
             }
         });
         return asPage(ContentTabSubPage.class);
-    }
-
-    /**
-     * Selects documents by their index in the content view.
-     *
-     * @since 5.7.8
-     * @deprecated since 8.1, use {@link #selectByIndex(int...)} instead.
-     */
-    @Deprecated
-    public ContentTabSubPage selectDocumentByIndex(int... indexes) {
-        return selectByIndex(indexes);
     }
 
     /**
@@ -236,12 +192,7 @@ public class ContentTabSubPage extends DocumentBasePage {
      * @since 8.1
      */
     public ContentTabSubPage selectByIndex(int... indexes) {
-        AjaxRequestManager a = new AjaxRequestManager(driver);
-        for (int i : indexes) {
-            a.watchAjaxRequests();
-            getChildDocumentRows().get(i).findElement(By.xpath(CHECK_BOX_XPATH)).click();
-            a.waitForAjaxRequests();
-        }
+        getContentView().selectByIndex(indexes);
         return asPage(ContentTabSubPage.class);
     }
 
@@ -262,47 +213,28 @@ public class ContentTabSubPage extends DocumentBasePage {
      * @since 8.1
      */
     public ContentTabSubPage selectByTitle(String... titles) {
-        return selectByIndex(convertToIndexes(titles));
-    }
-
-    protected int[] convertToIndexes(String... titles) {
-        List<String> titleList = Arrays.asList(titles);
-        List<Integer> temp = new ArrayList<Integer>();
-        int index = 0;
-        for (WebElement row : childDocumentRows) {
-            String docTitle = row.findElement(By.xpath(DOCUMENT_TITLE_XPATH)).getText();
-            if (docTitle != null && titleList.contains(docTitle)) {
-                temp.add(index);
-            }
-            index++;
-        }
-        int[] result = new int[temp.size()];
-        for (int i = 0; i < temp.size(); i++) {
-            result[i] = temp.get(i);
-        }
-        return result;
+        getContentView().selectByTitle(titles);
+        return asPage(ContentTabSubPage.class);
     }
 
     /**
      * Selects documents by their index in the content view and copy them in the clipboard.
      *
-     * @param indexes
+     * @param indexes the indexes
      * @since 5.7.8
      */
     public ContentTabSubPage copyByIndex(int... indexes) {
-        selectByIndex(indexes);
-        findElementWaitUntilEnabledAndClick(By.xpath(COPY_BUTTON_XPATH));
-        return asPage(ContentTabSubPage.class);
+        return getContentView().selectByIndex(indexes).clickOnActionByTitle(COPY, ContentTabSubPage.class);
     }
 
     /**
      * Selects documents by their title in the content view and copy them in the clipboard.
      *
-     * @param indexes
+     * @param titles the titles
      * @since 5.7.8
      */
     public ContentTabSubPage copyByTitle(String... titles) {
-        return copyByIndex(convertToIndexes(titles));
+        return getContentView().selectByTitle(titles).clickOnActionByTitle(COPY, ContentTabSubPage.class);
     }
 
     /**
@@ -311,15 +243,23 @@ public class ContentTabSubPage extends DocumentBasePage {
      * @since 5.7.8
      */
     public ContentTabSubPage paste() {
-        findElementWaitUntilEnabledAndClick(By.xpath(PASTE_BUTTON_XPATH));
-        return asPage(ContentTabSubPage.class);
+        return getContentView().getSelectionActions().clickOnActionByTitle(PASTE, ContentTabSubPage.class);
+    }
+
+    public AddAllToCollectionForm addToCollectionByIndex(int... indexes) {
+        getContentView().selectByIndex(indexes).clickOnActionByTitle(ADD_TO_COLLECTION);
+        WebElement elt = AbstractPage.getFancyBoxContent();
+        return getWebFragment(elt, AddAllToCollectionForm.class);
     }
 
     /**
-     * @since 5.9.3
+     * @since 8.3
      */
-    public DocumentBasePage goToDocument(final int index) {
-        getChildDocumentRows().get(index).findElement(By.xpath("td[3]/div/a[1]")).click();
-        return asPage(DocumentBasePage.class);
+    public boolean hasNewButton() {
+        try {
+            return newButton.isDisplayed();
+        } catch (NoSuchElementException e) {
+            return false;
+        }
     }
 }

@@ -30,7 +30,6 @@ import javax.inject.Inject;
 import javax.inject.Named;
 
 import org.apache.commons.lang3.SystemUtils;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.rules.MethodRule;
 import org.junit.rules.TestRule;
@@ -39,22 +38,26 @@ import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.Statement;
 
-public class ConditionalIgnoreRule implements MethodRule, TestRule {
+public class ConditionalIgnoreRule implements TestRule, MethodRule {
     @Inject
     private RunNotifier runNotifier;
 
+    @Inject
+    private FeaturesRunner runner;
+
     public static class Feature extends SimpleFeature {
         protected static final ConditionalIgnoreRule rule = new ConditionalIgnoreRule();
-
-        @ClassRule
-        public static TestRule classRule() {
-            return rule;
-        }
 
         @Rule
         public MethodRule methodRule() {
             return rule;
         }
+
+        @Rule
+        public static TestRule testRule() {
+            return rule;
+        }
+
     }
 
     @Retention(RetentionPolicy.RUNTIME)
@@ -80,9 +83,8 @@ public class ConditionalIgnoreRule implements MethodRule, TestRule {
     }
 
     public static final class IgnoreIsolated implements Condition {
-        boolean isIsolated = "org.nuxeo.runtime.testsuite.IsolatedClassloader".equals(getClass().getClassLoader()
-                                                                                                .getClass()
-                                                                                                .getName());
+        boolean isIsolated = "org.nuxeo.runtime.testsuite.IsolatedClassloader".equals(
+                getClass().getClassLoader().getClass().getName());
 
         @Override
         public boolean shouldIgnore() {
@@ -105,49 +107,48 @@ public class ConditionalIgnoreRule implements MethodRule, TestRule {
     }
 
     @Override
-    public Statement apply(Statement base, FrameworkMethod method, Object fixtureTarget) {
-        Class<?> fixtureType = fixtureTarget.getClass();
-        Method fixtureMethod = method.getMethod();
-        Description description = Description.createTestDescription(fixtureType, fixtureMethod.getName(),
-                fixtureMethod.getAnnotations());
-        if (fixtureType.isAnnotationPresent(Ignore.class)) {
-            return shouldIgnore(base, description, fixtureType.getAnnotation(Ignore.class), fixtureType, fixtureMethod,
-                    fixtureTarget);
-        }
-        if (fixtureMethod.isAnnotationPresent(Ignore.class)) {
-            return shouldIgnore(base, description, fixtureMethod.getAnnotation(Ignore.class), fixtureType,
-                    fixtureMethod, fixtureTarget);
-        }
-        return base;
-    }
-
-    @Override
     public Statement apply(Statement base, Description description) {
-        Class<?> fixtureType = description.getTestClass();
-        if (fixtureType.isAnnotationPresent(Ignore.class)) {
-            return shouldIgnore(base, description, fixtureType.getAnnotation(Ignore.class), fixtureType);
-        }
-        return base;
-    }
-
-    protected Statement shouldIgnore(Statement base, Description description, Ignore ignore, Class<?> type) {
-        return shouldIgnore(base, description, ignore, type, null, null);
-    }
-
-    protected Statement shouldIgnore(Statement base, Description description, Ignore ignore, Class<?> type,
-            Method method, Object target) {
+        Ignore ignore = runner.getConfig(Ignore.class);
         Class<? extends Condition> conditionType = ignore.condition();
         if (conditionType == null) {
             return base;
         }
-        Condition condition = newCondition(type, method, target, conditionType);
-        if (!condition.shouldIgnore()) {
-            return base;
-        }
         return new Statement() {
+
             @Override
             public void evaluate() throws Throwable {
-                runNotifier.fireTestIgnored(description);
+                // as this is a TestRule / Rule (see Feature#testRule) runtime was already started
+                // because we are here after BeforeClassStatement (runtime start) and before
+                // the MethodRule / Rule execution which cause processing of method annotations, but here we just want
+                // to check condition on the class which doesn't depend on method annotations
+                if (newCondition(null, null, null, conditionType).shouldIgnore()) {
+                    runNotifier.fireTestIgnored(description);
+                } else {
+                    base.evaluate();
+                }
+            }
+        };
+    }
+
+    @Override
+    public Statement apply(Statement base, FrameworkMethod frameworkMethod, Object target) {
+        Ignore ignore = runner.getConfig(frameworkMethod, Ignore.class);
+        Class<? extends Condition> conditionType = ignore.condition();
+        if (conditionType == null) {
+            return base;
+        }
+        Class<?> type = target.getClass();
+        Method method = frameworkMethod.getMethod();
+        Description description = Description.createTestDescription(type, method.getName(), method.getAnnotations());
+        return new Statement() {
+
+            @Override
+            public void evaluate() throws Throwable {
+                if (newCondition(type, method, target, conditionType).shouldIgnore()) {
+                    runNotifier.fireTestIgnored(description);
+                } else {
+                    base.evaluate();
+                }
             }
         };
     }
@@ -192,7 +193,7 @@ public class ConditionalIgnoreRule implements MethodRule, TestRule {
                 }
             }
             if (eachValue == null) {
-                errors.addSuppressed(new Error("Cannot inject " + eachField.getName()));
+                continue;
             }
             eachField.setAccessible(true);
             try {
@@ -204,6 +205,7 @@ public class ConditionalIgnoreRule implements MethodRule, TestRule {
         if (errors.getSuppressed().length > 0) {
             throw errors;
         }
+        runner.getInjector().injectMembers(condition);
     }
 
 }

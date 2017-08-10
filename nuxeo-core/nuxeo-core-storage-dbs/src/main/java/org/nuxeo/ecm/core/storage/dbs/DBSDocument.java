@@ -46,7 +46,7 @@ import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.api.model.ReadOnlyPropertyException;
 import org.nuxeo.ecm.core.api.model.impl.ComplexProperty;
-import org.nuxeo.ecm.core.blob.BlobManager;
+import org.nuxeo.ecm.core.blob.DocumentBlobManager;
 import org.nuxeo.ecm.core.lifecycle.LifeCycle;
 import org.nuxeo.ecm.core.lifecycle.LifeCycleService;
 import org.nuxeo.ecm.core.model.Document;
@@ -167,6 +167,13 @@ public class DBSDocument extends BaseDocument<State> {
 
     public static final String KEY_LOCK_CREATED = "ecm:lockCreated";
 
+    public static final String KEY_SYS_CHANGE_TOKEN = "ecm:systemChangeToken";
+
+    public static final String KEY_CHANGE_TOKEN = "ecm:changeToken";
+
+    // used instead of ecm:changeToken when change tokens are disabled
+    public static final String KEY_DC_MODIFIED = "dc:modified";
+
     public static final String KEY_BLOB_NAME = "name";
 
     public static final String KEY_BLOB_MIME_TYPE = "mime-type";
@@ -188,6 +195,10 @@ public class DBSDocument extends BaseDocument<State> {
     public static final String KEY_FULLTEXT_SCORE = "ecm:fulltextScore";
 
     public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
+
+    public static final Long INITIAL_SYS_CHANGE_TOKEN = Long.valueOf(0);
+
+    public static final Long INITIAL_CHANGE_TOKEN = Long.valueOf(0);
 
     protected final String id;
 
@@ -406,12 +417,14 @@ public class DBSDocument extends BaseDocument<State> {
     }
 
     @Override
-    protected void updateList(State state, String name, List<Object> values, Field field) {
+    protected void updateList(State state, String name, Field field, String xpath, List<Object> values) {
         List<State> childStates = new ArrayList<>(values.size());
+        int i = 0;
         for (Object v : values) {
             State childState = new State();
-            setValueComplex(childState, field, v);
+            setValueComplex(childState, field, xpath + '/' + i, v);
             childStates.add(childState);
+            i++;
         }
         state.put(name, (Serializable) childStates);
     }
@@ -474,7 +487,8 @@ public class DBSDocument extends BaseDocument<State> {
             throw new VersionNotModifiableException();
         } else {
             Document version = session.checkIn(id, label, checkinComment);
-            Framework.getService(BlobManager.class).freezeVersion(version);
+            DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
+            blobManager.freezeVersion(version);
             return version;
         }
     }
@@ -678,7 +692,7 @@ public class DBSDocument extends BaseDocument<State> {
     public void setCurrentLifeCycleState(String lifeCycleState) throws LifeCycleException {
         DBSDocumentState docState = getStateOrTarget();
         docState.put(KEY_LIFECYCLE_STATE, lifeCycleState);
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         blobManager.notifyChanges(this, Collections.singleton(KEY_LIFECYCLE_STATE));
     }
 
@@ -692,7 +706,7 @@ public class DBSDocument extends BaseDocument<State> {
     public void setLifeCyclePolicy(String policy) throws LifeCycleException {
         DBSDocumentState docState = getStateOrTarget();
         docState.put(KEY_LIFECYCLE_POLICY, policy);
-        BlobManager blobManager = Framework.getService(BlobManager.class);
+        DocumentBlobManager blobManager = Framework.getService(DocumentBlobManager.class);
         blobManager.notifyChanges(this, Collections.singleton(KEY_LIFECYCLE_POLICY));
     }
 
@@ -752,6 +766,87 @@ public class DBSDocument extends BaseDocument<State> {
             }
         }
         return (T) value;
+    }
+
+    public static final String CHANGE_TOKEN_PROXY_SEP = "/";
+
+    @Override
+    public String getChangeToken() {
+        if (session.changeTokenEnabled) {
+            Long sysChangeToken = docState.getSysChangeToken();
+            Long changeToken = docState.getChangeToken();
+            String userVisibleChangeToken = buildUserVisibleChangeToken(sysChangeToken, changeToken);
+            if (isProxy()) {
+                String targetUserVisibleChangeToken = getTargetDocument().getChangeToken();
+                return getProxyUserVisibleChangeToken(userVisibleChangeToken, targetUserVisibleChangeToken);
+            } else {
+                return userVisibleChangeToken;
+            }
+        } else {
+            DBSDocumentState docState = getStateOrTarget();
+            Calendar modified = (Calendar) docState.get(KEY_DC_MODIFIED);
+            return getLegacyChangeToken(modified);
+        }
+    }
+
+    protected static String getProxyUserVisibleChangeToken(String proxyToken, String targetToken) {
+        if (proxyToken == null && targetToken == null) {
+            return null;
+        } else {
+            if (proxyToken == null) {
+                proxyToken = "";
+            } else if (targetToken == null) {
+                targetToken = "";
+            }
+            return proxyToken + CHANGE_TOKEN_PROXY_SEP + targetToken;
+        }
+    }
+
+    @Override
+    public boolean validateUserVisibleChangeToken(String userVisibleChangeToken) {
+        if (userVisibleChangeToken == null) {
+            return true;
+        }
+        if (session.changeTokenEnabled) {
+            if (isProxy()) {
+                return validateProxyChangeToken(userVisibleChangeToken, docState, getTargetDocument().docState);
+            } else {
+                return docState.validateUserVisibleChangeToken(userVisibleChangeToken);
+            }
+        } else {
+            DBSDocumentState docState = getStateOrTarget();
+            Calendar modified = (Calendar) docState.get(KEY_DC_MODIFIED);
+            return validateLegacyChangeToken(modified, userVisibleChangeToken);
+        }
+    }
+
+    protected static boolean validateProxyChangeToken(String userVisibleChangeToken, DBSDocumentState proxyState,
+            DBSDocumentState targetState) {
+        String[] parts = userVisibleChangeToken.split(CHANGE_TOKEN_PROXY_SEP, 2);
+        if (parts.length != 2) {
+            // invalid format
+            return false;
+        }
+        String proxyToken = parts[0];
+        if (proxyToken.isEmpty()) {
+            proxyToken = null;
+        }
+        String targetToken = parts[1];
+        if (targetToken.isEmpty()) {
+            targetToken = null;
+        }
+        if (proxyToken == null && targetToken == null) {
+            return true;
+        }
+        return proxyState.validateUserVisibleChangeToken(proxyToken) && targetState.validateUserVisibleChangeToken(targetToken);
+    }
+
+    @Override
+    public void markUserChange() {
+        if (isProxy()) {
+            session.markUserChange(getTargetDocumentId());
+        }
+        session.markUserChange(id);
     }
 
     protected DBSDocumentState getStateOrTarget(Type type) throws PropertyException {
@@ -963,12 +1058,12 @@ public class DBSDocument extends BaseDocument<State> {
 
     @Override
     public DBSDocument getTargetDocument() {
-        if (isProxy()) {
-            String targetId = (String) docState.get(KEY_PROXY_TARGET_ID);
-            return session.getDocument(targetId);
-        } else {
-            return null;
-        }
+        String targetId = getTargetDocumentId();
+        return targetId == null ? null : session.getDocument(targetId);
+    }
+
+    protected String getTargetDocumentId() {
+        return isProxy() ? (String) docState.get(KEY_PROXY_TARGET_ID) : null;
     }
 
     @Override

@@ -23,6 +23,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.util.List;
 
 import javax.mail.BodyPart;
@@ -37,12 +43,11 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.ext.MessageBodyReader;
 import javax.ws.rs.ext.Provider;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.JsonParser;
-
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.core.util.BlobList;
 import org.nuxeo.ecm.automation.jaxrs.io.InputStreamDataSource;
 import org.nuxeo.ecm.automation.jaxrs.io.SharedFileInputStream;
@@ -50,7 +55,6 @@ import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.webengine.WebException;
-import org.nuxeo.ecm.webengine.jaxrs.context.RequestCleanupHandler;
 import org.nuxeo.ecm.webengine.jaxrs.context.RequestContext;
 import org.nuxeo.ecm.webengine.jaxrs.session.SessionFactory;
 import org.nuxeo.runtime.api.Framework;
@@ -59,7 +63,7 @@ import org.nuxeo.runtime.api.Framework;
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
 @Provider
-@Consumes("multipart/form-data")
+@Consumes({ "multipart/form-data", "multipart/related" })
 public class MultiPartFormRequestReader implements MessageBodyReader<ExecutionRequest> {
 
     private static final Log log = LogFactory.getLog(MultiPartFormRequestReader.class);
@@ -91,7 +95,7 @@ public class MultiPartFormRequestReader implements MessageBodyReader<ExecutionRe
             // javax.mail fail to receive some parts - I am not sure why -
             // perhaps the stream is no more available when javax.mail need it?
             File tmp = Framework.createTempFile("nx-automation-mp-upload-", ".tmp");
-            FileUtils.copyToFile(in, tmp);
+            FileUtils.copyInputStreamToFile(in, tmp);
             // get the input from the saved file
             in = new SharedFileInputStream(tmp);
             try {
@@ -115,8 +119,8 @@ public class MultiPartFormRequestReader implements MessageBodyReader<ExecutionRe
                         log.error("Received parts: " + mp.getBodyPart(i).getHeader("Content-ID")[0] + " -> "
                                 + mp.getBodyPart(i).getContentType());
                     }
-                    throw WebException.newException(new IllegalStateException("Received only " + cnt
-                            + " part in a multipart request"));
+                    throw WebException.newException(
+                            new IllegalStateException("Received only " + cnt + " part in a multipart request"));
                 }
             } finally {
                 try {
@@ -135,16 +139,24 @@ public class MultiPartFormRequestReader implements MessageBodyReader<ExecutionRe
     public static Blob readBlob(HttpServletRequest request, BodyPart part) throws MessagingException, IOException {
         String ctype = part.getContentType();
         String fname = part.getFileName();
+        try {
+            // get back the original filename header bytes and try to decode them using UTF-8
+            // if decoding succeeds, use it as the new filename, otherwise keep the original one
+            byte[] bytes = fname.getBytes("ISO-8859-1");
+            CharsetDecoder dec = Charset.forName("UTF-8").newDecoder();
+            CharBuffer buffer = dec.onUnmappableCharacter(CodingErrorAction.REPORT)
+                                   .onMalformedInput(CodingErrorAction.REPORT)
+                                   .decode(ByteBuffer.wrap(bytes));
+            fname = buffer.toString();
+        } catch (CharacterCodingException e) {
+            // do nothing, keep the original filename
+        }
+
         InputStream pin = part.getInputStream();
         final File tmp = Framework.createTempFile("nx-automation-upload-", ".tmp");
-        FileUtils.copyToFile(pin, tmp);
+        FileUtils.copyInputStreamToFile(pin, tmp);
         Blob blob = Blobs.createBlob(tmp, ctype, null, fname);
-        RequestContext.getActiveContext(request).addRequestCleanupHandler(new RequestCleanupHandler() {
-            @Override
-            public void cleanup(HttpServletRequest req) {
-                tmp.delete();
-            }
-        });
+        RequestContext.getActiveContext(request).addRequestCleanupHandler(req -> tmp.delete());
         return blob;
     }
 

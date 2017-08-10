@@ -19,21 +19,18 @@
 
 package org.nuxeo.elasticsearch.work;
 
-import static org.nuxeo.elasticsearch.ElasticSearchConstants.REINDEX_BUCKET_READ_PROPERTY;
-
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.ecm.core.api.IterableQueryResult;
-import org.nuxeo.ecm.core.query.sql.NXQL;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.work.api.Work;
 import org.nuxeo.ecm.core.work.api.WorkManager;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.transaction.TransactionHelper;
+
+import java.util.Collections;
+import java.util.List;
+
+import static org.nuxeo.elasticsearch.ElasticSearchConstants.REINDEX_BUCKET_READ_PROPERTY;
 
 /**
  * Worker to reindex a large amount of document
@@ -73,31 +70,24 @@ public class ScrollingIndexingWorker extends BaseIndexingWorker implements Work 
                     repositoryName));
         }
         openSystemSession();
-        IterableQueryResult res = session.queryAndFetch(nxql, NXQL.NXQL);
+        int bucketSize = getBucketSize();
+        ScrollResult ret = session.scroll(nxql, bucketSize, 60);
         int bucketCount = 0;
         boolean warnAtEnd = false;
         try {
-            Iterator<Map<String, Serializable>> it = res.iterator();
-            int bucketSize = getBucketSize();
-            List<String> ids = new ArrayList<>(bucketSize);
-            while (it.hasNext()) {
-                documentCount += 1;
-                ids.add((String) it.next().get(NXQL.ECM_UUID));
-                if (ids.size() == bucketSize) {
-                    scheduleBucketWorker(ids, false);
-                    ids = new ArrayList<>(bucketSize);
-                    bucketCount += 1;
-                }
+            while (ret.hasResults()) {
+                documentCount += ret.getResultIds().size();
+                scheduleBucketWorker(ret.getResultIds(), false);
+                bucketCount += 1;
+                ret = session.scroll(ret.getScrollId());
+                TransactionHelper.commitOrRollbackTransaction();
+                TransactionHelper.startTransaction();
             }
             if (documentCount > WARN_DOC_COUNT) {
                 warnAtEnd = true;
-            }
-            scheduleBucketWorker(ids, warnAtEnd);
-            if (!ids.isEmpty()) {
-                bucketCount += 1;
+                scheduleBucketWorker(Collections.emptyList(), warnAtEnd);
             }
         } finally {
-            res.close();
             if (warnAtEnd || log.isDebugEnabled()) {
                 String message = String.format("Re-indexing job: %s has submited %d documents in %d bucket workers",
                         jobName, documentCount, bucketCount);

@@ -52,6 +52,8 @@ import org.nuxeo.ecm.webengine.model.TypeNotFoundException;
 import org.nuxeo.ecm.webengine.model.WebContext;
 import org.nuxeo.ecm.webengine.scripting.ScriptFile;
 
+import com.sun.jersey.server.impl.inject.ServerInjectableProviderContext;
+
 /**
  * The default implementation for a web configuration.
  *
@@ -65,9 +67,12 @@ public class ModuleImpl implements Module {
 
     protected final Object typeLock = new Object();
 
-    protected TypeRegistry typeReg;
+    // volatile for double-checked locking
+    protected volatile TypeRegistry typeReg;
 
     protected final ModuleConfiguration configuration;
+
+    protected final ServerInjectableProviderContext sic;
 
     protected final ModuleImpl superModule;
 
@@ -89,9 +94,10 @@ public class ModuleImpl implements Module {
     // cache used for resolved files
     protected ConcurrentMap<String, ScriptFile> fileCache;
 
-    public ModuleImpl(WebEngine engine, ModuleImpl superModule, ModuleConfiguration config) {
+    public ModuleImpl(WebEngine engine, ModuleImpl superModule, ModuleConfiguration config, ServerInjectableProviderContext sic) {
         this.engine = engine;
         this.superModule = superModule;
+        this.sic = sic;
         configuration = config;
         skinPathPrefix = new StringBuilder().append(engine.getSkinPathPrefix()).append('/').append(config.name).toString();
         fileCache = new ConcurrentHashMap<String, ScriptFile>();
@@ -426,11 +432,11 @@ public class ModuleImpl implements Module {
         // double s = System.currentTimeMillis();
         TypeRegistry typeReg = null;
         // install types from super modules
-        if (superModule != null) { // TODO add type reg listener on super
+        if (superModule != null) { // TODO add type registry listener on super
                                    // modules to update types when needed?
             typeReg = new TypeRegistry(superModule.getTypeRegistry(), engine, this);
         } else {
-            typeReg = new TypeRegistry(new TypeRegistry(engine, null), engine, this);
+            typeReg = new TypeRegistry(engine, this);
         }
         if (configuration.directory.isDirectory()) {
             DefaultTypeLoader loader = new DefaultTypeLoader(this, typeReg, configuration.directory);

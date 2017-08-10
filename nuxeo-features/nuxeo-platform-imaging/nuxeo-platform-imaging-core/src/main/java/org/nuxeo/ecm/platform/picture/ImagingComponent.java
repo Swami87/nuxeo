@@ -40,7 +40,6 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.jboss.el.ExpressionFactoryImpl;
 import org.nuxeo.ecm.automation.AutomationService;
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
@@ -59,7 +58,6 @@ import org.nuxeo.ecm.platform.actions.ELActionContext;
 import org.nuxeo.ecm.platform.actions.ejb.ActionManager;
 import org.nuxeo.ecm.platform.commandline.executor.api.CommandException;
 import org.nuxeo.ecm.platform.commandline.executor.api.CommandNotAvailable;
-import org.nuxeo.ecm.platform.el.ExpressionContext;
 import org.nuxeo.ecm.platform.mimetype.MimetypeDetectionException;
 import org.nuxeo.ecm.platform.mimetype.MimetypeNotFoundException;
 import org.nuxeo.ecm.platform.mimetype.interfaces.MimetypeRegistry;
@@ -119,6 +117,11 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
     }
 
     @Override
+    public Blob convertToPDF(Blob blob) {
+        return getLibrarySelectorService().getImageUtils().convertToPDF(blob);
+    }
+
+    @Override
     public Map<String, Object> getImageMetadata(Blob blob) {
         log.warn("org.nuxeo.ecm.platform.picture.ImagingComponent.getImageMetadata is deprecated. Please use "
                 + "org.nuxeo.binary.metadata.api.BinaryMetadataService#readMetadata(org.nuxeo.ecm.core.api.Blob)");
@@ -130,8 +133,8 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
         try {
             MimetypeRegistry mimetypeRegistry = Framework.getLocalService(MimetypeRegistry.class);
             if (file.getName() != null) {
-                return mimetypeRegistry.getMimetypeFromFilenameAndBlobWithDefault(file.getName(), Blobs.createBlob(file),
-                        "image/jpeg");
+                return mimetypeRegistry.getMimetypeFromFilenameAndBlobWithDefault(file.getName(),
+                        Blobs.createBlob(file), "image/jpeg");
             } else {
                 return mimetypeRegistry.getMimetypeFromFile(file);
             }
@@ -249,8 +252,8 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
     }
 
     @Override
-    public List<PictureView> computeViewsFor(Blob blob, List<PictureConversion> pictureConversions,
-            ImageInfo imageInfo, boolean convert) throws IOException {
+    public List<PictureView> computeViewsFor(Blob blob, List<PictureConversion> pictureConversions, ImageInfo imageInfo,
+            boolean convert) throws IOException {
         String mimeType = blob.getMimeType();
         if (mimeType == null) {
             blob.setMimeType(getImageMimeType(blob));
@@ -396,8 +399,18 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
 
         Blob viewBlob = callPictureConversionChain(doc, blob, pictureConversion, imageInfo, size, conversionFormat);
 
+        // If the extension of the generated binary is empty, it's fetched from the mimetype
+        String extension = FilenameUtils.getExtension(viewBlob.getFilename());
+        if (StringUtils.isEmpty(extension)) {
+            MimetypeRegistry mimetypeRegistry = Framework.getService(MimetypeRegistry.class);
+            List<String> extensions = mimetypeRegistry.getExtensionsFromMimetypeName(viewBlob.getMimeType());
+            if (extensions != null && !extensions.isEmpty()) {
+                extension = extensions.get(0);
+            }
+        }
+
         String viewFilename = String.format("%s_%s.%s", title, FilenameUtils.getBaseName(blob.getFilename()),
-                FilenameUtils.getExtension(viewBlob.getFilename()));
+                extension);
         viewBlob.setFilename(viewFilename);
         pictureViewMap.put(PictureView.FIELD_FILENAME, viewFilename);
         pictureViewMap.put(PictureView.FIELD_CONTENT, (Serializable) viewBlob);
@@ -424,16 +437,15 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
         Map<String, Object> chainParameters = new HashMap<>();
         chainParameters.put("parameters", parameters);
 
-        OperationContext context = new OperationContext();
-        if (doc != null) {
-            DocumentModel pictureDocument = doc.getCoreSession().getDocument(doc.getRef());
-            pictureDocument.detach(true);
-            context.put("pictureDocument", pictureDocument);
-        }
-        context.setInput(blob);
-
         boolean txWasActive = false;
-        try {
+        try (OperationContext context = new OperationContext()) {
+            if (doc != null) {
+                DocumentModel pictureDocument = doc.getCoreSession().getDocument(doc.getRef());
+                pictureDocument.detach(true);
+                context.put("pictureDocument", pictureDocument);
+            }
+            context.setInput(blob);
+
             if (TransactionHelper.isTransactionActive()) {
                 txWasActive = true;
                 TransactionHelper.commitOrRollbackTransaction();
@@ -470,16 +482,12 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
     }
 
     protected boolean canApplyPictureConversion(PictureConversion pictureConversion, DocumentModel doc) {
-        if (pictureConversion.isDefault()) {
-            return true;
-        }
-
         ActionManager actionService = Framework.getService(ActionManager.class);
         return actionService.checkFilters(pictureConversion.getFilterIds(), createActionContext(doc));
     }
 
     protected ActionContext createActionContext(DocumentModel doc) {
-        ActionContext actionContext = new ELActionContext(new ExpressionContext(), new ExpressionFactoryImpl());
+        ActionContext actionContext = new ELActionContext();
         actionContext.setCurrentDocument(doc);
         return actionContext;
     }

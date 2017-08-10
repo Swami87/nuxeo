@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     bstefanescu
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.api.model.impl.primitives;
 
 import java.io.ByteArrayInputStream;
@@ -26,7 +23,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 
-import org.nuxeo.common.utils.FileUtils;
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.nuxeo.ecm.core.api.model.InvalidPropertyValueException;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyConversionException;
@@ -75,15 +73,15 @@ public class BinaryProperty extends ScalarProperty {
             return (T) value;
         }
         if (toType == String.class && value instanceof InputStream) {
-            try {
-                return (T) FileUtils.read((InputStream) value);
+            try (InputStream in = (InputStream) value){
+                return (T) IOUtils.toString(in, Charsets.UTF_8);
             } catch (IOException e) {
                 throw new InvalidPropertyValueException("Failed to read given input stream", e);
             }
         }
         if (toType == byte[].class && value instanceof InputStream) {
             try {
-                return (T) FileUtils.readBytes((InputStream) value);
+                return (T) IOUtils.toByteArray((InputStream) value);
             } catch (IOException e) {
                 throw new InvalidPropertyValueException("Failed to read given input stream", e);
             }

@@ -70,4 +70,31 @@ public interface SchemaManager extends TypeProvider {
      */
     boolean hasSuperType(String docType, String superType);
 
+    /**
+     * Returns the types of the children that can be created inside a given {@code type} type.
+     *
+     * @since 8.4
+     */
+    Set<String> getAllowedSubTypes(String type);
+
+    /**
+     * @return the deprecated properties handler
+     * @since 9.2
+     */
+    PropertyDeprecationHandler getDeprecatedProperties();
+
+    /**
+     * @return the removed properties handler
+     * @since 9.2
+     */
+    PropertyDeprecationHandler getRemovedProperties();
+
+    /**
+     * Whether or not to ignore any previous values when setting complex properties.
+     *
+     * @return {@code true} if setting a complex property ignores any previous values
+     * @since 9.3
+     */
+    boolean getClearComplexPropertyBeforeSet();
+
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2009-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2009-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,11 +34,13 @@ import java.util.Set;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
+import org.nuxeo.ecm.core.api.DocumentSecurityException;
 import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.UnrestrictedSessionRunner;
 import org.nuxeo.ecm.core.api.event.DocumentEventTypes;
+import org.nuxeo.ecm.core.api.security.SecurityConstants;
 import org.nuxeo.ecm.core.event.Event;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
@@ -123,6 +125,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         return username == null ? null : username.replace("'", "");
     }
 
+    @Override
     public void tag(CoreSession session, String docId, String label, String username) {
         UnrestrictedAddTagging r = new UnrestrictedAddTagging(session, docId, label, username);
         r.runUnrestricted();
@@ -146,8 +149,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         private final String username;
 
-        protected UnrestrictedAddTagging(CoreSession session, String docId, String label, String username)
-                {
+        protected UnrestrictedAddTagging(CoreSession session, String docId, String label, String username) {
             super(session);
             this.docId = docId;
             this.label = cleanLabel(label, false, false);
@@ -191,13 +193,25 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
             session.createDocument(tagging);
             session.save();
         }
+
     }
 
-    public void untag(CoreSession session, String docId, String label, String username) {
-        UnrestrictedRemoveTagging r = new UnrestrictedRemoveTagging(session, docId, label, username);
-        r.runUnrestricted();
-        if (label != null) {
-            fireUpdateEvent(session, docId);
+    @Override
+    public void untag(CoreSession session, String docId, String label, String username)
+            throws DocumentSecurityException {
+        // There's two allowed cases here:
+        // - document doesn't exist, we're here after documentRemoved event
+        // - regular case: check if user can remove this tag on document
+        if (!session.exists(new IdRef(docId)) || canUntag(session, docId, label)) {
+            UnrestrictedRemoveTagging r = new UnrestrictedRemoveTagging(session, docId, label, username);
+            r.runUnrestricted();
+            if (label != null) {
+                fireUpdateEvent(session, docId);
+            }
+        } else {
+            String principalName = session.getPrincipal().getName();
+            throw new DocumentSecurityException("User '" + principalName + "' is not allowed to remove tag '" + label
+                    + "' on document '" + docId + "'");
         }
     }
 
@@ -209,8 +223,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         private final String username;
 
-        protected UnrestrictedRemoveTagging(CoreSession session, String docId, String label, String username)
-                {
+        protected UnrestrictedRemoveTagging(CoreSession session, String docId, String label, String username) {
             super(session);
             this.docId = docId;
             this.label = cleanLabel(label, true, false);
@@ -231,21 +244,18 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 }
             }
             // Find taggings for user.
-            Set<String> taggingIds = new HashSet<String>();
-            String query = String.format("SELECT ecm:uuid FROM Tagging " + "WHERE relation:source = '%s'", docId);
+            Set<String> taggingIds = new HashSet<>();
+            String query = String.format("SELECT ecm:uuid FROM Tagging WHERE relation:source = '%s'", docId);
             if (tagId != null) {
                 query += String.format(" AND relation:target = '%s'", tagId);
             }
             if (username != null) {
                 query += String.format(" AND dc:creator = '%s'", username);
             }
-            IterableQueryResult res = session.queryAndFetch(query, NXQL.NXQL);
-            try {
+            try (IterableQueryResult res = session.queryAndFetch(query, NXQL.NXQL)) {
                 for (Map<String, Serializable> map : res) {
                     taggingIds.add((String) map.get(NXQL.ECM_UUID));
                 }
-            } finally {
-                res.close();
             }
             // Remove taggings
             for (String taggingId : taggingIds) {
@@ -255,14 +265,80 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 session.save();
             }
         }
+
     }
 
+    /**
+     * @since 8.4
+     */
+    @Override
+    public boolean canUntag(CoreSession session, String docId, String label) {
+        if (session.hasPermission(new IdRef(docId), SecurityConstants.WRITE)) {
+            // If user has WRITE permission, user can remove any tags
+            return true;
+        }
+        // Else check if desired tag was created by current user
+        UnrestrictedCanRemoveTagging r = new UnrestrictedCanRemoveTagging(session, docId, label);
+        r.runUnrestricted();
+        return r.canUntag;
+    }
+
+    protected static class UnrestrictedCanRemoveTagging extends UnrestrictedSessionRunner {
+
+        private final String docId;
+
+        private final String label;
+
+        private boolean canUntag;
+
+        protected UnrestrictedCanRemoveTagging(CoreSession session, String docId, String label) {
+            super(session);
+            this.docId = docId;
+            this.label = cleanLabel(label, true, false);
+            this.canUntag = false;
+        }
+
+        @Override
+        public void run() {
+            String tagId = null;
+            if (label != null) {
+                // Find tag
+                List<Map<String, Serializable>> res = getItems(PAGE_PROVIDERS.GET_DOCUMENT_IDS_FOR_TAG.name(), session,
+                        label);
+                tagId = (res != null && !res.isEmpty()) ? (String) res.get(0).get(NXQL.ECM_UUID) : null;
+                if (tagId == null) {
+                    // tag not found - so user can untag
+                    canUntag = true;
+                    return;
+                }
+            }
+            // Find creators of tag(s).
+            Set<String> creators = new HashSet<>();
+            String query = String.format("SELECT DISTINCT dc:creator FROM Tagging WHERE relation:source = '%s'",
+                    docId);
+            if (tagId != null) {
+                query += String.format(" AND relation:target = '%s'", tagId);
+            }
+            try (IterableQueryResult res = session.queryAndFetch(query, NXQL.NXQL)) {
+                for (Map<String, Serializable> map : res) {
+                    creators.add((String) map.get("dc:creator"));
+                }
+            }
+            // Check if user can untag
+            // - in case of one tag, check if creators contains user
+            // - in case of all tags, check if user is the only creator
+            canUntag = creators.size() == 1 && creators.contains(originatingUsername);
+        }
+
+    }
+
+    @Override
     public List<Tag> getDocumentTags(CoreSession session, String docId, String username) {
         return getDocumentTags(session, docId, username, true);
     }
 
-    public List<Tag> getDocumentTags(CoreSession session, String docId, String username, boolean useCore)
-            {
+    @Override
+    public List<Tag> getDocumentTags(CoreSession session, String docId, String username, boolean useCore) {
         UnrestrictedGetDocumentTags r = new UnrestrictedGetDocumentTags(session, docId, username, useCore);
         r.runUnrestricted();
         return r.tags;
@@ -278,13 +354,12 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         protected final boolean useCore;
 
-        protected UnrestrictedGetDocumentTags(CoreSession session, String docId, String username, boolean useCore)
-                {
+        protected UnrestrictedGetDocumentTags(CoreSession session, String docId, String username, boolean useCore) {
             super(session);
             this.docId = docId;
             this.username = cleanUsername(username);
             this.useCore = useCore;
-            tags = new ArrayList<Tag>();
+            this.tags = new ArrayList<>();
         }
 
         @Override
@@ -310,6 +385,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 }
             }
         }
+
     }
 
     @Override
@@ -322,8 +398,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         copyTags(session, srcDocId, dstDocId, false);
     }
 
-    protected void copyTags(CoreSession session, String srcDocId, String dstDocId, boolean removeExistingTags)
-            {
+    protected void copyTags(CoreSession session, String srcDocId, String dstDocId, boolean removeExistingTags) {
         if (removeExistingTags) {
             removeTags(session, dstDocId);
         }
@@ -377,6 +452,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 }
             }
         }
+
     }
 
     @Override
@@ -384,6 +460,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         copyTags(session, srcDocId, dstDocId, true);
     }
 
+    @Override
     public List<String> getTagDocumentIds(CoreSession session, String label, String username) {
         UnrestrictedGetTagDocumentIds r = new UnrestrictedGetTagDocumentIds(session, label, username);
         r.runUnrestricted();
@@ -398,12 +475,11 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         protected final List<String> docIds;
 
-        protected UnrestrictedGetTagDocumentIds(CoreSession session, String label, String username)
-                {
+        protected UnrestrictedGetTagDocumentIds(CoreSession session, String label, String username) {
             super(session);
             this.label = cleanLabel(label, false, false);
             this.username = cleanUsername(username);
-            docIds = new ArrayList<String>();
+            this.docIds = new ArrayList<>();
         }
 
         @Override
@@ -420,10 +496,11 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 }
             }
         }
+
     }
 
-    public List<Tag> getTagCloud(CoreSession session, String docId, String username, Boolean normalize)
-            {
+    @Override
+    public List<Tag> getTagCloud(CoreSession session, String docId, String username, Boolean normalize) {
         UnrestrictedGetDocumentCloud r = new UnrestrictedGetDocumentCloud(session, docId, username, normalize);
         r.runUnrestricted();
         return r.cloud;
@@ -439,13 +516,12 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         protected final Boolean normalize;
 
-        protected UnrestrictedGetDocumentCloud(CoreSession session, String docId, String username, Boolean normalize)
-                {
+        protected UnrestrictedGetDocumentCloud(CoreSession session, String docId, String username, Boolean normalize) {
             super(session);
             this.docId = docId;
             this.username = cleanUsername(username);
             this.normalize = normalize;
-            cloud = new ArrayList<Tag>();
+            this.cloud = new ArrayList<>();
         }
 
         @Override
@@ -461,7 +537,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 // find all docs under docid
                 String path = session.getDocument(new IdRef(docId)).getPathAsString();
                 path = path.replace("'", "");
-                List<String> docIds = new ArrayList<String>();
+                List<String> docIds = new ArrayList<>();
                 docIds.add(docId);
                 List<Map<String, Serializable>> docRes = getItems(PAGE_PROVIDERS.GET_TAGGED_DOCUMENTS_UNDER.name(),
                         session, path);
@@ -501,6 +577,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
                 normalizeCloud(cloud, min, max, !normalize.booleanValue());
             }
         }
+
     }
 
     public static void normalizeCloud(List<Tag> cloud, int min, int max, boolean linear) {
@@ -531,6 +608,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         }
     }
 
+    @Override
     public List<Tag> getSuggestions(CoreSession session, String label, String username) {
         UnrestrictedGetTagSuggestions r = new UnrestrictedGetTagSuggestions(session, label, username);
         r.runUnrestricted();
@@ -545,8 +623,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
 
         protected final List<Tag> tags;
 
-        protected UnrestrictedGetTagSuggestions(CoreSession session, String label, String username)
-                {
+        protected UnrestrictedGetTagSuggestions(CoreSession session, String label, String username) {
             super(session);
             label = cleanLabel(label, false, true);
             if (!label.contains("%")) {
@@ -554,7 +631,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
             }
             this.label = label;
             this.username = cleanUsername(username);
-            tags = new ArrayList<Tag>();
+            this.tags = new ArrayList<>();
         }
 
         @Override
@@ -574,6 +651,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
             // XXX should sort on tag weight
             Collections.sort(tags, Tag.LABEL_COMPARATOR);
         }
+
     }
 
     /**
@@ -588,7 +666,7 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         if (ppService == null) {
             throw new RuntimeException("Missing PageProvider service");
         }
-        Map<String, Serializable> props = new HashMap<String, Serializable>();
+        Map<String, Serializable> props = new HashMap<>();
         // first retrieve potential props from definition
         PageProviderDefinition def = ppService.getPageProviderDefinition(pageProviderName);
         if (def != null) {
@@ -605,4 +683,5 @@ public class TagServiceImpl extends DefaultComponent implements TagService {
         }
         return pp.getCurrentPage();
     }
+
 }

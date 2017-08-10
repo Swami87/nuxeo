@@ -21,6 +21,7 @@ package org.nuxeo.ecm.core;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -46,20 +47,21 @@ import java.util.Set;
 
 import javax.inject.Inject;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.lang3.mutable.MutableObject;
 import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.nuxeo.common.collections.ScopeType;
-import org.nuxeo.common.collections.ScopedMap;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
+import org.nuxeo.ecm.core.api.ConcurrentUpdateException;
 import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DataModel;
+import org.nuxeo.ecm.core.api.DocumentExistsException;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelIterator;
 import org.nuxeo.ecm.core.api.DocumentModelList;
@@ -72,12 +74,12 @@ import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.ListDiff;
 import org.nuxeo.ecm.core.api.Lock;
 import org.nuxeo.ecm.core.api.LockException;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.PathRef;
 import org.nuxeo.ecm.core.api.VersionModel;
 import org.nuxeo.ecm.core.api.VersioningOption;
 import org.nuxeo.ecm.core.api.event.DocumentEventTypes;
-import org.nuxeo.ecm.core.api.facet.VersioningDocument;
 import org.nuxeo.ecm.core.api.impl.DocumentModelImpl;
 import org.nuxeo.ecm.core.api.impl.FacetFilter;
 import org.nuxeo.ecm.core.api.impl.UserPrincipal;
@@ -182,11 +184,57 @@ public class TestSQLRepositoryAPI {
         return coreFeature.getStorageConfiguration().isDBS();
     }
 
+    protected boolean isChangeTokenEnabled() {
+        return coreFeature.getStorageConfiguration().isChangeTokenEnabled();
+    }
+
+    /**
+     * Simulate change token init when there is no database-level change token.
+     */
+    protected void maybeCreateChangeToken(DocumentModel doc) {
+        if (!isChangeTokenEnabled()) {
+            doc.setPropertyValue("dc:modified", Calendar.getInstance());
+        }
+    }
+
+    /**
+     * Simulate change token update when there is no database-level change token.
+     * <p>
+     * Done through the dublincore listener in a real instance.
+     */
+    protected void maybeUpdateChangeToken(DocumentModel doc) {
+        if (!isChangeTokenEnabled()) {
+            maybeSleepToNextSecond();
+            doc.setPropertyValue("dc:modified", Calendar.getInstance());
+        }
+    }
+
     /**
      * Sleep 1s, useful for stupid databases (like MySQL) that don't have subsecond resolution in TIMESTAMP fields.
      */
     protected void maybeSleepToNextSecond() {
         coreFeature.getStorageConfiguration().maybeSleepToNextSecond();
+    }
+
+    /**
+     * @since 8.4
+     */
+    @Test
+    public void testIsVersionWritable() {
+        DocumentModel doc = new DocumentModelImpl("/", "foo", "File");
+        doc = session.createDocument(doc);
+        session.save();
+
+        assertTrue(doc.addFacet("Aged"));
+        assertTrue(doc.hasFacet("Aged"));
+        doc = session.saveDocument(doc);
+
+        DocumentRef refVersion = doc.checkIn(VersioningOption.MAJOR, "blbabla");
+
+        DocumentModel version = session.getDocument(refVersion);
+
+        version.setPropertyValue("age:age", "123");
+        session.saveDocument(version);
     }
 
     @Test
@@ -1029,7 +1077,6 @@ public class TestSQLRepositoryAPI {
 
         session.save();
 
-        childFile.setProperty("file", "filename", "second name");
         childFile.setProperty("dublincore", "title", "f1");
         childFile.setProperty("dublincore", "description", "desc 1");
 
@@ -1055,7 +1102,6 @@ public class TestSQLRepositoryAPI {
 
         assertEquals("f1", returnedDocument.getProperty("dublincore", "title"));
         assertEquals("desc 1", returnedDocument.getProperty("dublincore", "description"));
-        assertNull(returnedDocument.getProperty("file", "filename"));
 
         returnedDocument = session.getDocument(childFile.getRef());
 
@@ -1075,7 +1121,6 @@ public class TestSQLRepositoryAPI {
 
         assertEquals("f1", returnedDocument.getProperty("dublincore", "title"));
         assertEquals("desc 1", returnedDocument.getProperty("dublincore", "description"));
-        assertEquals("second name", returnedDocument.getProperty("file", "filename"));
     }
 
     @Test
@@ -1390,6 +1435,60 @@ public class TestSQLRepositoryAPI {
         session.removeDocument(version);
     }
 
+    @Test
+    public void testRemoveLiveProxyTarget() throws Exception {
+        DocumentModel root = session.getRootDocument();
+        DocumentModel folder = session.createDocumentModel("/", "folder", "Folder");
+        folder = session.createDocument(folder);
+        DocumentModel subfolder = session.createDocumentModel("/folder", "subfolder", "Folder");
+        subfolder= session.createDocument(subfolder);
+        DocumentModel doc = session.createDocumentModel("/folder/subfolder", "doc", "File");
+        doc = session.createDocument(doc);
+        session.save();
+
+        // create live proxy
+        DocumentModel proxy = session.createProxy(doc.getRef(), root.getRef());
+        session.save();
+
+        // cannot remove doc due to existing proxy
+        // assertFalse(session.canRemoveDocument(doc.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(doc.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // cannot remove containing folder either
+        // assertFalse(session.canRemoveDocument(subfolder.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(subfolder.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // cannot remove ancestor either
+        // assertFalse(session.canRemoveDocument(folder.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(folder.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // create the proxy in the folder instead
+        session.removeDocument(proxy.getRef());
+        proxy = session.createProxy(doc.getRef(), folder.getRef());
+
+        // then we can remove the folder that contains both the proxy and the target
+        assertTrue(session.canRemoveDocument(folder.getRef()));
+        session.removeDocument(folder.getRef());
+    }
+
     public void TODOtestQuery() {
         DocumentModel root = session.getRootDocument();
 
@@ -1411,8 +1510,8 @@ public class TestSQLRepositoryAPI {
 
         List<DocumentModel> returnedChildDocs = createChildDocuments(childDocs);
 
-        returnedChildDocs.get(1).setProperty("file", "filename", "f1");
-        returnedChildDocs.get(2).setProperty("file", "filename", "f2");
+        returnedChildDocs.get(1).setProperty("file", "content", Blobs.createBlob("blob1", "text/plain", "UTF-8", "f1"));
+        returnedChildDocs.get(2).setProperty("file", "content", Blobs.createBlob("blob1", "text/plain", "UTF-8", "f2"));
 
         session.saveDocuments(returnedChildDocs.toArray(new DocumentModel[0]));
         session.save();
@@ -1429,7 +1528,7 @@ public class TestSQLRepositoryAPI {
 
         // if we select filename, the returned docModel
         // should have both schemas "file" and "common"
-        list = session.query("SELECT filename FROM File");
+        list = session.query("SELECT content/filename FROM File");
         assertEquals(1, list.size());
         docModel = list.get(0);
         schemas = Arrays.asList(docModel.getSchemas());
@@ -1491,10 +1590,9 @@ public class TestSQLRepositoryAPI {
         assertEquals(1, returnedChildDocs.size());
 
         childFile1 = returnedChildDocs.get(0);
-        childFile1.setProperty("file", "filename", "f1");
 
         // add a blob
-        Blob blob = Blobs.createBlob("<html><head/><body>La la la!</body></html>", "text/html");
+        Blob blob = Blobs.createBlob("<html><head/><body>La la la!</body></html>", "text/html", "UTF-8", "f1");
         childFile1.setProperty("file", "content", blob);
 
         session.saveDocument(childFile1);
@@ -1756,11 +1854,10 @@ public class TestSQLRepositoryAPI {
         DocumentModel childFile = new DocumentModelImpl(root.getPathAsString(), name, "File");
         childFile.setProperty("dublincore", "title", "f1");
         childFile.setProperty("dublincore", "description", "desc 1");
-        childFile.setProperty("file", "filename", "filename1");
 
         childFile = createChildDocument(childFile);
 
-        Property p = childFile.getProperty("/file:/filename");
+        Property p = childFile.getProperty("/dublincore:/description");
         // System.out.println(p.getPath());
 
         // TODO NXP-2514: this should be tested across sessions - when it can be done
@@ -1770,7 +1867,6 @@ public class TestSQLRepositoryAPI {
 
         assertEquals("f1", retrievedFile.getProperty("dublincore", "title"));
         assertEquals("desc 1", retrievedFile.getProperty("dublincore", "description"));
-        assertEquals("filename1", retrievedFile.getProperty("file", "filename"));
     }
 
     @Test
@@ -1804,9 +1900,9 @@ public class TestSQLRepositoryAPI {
 
         session.save();
 
-        childFile.setProperty("file", "filename", "second name");
         childFile.setProperty("dublincore", "title", "f1");
         childFile.setProperty("dublincore", "description", "desc 1");
+        childFile.setProperty("file", "content", Blobs.createBlob("b1", "text/plain", "UTF-8", "second name"));
 
         session.saveDocument(childFile);
 
@@ -1827,7 +1923,7 @@ public class TestSQLRepositoryAPI {
         assertNotNull(dm.getMap());
         assertNotNull(dm.getSchema());
         assertEquals("file", dm.getSchema());
-        assertEquals("second name", dm.getData("filename"));
+        assertEquals("second name", ((Blob) dm.getData("content")).getFilename());
     }
 
     @Test
@@ -2474,20 +2570,19 @@ public class TestSQLRepositoryAPI {
         assertTrue(session.exists(new PathRef("/note")));
         assertTrue(session.exists(new PathRef("/folder")));
 
-        // no versions at first
+        // only one version at first
         List<DocumentRef> versions = session.getVersionsRefs(note.getRef());
-        assertEquals(0, versions.size());
+        assertEquals(1, versions.size());
 
         // version the note
         note.setProperty("dublincore", "title", "blah");
-        ScopedMap context = note.getContextData();
-        context.putScopedValue(ScopeType.REQUEST, VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY, Boolean.TRUE);
+        note.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MINOR);
         session.saveDocument(note);
         session.save();
 
         // check versions
         versions = session.getVersionsRefs(note.getRef());
-        assertEquals(1, versions.size());
+        assertEquals(2, versions.size());
 
         // copy
         DocumentModel copy = session.copy(note.getRef(), folder.getRef(), null);
@@ -2511,20 +2606,19 @@ public class TestSQLRepositoryAPI {
         assertTrue(session.exists(new PathRef("/folder")));
         assertTrue(session.exists(new PathRef("/folder/note")));
 
-        // no versions at first
+        // only one version at first
         List<DocumentRef> versions = session.getVersionsRefs(note.getRef());
-        assertEquals(0, versions.size());
+        assertEquals(1, versions.size());
 
         // version the note
         note.setProperty("dublincore", "title", "blah");
-        ScopedMap context = note.getContextData();
-        context.putScopedValue(ScopeType.REQUEST, VersioningDocument.CREATE_SNAPSHOT_ON_SAVE_KEY, Boolean.TRUE);
+        note.putContextData(VersioningService.VERSIONING_OPTION, VersioningOption.MINOR);
         session.saveDocument(note);
         session.save();
 
         // check versions
         versions = session.getVersionsRefs(note.getRef());
-        assertEquals(1, versions.size());
+        assertEquals(2, versions.size());
 
         // copy folder, use an all-digit name to test for xpath escaping
         DocumentModel copy = session.copy(folder.getRef(), root.getRef(), "123");
@@ -2579,6 +2673,67 @@ public class TestSQLRepositoryAPI {
         assertEquals("file3", newFile3.getName());
     }
 
+    @Test
+    public void testMoveConcurrentWithGetChild() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        try {
+            session.getChild(new PathRef("/folder"), "doc");
+            fail("should not find child moved under /folder in another transaction");
+        } catch (DocumentNotFoundException e) {
+            assertEquals("doc", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testMoveConcurrentWithGetChildren() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        // should not find child moved under /folder in another transaction
+        DocumentModelList children = session.getChildren(new PathRef("/folder"));
+        assertEquals(0, children.size());
+    }
+
+    @Test
+    public void testMoveConcurrentWithGetChildrenRefs() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        // should not find child moved under /folder in another transaction
+        List<DocumentRef> children = session.getChildrenRefs(new PathRef("/folder"), null);
+        assertEquals(0, children.size());
+    }
+
+    protected void prepareDocsForMoveConcurrentWithGetChildren() throws Exception {
+        // create folder
+        DocumentModel folder = session.createDocumentModel("/", "folder", "Folder");
+        folder = session.createDocument(folder);
+        // create doc outside of folder
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        doc = session.createDocument(doc);
+        session.save();
+        nextTransaction();
+        // load doc as DBS transient
+        session.getDocument(doc.getRef());
+
+        // in other thread, move doc into folder
+        MutableObject<RuntimeException> me = new MutableObject<>();
+        Thread thread = new Thread(() -> {
+            TransactionHelper.runInTransaction(() -> {
+                try (CoreSession session2 = CoreInstance.openCoreSession(coreFeature.getRepositoryName())) {
+                    session2.move(new PathRef("/doc"), new PathRef("/folder"), null);
+                    session2.save();
+                } catch (RuntimeException e) {
+                    me.setValue(e);
+                }
+            });
+        });
+        thread.start();
+        thread.join();
+        if (me.getValue() != null) {
+            throw new RuntimeException(me.getValue());
+        }
+    }
+
     // TODO NXP-2514: fix this test
     @Test
     @Ignore
@@ -2630,14 +2785,13 @@ public class TestSQLRepositoryAPI {
 
         session.save();
 
-        byte[] bytes = FileUtils.readBytes(Blob.class.getResourceAsStream("Blob.class"));
+        byte[] bytes = IOUtils.toByteArray(Blob.class.getResourceAsStream("Blob.class"));
         Blob blob = Blobs.createBlob(bytes, "java/class", "UTF8");
         blob.setFilename("blob.txt");
         blob.setDigest("XXX");
         long length = blob.getLength();
         byte[] content = blob.getByteArray();
 
-        childFile.setProperty("file", "filename", "deprectaed filename");
         childFile.setProperty("dublincore", "title", "Blob test");
         childFile.setProperty("dublincore", "description", "this is a test");
         childFile.setProperty("file", "content", blob);
@@ -2669,7 +2823,7 @@ public class TestSQLRepositoryAPI {
         assertEquals("manifest.mf", blob.getFilename());
         assertEquals(null, blob.getEncoding());
         assertEquals("java/manifest", blob.getMimeType());
-        assertEquals(FileUtils.readBytes(url).length, blob.getLength());
+        assertEquals(IOUtils.toByteArray(url).length, blob.getLength());
     }
 
     @Test
@@ -2852,13 +3006,8 @@ public class TestSQLRepositoryAPI {
         doc.setProperty("dublincore", "title", "t");
         doc.setProperty("dublincore", "description", "d");
         doc.setProperty("dublincore", "subjects", new String[] { "a", "b" });
-        doc.setProperty("file", "filename", "f");
-        List<Object> files = new ArrayList<>(2);
+        List<Object> files = new ArrayList<>(1);
         Map<String, Object> f = new HashMap<>();
-        f.put("filename", "f1");
-        files.add(f);
-        f = new HashMap<>();
-        f.put("filename", "f2");
         f.put("file", Blobs.createBlob("myfile", "text/test", "UTF-8"));
         files.add(f);
         doc.setProperty("files", "files", files);
@@ -2876,14 +3025,11 @@ public class TestSQLRepositoryAPI {
         assertEquals("t", copy.getProperty("dublincore", "title"));
         assertEquals("d", copy.getProperty("dublincore", "description"));
         assertEquals(Arrays.asList("a", "b"), Arrays.asList((String[]) copy.getProperty("dublincore", "subjects")));
-        assertEquals("f", copy.getProperty("file", "filename"));
         Object fileso = copy.getProperty("files", "files");
         assertNotNull(fileso);
         List<Map<String, Object>> newfiles = (List<Map<String, Object>>) fileso;
-        assertEquals(2, newfiles.size());
-        assertEquals("f1", newfiles.get(0).get("filename"));
-        assertEquals("f2", newfiles.get(1).get("filename"));
-        Blob bb = (Blob) newfiles.get(1).get("file");
+        assertEquals(1, newfiles.size());
+        Blob bb = (Blob) newfiles.get(0).get("file");
         assertNotNull(bb);
         assertEquals("text/test", bb.getMimeType());
         assertEquals("UTF-8", bb.getEncoding());
@@ -3045,11 +3191,8 @@ public class TestSQLRepositoryAPI {
         DocumentModel doc = new DocumentModelImpl(parent.getPathAsString(), "theDoc", "File");
 
         doc.setProperty("dublincore", "title", "my title");
+        assertEquals("my title", doc.getPropertyValue("title"));
         assertEquals("my title", doc.getPropertyValue("dc:title"));
-
-        doc.setProperty("file", "filename", "the file name");
-        assertEquals("the file name", doc.getPropertyValue("filename"));
-        assertEquals("the file name", doc.getPropertyValue("file:filename"));
     }
 
     @SuppressWarnings("rawtypes")
@@ -3973,6 +4116,66 @@ public class TestSQLRepositoryAPI {
     }
 
     @Test
+    public void testRollback3() {
+        // create file 1
+        DocumentModel file1 = session.createDocumentModel("/", "file1", "File");
+        file1 = session.createDocument(file1);
+        session.save();
+        nextTransaction();
+
+        // create file 2 and rollback
+        DocumentModel file2 = session.createDocumentModel("/", "file2", "File");
+        file2 = session.createDocument(file2);
+        session.save();
+        TransactionHelper.setTransactionRollbackOnly();
+        nextTransaction();
+
+        // check just one file is here
+        DocumentModelList docs = session.query("SELECT * FROM File");
+        assertEquals(1, docs.size());
+
+        // re-try to create file 2 and re-rollback
+        file2 = session.createDocumentModel("/", "file2", "File");
+        file2 = session.createDocument(file2);
+        session.save();
+        TransactionHelper.setTransactionRollbackOnly();
+        nextTransaction();
+
+        // still just one file
+        docs = session.query("SELECT * FROM File");
+        assertEquals(1, docs.size());
+    }
+
+    @Test
+    public void testRollback4() {
+        TransactionHelper.commitOrRollbackTransaction();
+        TransactionHelper.startTransaction();
+        // set rollback-only
+        TransactionHelper.setTransactionRollbackOnly();
+        // then use the session (first use in this transaction, it will be reconnected)
+        try {
+            session.getDocument(new PathRef("/"));
+            fail("should not allow use of session when marked rollback-only");
+        } catch (NuxeoException e) {
+            assertEquals("Cannot reconnect a CoreSession when transaction is marked rollback-only", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testRollback5() {
+        TransactionHelper.commitOrRollbackTransaction();
+        TransactionHelper.startTransaction();
+        // set rollback-only
+        TransactionHelper.setTransactionRollbackOnly();
+        // then create a session
+        try (CoreSession session2 = CoreInstance.openCoreSession(coreFeature.getRepositoryName())) {
+            fail("should not allow creation of session when marked rollback-only");
+        } catch (NuxeoException e) {
+            assertEquals("Cannot create a CoreSession when transaction is marked rollback-only", e.getMessage());
+        }
+    }
+
+    @Test
     @ConditionalIgnoreRule.Ignore(condition = IgnoreWindows.class, cause = "Not enough time granularity")
     public void testBinaryGC() throws Exception {
         // GC binaries from previous tests
@@ -4188,6 +4391,391 @@ public class TestSQLRepositoryAPI {
         lock = session.getLockInfo(docRef);
         assertNotNull(lock);
         assertEquals("Administrator", lock.getOwner());
+    }
+
+    @Test
+    public void testChangeToken() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+        String token = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0", token);
+        }
+
+        // now change the doc
+        doc.setPropertyValue("dc:title", "Doc Changed");
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the system change token has been updated
+        // but not the user change token as this was not flagged a user change
+        String token2 = doc.getChangeToken();
+        assertNotEquals(token, token2);
+        if (isChangeTokenEnabled()) {
+            assertEquals("1-0", token2);
+        }
+
+        // change the doc again as a user change
+        doc.setPropertyValue("dc:title", "Doc Changed Again");
+        doc.putContextData(CoreSession.USER_CHANGE, Boolean.TRUE);
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the system change token has been updated again
+        // and the user change token as well
+        String token3 = doc.getChangeToken();
+        assertNotEquals(token, token2);
+        assertNotEquals(token2, token3);
+        if (isChangeTokenEnabled()) {
+            assertEquals("2-1", token3);
+        }
+
+        // change token is available on a detached document
+        doc.detach(true);
+        assertEquals(token3, doc.getChangeToken());
+    }
+
+    @Test
+    public void testChangeTokenSystem() {
+        assumeTrue("test only makes sense for real change tokens", isChangeTokenEnabled());
+
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        doc = session.createDocument(doc);
+        session.save();
+        assertEquals("0-0", doc.getChangeToken());
+
+        // now change the doc
+        doc.setPropertyValue("dc:title", "Doc Changed");
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // reopen session to not read from caches
+        reopenSession();
+        doc = session.getDocument(doc.getRef());
+
+        // the system change token has been updated and written (+ 1 another change for fulltext)
+        assertEquals("2-0", doc.getChangeToken());
+    }
+
+    @Test
+    public void testChangeTokenBatched() {
+        DocumentModel doc1 = session.createDocumentModel("/", "doc1", "File");
+        DocumentModel doc2 = session.createDocumentModel("/", "doc2", "File");
+        maybeCreateChangeToken(doc1);
+        maybeCreateChangeToken(doc2);
+        doc1 = session.createDocument(doc1);
+        doc2 = session.createDocument(doc2);
+        session.save();
+        String token1 = doc1.getChangeToken();
+        String token2 = doc2.getChangeToken();
+
+        // now change the docs
+        doc1.setPropertyValue("dc:title", "Doc 1 Changed");
+        doc2.setPropertyValue("dc:title", "Doc 2 Changed");
+        maybeUpdateChangeToken(doc1);
+        maybeUpdateChangeToken(doc2);
+        doc1 = session.saveDocument(doc1);
+        doc2 = session.saveDocument(doc2);
+        session.save();
+
+        // the change token has been updated
+        String token1b = doc1.getChangeToken();
+        String token2b = doc2.getChangeToken();
+        assertNotEquals(token1, token1b);
+        assertNotEquals(token2, token2b);
+    }
+
+    // query providers create "search" doc types to collect results
+    @Test
+    public void testChangeTokenOnFakeDocument() {
+        DocumentModel doc = session.createDocumentModel("File");
+        doc.setPropertyValue("dc:modified", Calendar.getInstance());
+        String token = doc.getChangeToken();
+        assertNotNull(token);
+    }
+
+    @Test
+    public void testChangeTokenForList() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+
+        // do a first change to provoke the initial update VCS side effects (fulltext table)
+        doc.setPropertyValue("dc:title", "Doc Changed");
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // get the token
+        String token = doc.getChangeToken();
+
+        // change the doc by changing a list
+        doc.setPropertyValue("dc:subjects", (Serializable) Arrays.asList("foo", "bar"));
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the change token has been updated
+        String token2 = doc.getChangeToken();
+        assertNotEquals(token, token2);
+    }
+
+    @Test
+    public void testChangeTokenForComplex() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+
+        // do a first change to provoke the initial update VCS side effects (fulltext table)
+        doc.setPropertyValue("dc:title", "foo");
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // get the token
+        String token = doc.getChangeToken();
+
+        // change the doc by creating a complex property list
+        doc.setPropertyValue("relatedtext:relatedtextresources",
+                (Serializable) Arrays.asList(Collections.singletonMap("relatedtextid", "123")));
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the change token has been updated
+        String token2 = doc.getChangeToken();
+        assertNotEquals(token, token2);
+
+        // change the doc by updating a complex property list
+        doc.setPropertyValue("relatedtext:relatedtextresources",
+                (Serializable) Arrays.asList(Collections.singletonMap("relatedtextid", "456")));
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the change token has been updated again
+        String token3 = doc.getChangeToken();
+        assertNotEquals(token2, token3);
+
+        // change the doc by removing a complex property list
+        doc.setPropertyValue("relatedtext:relatedtextresources", (Serializable) Collections.emptyList());
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // the change token has been updated again
+        String token4 = doc.getChangeToken();
+        assertNotEquals(token3, token4);
+    }
+
+    @Test
+    public void testChangeTokenForProxy() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+        String docToken = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0", docToken);
+        }
+
+        // create live proxy
+        DocumentModel proxy = session.createProxy(doc.getRef(), new PathRef("/"));
+        String proxyToken = proxy.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0/0-0", proxyToken);
+        }
+
+        // change the live document and check token
+        doc.setPropertyValue("dc:title", "Doc Changed");
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+        proxy = session.getDocument(proxy.getRef());
+        String proxyToken2 = proxy.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0/1-0", proxyToken2);
+        }
+
+        // now change the proxy itself and re-check token
+        session.move(proxy.getRef(), new PathRef("/"), "renamedproxy");
+        session.save();
+        String proxyToken3 = proxy.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("1-0/1-0", proxyToken3);
+        }
+    }
+
+    @Test
+    public void testOptimisticLockingWithExplicitChangeToken() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+        String token = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0", token);
+        }
+
+        // simulate some background system work
+        doc.setPropertyValue("dc:description", "background update");
+        // maybeUpdateChangeToken(doc); // not done on purpose to simulate background system work
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // now change the doc, using the previously-retrieved change token
+        doc = session.getDocument(doc.getRef());
+        doc.setPropertyValue("dc:title", "foo");
+        doc.putContextData(CoreSession.CHANGE_TOKEN, token);
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save(); // save succeeds even though there was a background system update
+        String token2 = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("2-1", token2);
+        }
+        assertNotEquals(token, token2);
+    }
+
+    @Test
+    public void testOptimisticLockingWithExplicitChangeTokenCollision() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+        String token = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0", token);
+        }
+
+        // simulate some parallel user work
+        doc.setPropertyValue("dc:title", "foo");
+        doc.putContextData(CoreSession.CHANGE_TOKEN, token);
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // now change the doc, using the originally-retrieved change token
+        doc = session.getDocument(doc.getRef());
+        doc.setPropertyValue("dc:title", "bar");
+        doc.putContextData(CoreSession.CHANGE_TOKEN, token);
+        maybeUpdateChangeToken(doc);
+        try {
+            session.saveDocument(doc);
+            if (isChangeTokenEnabled()) { // not failing for manual change tokens
+                fail("save should fail because of wrong change token");
+            }
+        } catch (ConcurrentUpdateException e) {
+            TransactionHelper.setTransactionRollbackOnly();
+            assertEquals(doc.getId(), e.getMessage());
+        }
+    }
+
+    @Test
+    public void testOptimisticLockingWithExplicitChangeTokenInvalid() {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        session.save();
+        String token = doc.getChangeToken();
+        if (isChangeTokenEnabled()) {
+            assertEquals("0-0", token);
+        }
+
+        // change the doc using a wrong change token
+        doc.setPropertyValue("dc:title", "bar");
+        doc.putContextData(CoreSession.CHANGE_TOKEN, "wrongchangetoken");
+        maybeUpdateChangeToken(doc);
+        try {
+            session.saveDocument(doc);
+            if (isChangeTokenEnabled()) { // not failing for manual change tokens
+                fail("save should fail because of wrong change token");
+            }
+        } catch (ConcurrentUpdateException e) {
+            TransactionHelper.setTransactionRollbackOnly();
+            assertEquals(doc.getId(), e.getMessage());
+        }
+    }
+
+    @Test
+    public void testOptimisticLockinWithAsyncWork() {
+        DocumentModel file = session.createDocumentModel("/", "file", "File");
+        file.setPropertyValue("dc:title", "foo");
+        file = session.createDocument(file);
+        session.save();
+        nextTransaction();
+        // here async text indexing modifies file1
+
+        // modify file as a user change
+        file.setPropertyValue("dc:title", "bar");
+        file.putContextData(CoreSession.USER_CHANGE, Boolean.TRUE);
+        session.saveDocument(file);
+        session.save();
+    }
+
+    @Test
+    public void testOptimisticLockingWithParallelChange() throws Exception {
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        // create row in VCS dublincore table to avoid later concurrent update upon its creation
+        doc.setPropertyValue("dc:title", "foo");
+        maybeCreateChangeToken(doc);
+        doc = session.createDocument(doc);
+        DocumentRef docRef = doc.getRef();
+        session.save();
+
+        // re-start a new transaction that hasn't done any writes
+        nextTransaction();
+        waitForAsyncCompletion();
+        reopenSession();
+
+        doc = session.getDocument(docRef);
+
+        // in other thread, update the doc as a user change
+        MutableObject<RuntimeException> me = new MutableObject<>();
+        Thread thread = new Thread(() -> {
+            TransactionHelper.runInTransaction(() -> {
+                try (CoreSession session2 = CoreInstance.openCoreSession(coreFeature.getRepositoryName())) {
+                    DocumentModel doc2 = session2.getDocument(docRef);
+                    doc2.setPropertyValue("dc:title", "bar parallel");
+                    doc2.putContextData(CoreSession.USER_CHANGE, Boolean.TRUE);
+                    maybeUpdateChangeToken(doc2);
+                    doc2 = session2.saveDocument(doc2);
+                    session2.save(); // save succeeds
+                } catch (RuntimeException e) {
+                    me.setValue(e);
+                }
+            });
+        });
+        thread.start();
+        thread.join();
+        if (me.getValue() != null) {
+            throw me.getValue();
+        }
+
+        // now try to save the doc as a user change as well
+        doc.setPropertyValue("dc:title", "bar");
+        doc.putContextData(CoreSession.USER_CHANGE, Boolean.TRUE);
+        maybeUpdateChangeToken(doc);
+        doc = session.saveDocument(doc);
+        try {
+            session.save();
+            if (isChangeTokenEnabled()) { // not failing for manual change tokens
+                fail("save should fail because of concurrent update in other transaction");
+            }
+        } catch (ConcurrentUpdateException e) {
+            if (!isChangeTokenEnabled()) {
+                // no exception expected for manual change token
+                throw e;
+            }
+            // ok
+            TransactionHelper.setTransactionRollbackOnly();
+        }
     }
 
 }

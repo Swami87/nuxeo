@@ -3,7 +3,7 @@
   <parent>
     <artifactId>nuxeo-features-parent</artifactId>
     <groupId>org.nuxeo.ecm.platform</groupId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
   </parent>
 
   <groupId>org.nuxeo.ecm.platform</groupId>
@@ -15,24 +15,6 @@
   <modules>
     <module>nuxeo-platform-imaging-tiling</module>
   </modules>
-
-  <developers>
-    <developer>
-      <name>Alexandre Russel</name>
-      <email>arussel@nuxeo.com</email>
-      <organization>Nuxeo SAS</organization>
-    </developer>
-    <developer>
-      <name>Thierry Delprat</name>
-      <email>td@nuxeo.com</email>
-      <organization>Nuxeo SAS</organization>
-    </developer>
-    <developer>
-      <name>Thomas Roger</name>
-      <email>troger@nuxeo.com</email>
-      <organization>Nuxeo SAS</organization>
-    </developer>
-  </developers>
 
   <profiles>
     <profile>

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
  * limitations under the License.
  *
  * Contributors:
- *     bstefanescu, jcarsique
+ *     bstefanescu
+ *     jcarsique
+ *     Yannis JULIENNE
  */
 package org.nuxeo.connect.update.standalone;
 
@@ -31,11 +33,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.nuxeo.common.Environment;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.ZipUtils;
 import org.nuxeo.connect.update.AlreadyExistsPackageException;
 import org.nuxeo.connect.update.LocalPackage;
@@ -110,8 +111,7 @@ public class PackagePersistence {
                 int i = line.indexOf('=');
                 String pkgId = line.substring(0, i).trim();
                 String value = line.substring(i + 1).trim();
-                PackageState state = null;
-                state = PackageState.getByLabel(value);
+                PackageState state = PackageState.getByLabel(value);
                 if (state == PackageState.UNKNOWN) {
                     try {
                         // Kept for backward compliance with int instead of enum
@@ -133,7 +133,7 @@ public class PackagePersistence {
             buf.append(entry.getKey()).append('=').append(entry.getValue()).append("\n");
         }
         File file = new File(root, ".packages");
-        FileUtils.writeFile(file, buf.toString());
+        FileUtils.writeStringToFile(file, buf.toString());
     }
 
     public LocalPackage getPackage(String id) throws PackageException {
@@ -155,7 +155,7 @@ public class PackagePersistence {
             } catch (IOException e) {
                 throw new PackageException("Failed to unzip package: " + file.getName());
             } finally {
-                // cleanup if tmp still exists (should not happen)
+                // cleanup tmp if exists
                 org.apache.commons.io.FileUtils.deleteQuietly(tmp);
             }
         } else {
@@ -185,7 +185,7 @@ public class PackagePersistence {
                 log.info(String.format("Replacement of %s in local cache...", oldpkg));
                 org.apache.commons.io.FileUtils.deleteQuietly(dir);
             }
-            org.apache.commons.io.FileUtils.moveDirectory(file, dir);
+            org.apache.commons.io.FileUtils.copyDirectory(file, dir);
             pkg.getData().setRoot(dir);
             updateState(pkg.getId(), pkg.state);
             return pkg;
@@ -205,12 +205,10 @@ public class PackagePersistence {
     /**
      * Get the local package having the given name and which is in either one of the following states:
      * <ul>
-     * <li> {@link PackageState#INSTALLING}
-     * <li> {@link PackageState#INSTALLED}
-     * <li> {@link PackageState#STARTED}
+     * <li>{@link PackageState#INSTALLING}
+     * <li>{@link PackageState#INSTALLED}
+     * <li>{@link PackageState#STARTED}
      * </ul>
-     *
-     * @param name
      */
     public LocalPackage getActivePackage(String name) throws PackageException {
         String pkgId = getActivePackageId(name);
@@ -220,11 +218,11 @@ public class PackagePersistence {
         return getPackage(pkgId);
     }
 
-    public synchronized String getActivePackageId(String name) {
-        name = name + '-';
+    public synchronized String getActivePackageId(String name) throws PackageException {
         for (Entry<String, PackageState> entry : states.entrySet()) {
-            if (entry.getKey().startsWith(name) && entry.getValue().isInstalled()) {
-                return entry.getKey();
+            String pkgId = entry.getKey();
+            if (pkgId.startsWith(name) && entry.getValue().isInstalled() && getPackage(pkgId).getName().equals(name)) {
+                return pkgId;
             }
         }
         return null;

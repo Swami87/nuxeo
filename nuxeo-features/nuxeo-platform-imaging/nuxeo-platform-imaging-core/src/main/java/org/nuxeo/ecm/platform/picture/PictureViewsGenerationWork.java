@@ -25,11 +25,13 @@ import java.util.List;
 
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.DocumentNotFoundException;
 import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.event.Event;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.ecm.core.versioning.VersioningService;
 import org.nuxeo.ecm.core.work.AbstractWork;
 import org.nuxeo.ecm.core.work.api.WorkManager;
 import org.nuxeo.ecm.platform.picture.api.adapters.PictureResourceAdapter;
@@ -67,6 +69,12 @@ public class PictureViewsGenerationWork extends AbstractWork {
     }
 
     @Override
+    public int getRetryCount() {
+        // we could fail to get the doc due to a concurrent delete, so allow to retry
+        return 2;
+    }
+
+    @Override
     public void work() {
         setProgress(Progress.PROGRESS_INDETERMINATE);
         setStatus("Extracting");
@@ -90,6 +98,10 @@ public class PictureViewsGenerationWork extends AbstractWork {
         try {
             PictureResourceAdapter picture = workingDocument.getAdapter(PictureResourceAdapter.class);
             picture.fillPictureViews(blob, blob.getFilename(), title, null);
+        } catch (DocumentNotFoundException e) {
+            // a parent of the document may have been deleted.
+            setStatus("Nothing to process");
+            return;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -104,6 +116,7 @@ public class PictureViewsGenerationWork extends AbstractWork {
         }
         workingDocument.putContextData("disableNotificationService", Boolean.TRUE);
         workingDocument.putContextData("disableAuditLogger", Boolean.TRUE);
+        workingDocument.putContextData(VersioningService.DISABLE_AUTO_CHECKOUT, Boolean.TRUE);
         session.saveDocument(workingDocument);
 
         firePictureViewsGenerationDoneEvent(workingDocument);

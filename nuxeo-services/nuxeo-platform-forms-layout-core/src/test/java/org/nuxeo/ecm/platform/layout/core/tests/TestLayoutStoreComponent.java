@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id: TestLayoutComponent.java 28493 2008-01-04 19:51:30Z sfermigier $
  */
-
 package org.nuxeo.ecm.platform.layout.core.tests;
 
 import static org.junit.Assert.assertEquals;
@@ -29,7 +26,6 @@ import static org.junit.Assert.assertTrue;
 import java.io.Serializable;
 import java.util.Map;
 
-import org.junit.Before;
 import org.junit.Test;
 import org.nuxeo.ecm.platform.forms.layout.api.BuiltinModes;
 import org.nuxeo.ecm.platform.forms.layout.api.FieldDefinition;
@@ -51,11 +47,14 @@ public class TestLayoutStoreComponent extends NXRuntimeTestCase {
 
     private LayoutStore service;
 
-    @Before
+    @Override
     public void setUp() throws Exception {
-        super.setUp();
         deployBundle("org.nuxeo.ecm.platform.forms.layout.core");
         deployContrib("org.nuxeo.ecm.platform.forms.layout.core.tests", "layouts-core-test-contrib.xml");
+    }
+
+    @Override
+    protected void postSetUp() throws Exception {
         service = Framework.getService(LayoutStore.class);
         assertNotNull(service);
     }
@@ -78,14 +77,14 @@ public class TestLayoutStoreComponent extends NXRuntimeTestCase {
         // test rows
         LayoutRowDefinition[] rows = dublincore.getRows();
         assertEquals(3, rows.length);
-        assertEquals(1, rows[0].getWidgets().length);
-        assertEquals("title", rows[0].getWidgets()[0]);
-        assertEquals(1, rows[1].getWidgets().length);
-        assertEquals("description", rows[1].getWidgets()[0]);
-        assertEquals(3, rows[2].getWidgets().length);
-        assertEquals("creationDate", rows[2].getWidgets()[0]);
-        assertEquals("", rows[2].getWidgets()[1]);
-        assertEquals("modificationDate", rows[2].getWidgets()[2]);
+        assertEquals(1, rows[0].getWidgetReferences().length);
+        assertEquals("title", rows[0].getWidgetReferences()[0].getName());
+        assertEquals(1, rows[1].getWidgetReferences().length);
+        assertEquals("description", rows[1].getWidgetReferences()[0].getName());
+        assertEquals(3, rows[2].getWidgetReferences().length);
+        assertEquals("creationDate", rows[2].getWidgetReferences()[0].getName());
+        assertEquals("", rows[2].getWidgetReferences()[1].getName());
+        assertEquals("modificationDate", rows[2].getWidgetReferences()[2].getName());
         assertEquals(3, dublincore.getColumns());
 
         // test widgets
@@ -143,8 +142,8 @@ public class TestLayoutStoreComponent extends NXRuntimeTestCase {
         // test rows
         LayoutRowDefinition[] rows = filesLayout.getRows();
         assertEquals(1, rows.length);
-        assertEquals(1, rows[0].getWidgets().length);
-        assertEquals("files", rows[0].getWidgets()[0]);
+        assertEquals(1, rows[0].getWidgetReferences().length);
+        assertEquals("files", rows[0].getWidgetReferences()[0].getName());
         assertEquals(1, filesLayout.getColumns());
 
         // test widgets

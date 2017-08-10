@@ -23,6 +23,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 import javax.naming.NamingException;
 import javax.transaction.HeuristicMixedException;
@@ -49,6 +50,17 @@ public class TransactionHelper {
 
     private static final Log log = LogFactory.getLog(TransactionHelper.class);
 
+    private static final Field GERONIMO_TRANSACTION_TIMEOUT_FIELD;
+    static {
+        try {
+            GERONIMO_TRANSACTION_TIMEOUT_FIELD = org.apache.geronimo.transaction.manager.TransactionImpl.class.getDeclaredField(
+                    "timeout");
+            GERONIMO_TRANSACTION_TIMEOUT_FIELD.setAccessible(true);
+        } catch (NoSuchFieldException | SecurityException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     private TransactionHelper() {
         // utility class
     }
@@ -65,6 +77,25 @@ public class TransactionHelper {
             throw new NamingException("tx manager not installed");
         }
         return ut;
+    }
+
+    /**
+     * Gets the transaction status.
+     *
+     * @return the transaction {@linkplain Status status}, or -1 if there is no transaction manager
+     * @since 8.4
+     * @see Status
+     */
+    public static int getTransactionStatus() {
+        UserTransaction ut = NuxeoContainer.getUserTransaction();
+        if (ut == null) {
+            return -1;
+        }
+        try {
+            return ut.getStatus();
+        } catch (SystemException e) {
+            throw new TransactionRuntimeException("Cannot get transaction status", e);
+        }
     }
 
     /**
@@ -110,45 +141,42 @@ public class TransactionHelper {
      * @6.0
      */
     public static boolean isNoTransaction() {
-        try {
-            return lookupUserTransaction().getStatus() == Status.STATUS_NO_TRANSACTION;
-        } catch (NamingException | SystemException cause) {
-            return true;
-        }
+        int status = getTransactionStatus();
+        return status == Status.STATUS_NO_TRANSACTION || status == -1;
     }
 
     /**
      * Checks if the current User Transaction is active.
      */
     public static boolean isTransactionActive() {
-        try {
-            return lookupUserTransaction().getStatus() == Status.STATUS_ACTIVE;
-        } catch (NamingException | SystemException e) {
-            return false;
-        }
+        int status = getTransactionStatus();
+        return status == Status.STATUS_ACTIVE;
     }
 
     /**
      * Checks if the current User Transaction is marked rollback only.
      */
     public static boolean isTransactionMarkedRollback() {
-        try {
-            return lookupUserTransaction().getStatus() == Status.STATUS_MARKED_ROLLBACK;
-        } catch (NamingException | SystemException e) {
-            return false;
-        }
+        int status = getTransactionStatus();
+        return status == Status.STATUS_MARKED_ROLLBACK;
     }
 
     /**
      * Checks if the current User Transaction is active or marked rollback only.
      */
     public static boolean isTransactionActiveOrMarkedRollback() {
-        try {
-            int status = lookupUserTransaction().getStatus();
-            return status == Status.STATUS_ACTIVE || status == Status.STATUS_MARKED_ROLLBACK;
-        } catch (NamingException | SystemException e) {
-            return false;
-        }
+        int status = getTransactionStatus();
+        return status == Status.STATUS_ACTIVE || status == Status.STATUS_MARKED_ROLLBACK;
+    }
+
+    /**
+     * Checks if the current User Transaction is active or preparing.
+     *
+     * @since 8.4
+     */
+    public static boolean isTransactionActiveOrPreparing() {
+        int status = getTransactionStatus();
+        return status == Status.STATUS_ACTIVE || status == Status.STATUS_PREPARING;
     }
 
     /**
@@ -170,9 +198,7 @@ public class TransactionHelper {
             }
             if (tx instanceof org.apache.geronimo.transaction.manager.TransactionImpl) {
                 // Geronimo Transaction Manager
-                Field f = tx.getClass().getDeclaredField("timeout");
-                f.setAccessible(true);
-                Long timeout = (Long) f.get(tx);
+                Long timeout = (Long) GERONIMO_TRANSACTION_TIMEOUT_FIELD.get(tx);
                 return System.currentTimeMillis() > timeout.longValue();
             } else {
                 // unknown transaction manager
@@ -180,6 +206,21 @@ public class TransactionHelper {
             }
         } catch (SystemException | ReflectiveOperationException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Checks if the current User Transaction has already timed out, i.e., whether a commit would immediately abort with
+     * a timeout exception.
+     * <p>
+     * Throws if the transaction has timed out.
+     *
+     * @throws TransactionRuntimeException if the transaction has timed out
+     * @since 8.4
+     */
+    public static void checkTransactionTimeout() throws TransactionRuntimeException {
+        if (isTransactionTimedOut()) {
+            throw new TransactionRuntimeException("Transaction has timed out");
         }
     }
 
@@ -309,13 +350,35 @@ public class TransactionHelper {
         if (ut == null) {
             return;
         }
+        noteSuppressedExceptions();
+        RuntimeException thrown = null;
+        boolean isRollbackDuringCommit = false;
         try {
             int status = ut.getStatus();
             if (status == Status.STATUS_ACTIVE) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Commiting transaction");
+                    log.debug("Committing transaction");
                 }
-                ut.commit();
+                try {
+                    ut.commit();
+                } catch (RollbackException | HeuristicRollbackException | HeuristicMixedException e) {
+                    String msg = "Unable to commit";
+                    // messages from org.apache.geronimo.transaction.manager.TransactionImpl.commit
+                    switch (e.getMessage()) {
+                    case "Unable to commit: transaction marked for rollback":
+                        // don't log as error, this happens if there's a ConcurrentUpdateException
+                        // at transaction end inside VCS
+                        isRollbackDuringCommit = true;
+                        // $FALL-THROUGH$
+                    case "Unable to commit: Transaction timeout":
+                        // don't log either
+                        log.debug(msg, e);
+                        break;
+                    default:
+                        log.error(msg, e);
+                    }
+                    throw new TransactionRuntimeException(e.getMessage(), e);
+                }
             } else if (status == Status.STATUS_MARKED_ROLLBACK) {
                 if (log.isDebugEnabled()) {
                     log.debug("Cannot commit transaction because it is marked rollback only");
@@ -326,18 +389,33 @@ public class TransactionHelper {
                     log.debug("Cannot commit transaction with unknown status: " + status);
                 }
             }
-        } catch (SystemException | RollbackException | HeuristicMixedException | HeuristicRollbackException
-                | IllegalStateException | SecurityException e) {
-            String msg = "Unable to commit/rollback";
-            if (e instanceof RollbackException
-                    && "Unable to commit: transaction marked for rollback".equals(e.getMessage())) {
-                // don't log as error, this happens if there's a
-                // ConcurrentModificationException at transaction end inside VCS
-                log.debug(msg, e);
-            } else {
-                log.error(msg, e);
+        } catch (SystemException e) {
+            thrown = new TransactionRuntimeException(e);
+            throw thrown;
+        } catch (RuntimeException e) {
+            thrown = e;
+            throw thrown;
+        } finally {
+            List<Exception> suppressed = getSuppressedExceptions();
+            if (!suppressed.isEmpty()) {
+                // add suppressed to thrown exception, or throw a new one
+                RuntimeException e;
+                if (thrown == null) {
+                    e = new TransactionRuntimeException("Exception during commit");
+                } else {
+                    if (isRollbackDuringCommit && suppressed.get(0) instanceof RuntimeException) {
+                        // use the suppressed one directly and throw it instead
+                        thrown = null; // force rethrow below
+                        e = (RuntimeException) suppressed.remove(0);
+                    } else {
+                        e = thrown;
+                    }
+                }
+                suppressed.forEach(s -> e.addSuppressed(s));
+                if (thrown == null) {
+                    throw e;
+                }
             }
-            throw new TransactionRuntimeException(msg + ": " + e.getMessage(), e);
         }
     }
 
@@ -348,12 +426,13 @@ public class TransactionHelper {
      *
      * @since 5.9.4
      */
-    public static void noteSuppressedExceptions() {
-        suppressedExceptions.set(new ArrayList<Exception>(1));
+    protected static void noteSuppressedExceptions() {
+        suppressedExceptions.set(new ArrayList<>());
     }
 
     /**
-     * If activated by {@linked #noteSuppressedExceptions}, remembers the exception.
+     * Remembers the exception if it happens during the processing of a commit, so that it can be surfaced as a
+     * suppressed exception at the end of the commit.
      *
      * @since 5.9.4
      */
@@ -369,7 +448,7 @@ public class TransactionHelper {
      *
      * @since 5.9.4
      */
-    public static List<Exception> getSuppressedExceptions() {
+    protected static List<Exception> getSuppressedExceptions() {
         List<Exception> exceptions = suppressedExceptions.get();
         suppressedExceptions.remove();
         return exceptions == null ? Collections.<Exception> emptyList() : exceptions;
@@ -414,13 +493,112 @@ public class TransactionHelper {
     }
 
     public static void registerSynchronization(Synchronization handler) {
-        if (!isTransactionActiveOrMarkedRollback()) {
-            return;
+        if (!isTransactionActiveOrPreparing()) {
+            throw new TransactionRuntimeException("Cannot register Synchronization if transaction is not active");
         }
         try {
             NuxeoContainer.getTransactionManager().getTransaction().registerSynchronization(handler);
         } catch (IllegalStateException | RollbackException | SystemException cause) {
             throw new RuntimeException("Cannot register synch handler in current tx", cause);
+        }
+    }
+
+    /**
+     * Runs the given {@link Runnable} without a  transactional context. Will suspend and restore the transaction if one already
+     * exists.
+     *
+     * @param runnable the {@link Runnable}
+     * @since 9.1
+     */
+    public static void runWithoutTransaction(Runnable runnable) {
+        runWithoutTransaction(() -> { runnable.run(); return null; });
+    }
+
+
+    /**
+     * Calls the given {@link Supplier} without a transactional context. Will suspend and restore the transaction if one already
+     * exists.
+     *
+     * @param supplier the {@link Supplier}
+     * @since 9.1
+     */
+    public static <R> R runWithoutTransaction(Supplier<R> supplier) {
+        Transaction tx = suspendTransaction();
+        try {
+            return supplier.get();
+        } finally {
+            resumeTransaction(tx);
+        }
+    }
+
+    /**
+     * Runs the given {@link Runnable} in a new transactional context. Will suspend and restore the transaction if one already
+     * exists.
+     *
+     * @param runnable the {@link Runnable}
+     * @since 9.1
+     */
+    public static void runInNewTransaction(Runnable runnable) {
+        runInNewTransaction(() -> { runnable.run(); return null;});
+    }
+
+    /**
+     * Calls the given {@link Supplier} in a new transactional context. Will suspend and restore the transaction if one already
+     * exists.
+     *
+     * @param supplier the {@link Supplier}
+     * @since 9.1
+     */
+    public static <R> R runInNewTransaction(Supplier<R> supplier) {
+        Transaction tx = suspendTransaction();
+        try {
+            return runInTransaction(supplier);
+        } finally {
+            resumeTransaction(tx);
+        }
+    }
+
+    /**
+     * Runs the given {@link Runnable} in a transactional context. Will not start a new transaction if one already
+     * exists.
+     *
+     * @param runnable the {@link Runnable}
+     * @since 8.4
+     */
+    public static void runInTransaction(Runnable runnable) {
+        runInTransaction(() -> {runnable.run(); return null;});
+    }
+
+    /**
+     * Calls the given {@link Supplier} in a transactional context. Will not start a new transaction if one already
+     * exists.
+     *
+     * @param supplier the {@link Supplier}
+     * @return the supplier's result
+     * @since 8.4
+     */
+    public static <R> R runInTransaction(Supplier<R> supplier) {
+        boolean startTransaction = !isTransactionActiveOrMarkedRollback();
+        if (startTransaction) {
+            if (!startTransaction()) {
+                throw new TransactionRuntimeException("Cannot start transaction");
+            }
+        }
+        boolean completedAbruptly = true;
+        try {
+            R result = supplier.get();
+            completedAbruptly = false;
+            return result;
+        } finally {
+            try {
+                if (completedAbruptly) {
+                    setTransactionRollbackOnly();
+                }
+            } finally {
+                if (startTransaction) {
+                    commitOrRollbackTransaction();
+                }
+            }
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.services.event;
 
 /**
@@ -27,19 +24,7 @@ package org.nuxeo.runtime.services.event;
 public interface EventListener {
 
     /**
-     * Notified about an event about to be processed. Returns false to cancel the event.
-     *
-     * @param event the event
-     * @return false to cancel the event or true otherwise
-     * @deprecated since 5.7 (unused)
-     */
-    @Deprecated
-    boolean aboutToHandleEvent(Event event);
-
-    /**
      * An event was received.
-     *
-     * @param event
      */
     void handleEvent(Event event);
 

@@ -2,24 +2,19 @@
 
 <component name="org.nuxeo.ecm.webapp.directory.directoryUI.sql.tests">
 
-  <extension target="org.nuxeo.ecm.directory.sql.SQLDirectoryFactory"
-    point="directories">
+  <extension target="org.nuxeo.ecm.directory.GenericDirectory" point="directories">
 
-    <directory name="country">
+    <directory name="country" extends="template-directory">
       <schema>xvocabulary</schema>
       <parentDirectory>continent</parentDirectory>
-      <dataSource>java:/nxsqldirectory</dataSource>
-      <table>country</table>
       <idField>id</idField>
       <autoincrementIdField>false</autoincrementIdField>
       <dataFile>testdirectorydata/country.csv</dataFile>
       <createTablePolicy>on_missing_columns</createTablePolicy>
     </directory>
 
-    <directory name="continent">
+    <directory name="continent" extends="template-directory">
       <schema>vocabulary</schema>
-      <dataSource>java:/nxsqldirectory</dataSource>
-      <table>continent</table>
       <idField>id</idField>
       <autoincrementIdField>false</autoincrementIdField>
       <dataFile>testdirectorydata/continent.csv</dataFile>
@@ -28,17 +23,15 @@
 
   </extension>
 
-  <extension target="org.nuxeo.ecm.directory.ui.DirectoryUIManager"
-    point="directories">
+  <extension target="org.nuxeo.ecm.directory.ui.DirectoryUIManager" point="directories">
 
     <directory name="continent" layout="vocabulary" sortField="label">
-      <deleteConstraint
-        class="org.nuxeo.ecm.directory.api.ui.HierarchicalDirectoryUIDeleteConstraint">
+      <deleteConstraint class="org.nuxeo.ecm.directory.api.ui.HierarchicalDirectoryUIDeleteConstraint">
         <property name="targetDirectory">country</property>
         <property name="targetDirectoryField">parent</property>
       </deleteConstraint>
     </directory>
-    <directory name="country" layout="country_vocabulary" sortField="parent" />
+    <directory name="country" layout="country_vocabulary" sortField="parent"/>
 
   </extension>
 

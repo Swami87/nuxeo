@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.model.impl;
 
 import java.lang.reflect.InvocationTargetException;
@@ -40,8 +37,6 @@ import org.nuxeo.runtime.model.ComponentName;
 import org.nuxeo.runtime.model.Extension;
 import org.nuxeo.runtime.model.ExtensionPoint;
 import org.nuxeo.runtime.model.Property;
-import org.nuxeo.runtime.model.RegistrationInfo;
-import org.nuxeo.runtime.model.ReloadableComponent;
 import org.nuxeo.runtime.model.RuntimeContext;
 import org.nuxeo.runtime.service.TimestampedService;
 import org.osgi.framework.Bundle;
@@ -74,16 +69,7 @@ public class ComponentInstanceImpl implements ComponentInstance {
 
     @Override
     public Object getInstance() {
-        switch (ri.state) {
-        case RegistrationInfo.RESOLVED:
-            // if not already activated activate it now
-            ri.activate();
-            return instance;
-        case RegistrationInfo.ACTIVATED:
-            return instance;
-        default:
-            return null;
-        }
+        return instance;
     }
 
     public void create() {
@@ -166,13 +152,9 @@ public class ComponentInstanceImpl implements ComponentInstance {
     public void reload() {
         // activate the implementation instance
         try {
-            if (instance instanceof ReloadableComponent) {
-                ((ReloadableComponent) instance).reload(this);
-            } else {
-                Method meth = instance.getClass().getDeclaredMethod("reload", ComponentContext.class);
-                meth.setAccessible(true);
-                meth.invoke(instance, this);
-            }
+            Method meth = instance.getClass().getDeclaredMethod("reload", ComponentContext.class);
+            meth.setAccessible(true);
+            meth.invoke(instance, this);
         } catch (NoSuchMethodException e) {
             // ignore this exception since the reload method is not mandatory
         } catch (ReflectiveOperationException e) {
@@ -240,14 +222,16 @@ public class ComponentInstanceImpl implements ComponentInstance {
             ee = ExceptionUtils.unwrapInvoke(e);
         }
         log.error(message, ee);
-        Framework.getRuntime().getWarnings().add(message);
-        Framework.handleDevError(ee);
+        Framework.getRuntime().getErrors().add(message);
     }
 
     @Override
     public <T> T getAdapter(Class<T> adapter) {
         T res = null;
         Object object = getInstance();
+        if (object == null) {
+            return null;
+        }
         if (object instanceof Adaptable) {
             res = ((Adaptable) object).getAdapter(adapter);
         } else if (adapter.isAssignableFrom(object.getClass())) {
@@ -306,7 +290,7 @@ public class ComponentInstanceImpl implements ComponentInstance {
         }
         String[] names = getProvidedServiceNames();
         if (names != null && names.length > 0) {
-            factories = new ArrayList<ComponentInstanceImpl.OSGiServiceFactory>();
+            factories = new ArrayList<>();
             for (String className : names) {
                 OSGiServiceFactory factory = new OSGiServiceFactory(className);
                 factory.register();

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,7 @@
  *     Nuxeo - initial API and implementation
  *     bstefanescu, jcarsique
  *     Anahide Tchertchian
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.deployment.preprocessor;
 
 import java.io.BufferedInputStream;
@@ -31,9 +28,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
@@ -42,10 +37,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.collections.DependencyTree;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.common.utils.JarUtils;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.common.utils.StringUtils;
@@ -80,21 +75,11 @@ public class DeploymentPreprocessor {
 
     private ContainerDescriptor root;
 
-    // map jar names to bundle symbolic ids - WARN: no more used - will be
-    // removed in future,
-    @Deprecated
-    private final Map<String, String> jar2Id = new HashMap<String, String>();
-
     public DeploymentPreprocessor(File dir) {
         this.dir = dir;
         xmap = new XMap();
         xmap.register(ContainerDescriptor.class);
         xmap.register(FragmentDescriptor.class);
-    }
-
-    @Deprecated
-    public String getJarId(String jarName) {
-        return jar2Id.get(jarName);
     }
 
     public ContainerDescriptor getRootContainer() {
@@ -371,7 +356,7 @@ public class DeploymentPreprocessor {
             if (td.template != null) {
                 File file = new File(td.baseDir, td.installPath);
                 file.getParentFile().mkdirs(); // make sure parents exists
-                FileUtils.writeFile(file, td.template.getText());
+                FileUtils.writeStringToFile(file, td.template.getText());
             }
         }
 
@@ -432,7 +417,7 @@ public class DeploymentPreprocessor {
     }
 
     protected FragmentDescriptor getDirectoryFragment(File directory) throws IOException {
-        FragmentDescriptor fd = null;
+        FragmentDescriptor fd;
         File file = new File(directory.getAbsolutePath() + '/' + FRAGMENT_FILE);
         if (file.isFile()) {
             URL url;
@@ -461,15 +446,11 @@ public class DeploymentPreprocessor {
 
     protected FragmentDescriptor getJARFragment(File file) throws IOException {
         FragmentDescriptor fd = null;
-        JarFile jar = new JarFile(file);
-        try {
+        try (JarFile jar = new JarFile(file)) {
             ZipEntry ze = jar.getEntry(FRAGMENT_FILE);
             if (ze != null) {
-                InputStream in = new BufferedInputStream(jar.getInputStream(ze));
-                try {
+                try (InputStream in = new BufferedInputStream(jar.getInputStream(ze))) {
                     fd = (FragmentDescriptor) xmap.load(in);
-                } finally {
-                    in.close();
                 }
                 if (fd.name == null) {
                     // fallback on symbolic name
@@ -483,8 +464,6 @@ public class DeploymentPreprocessor {
                     processBundleForCompat(fd, file);
                 }
             }
-        } finally {
-            jar.close();
         }
         return fd;
     }
@@ -492,54 +471,49 @@ public class DeploymentPreprocessor {
     protected void processManifest(FragmentDescriptor fd, String fileName, Manifest mf) {
         Attributes attrs = mf.getMainAttributes();
         String id = attrs.getValue("Bundle-SymbolicName");
-        if (id != null) {
-            int p = id.indexOf(';');
-            if (p > -1) { // remove properties part if any
-                id = id.substring(0, p);
-            }
-            jar2Id.put(fileName, id);
-            fd.name = id;
-            if (fd.requires != null && !fd.requires.isEmpty()) {
-                throw new RuntimeException(
-                        "In compatibility mode you must not use <require> tags for OSGi bundles - use Require-Bundle manifest header instead. Bundle: "
-                                + fileName);
-            }
-            // needed to control start-up order (which differs from
-            // Require-Bundle)
-            String requires = attrs.getValue("Nuxeo-Require");
-            if (requires == null) { // if not specific requirement is met use
-                                    // Require-Bundle
-                requires = attrs.getValue("Require-Bundle");
-            }
-            if (requires != null) {
-                String[] ids = StringUtils.split(requires, ',', true);
-                fd.requires = new ArrayList<String>(ids.length);
-                for (int i = 0; i < ids.length; i++) {
-                    String rid = ids[i];
-                    p = rid.indexOf(';');
-                    if (p > -1) { // remove properties part if any
-                        ids[i] = rid.substring(0, p);
-                    }
-                    fd.requires.add(ids[i]);
-                }
-            }
-
-            String requiredBy = attrs.getValue("Nuxeo-RequiredBy");
-            if (requiredBy != null) {
-                String[] ids = StringUtils.split(requiredBy, ',', true);
-                for (int i = 0; i < ids.length; i++) {
-                    String rid = ids[i];
-                    p = rid.indexOf(';');
-                    if (p > -1) { // remove properties part if any
-                        ids[i] = rid.substring(0, p);
-                    }
-                }
-                fd.requiredBy = ids;
-            }
-
-        } else {
-            jar2Id.put(fileName, fd.name);
+        int p = id.indexOf(';');
+        if (p > -1) { // remove properties part if any
+            id = id.substring(0, p);
         }
+        fd.name = id;
+        if (fd.requires != null && !fd.requires.isEmpty()) {
+            throw new RuntimeException(
+                    "In compatibility mode you must not use <require> tags for OSGi bundles - use Require-Bundle manifest header instead. Bundle: "
+                            + fileName);
+        }
+        // needed to control start-up order (which differs from
+        // Require-Bundle)
+        String requires = attrs.getValue("Nuxeo-Require");
+        if (requires == null) { // if not specific requirement is met use
+                                // Require-Bundle
+            requires = attrs.getValue("Require-Bundle");
+        }
+        if (requires != null) {
+            String[] ids = StringUtils.split(requires, ',', true);
+            fd.requires = new ArrayList<>(ids.length);
+            for (int i = 0; i < ids.length; i++) {
+                String rid = ids[i];
+                p = rid.indexOf(';');
+                if (p > -1) { // remove properties part if any
+                    ids[i] = rid.substring(0, p);
+                }
+                fd.requires.add(ids[i]);
+            }
+        }
+
+        String requiredBy = attrs.getValue("Nuxeo-RequiredBy");
+        if (requiredBy != null) {
+            String[] ids = StringUtils.split(requiredBy, ',', true);
+            for (int i = 0; i < ids.length; i++) {
+                String rid = ids[i];
+                p = rid.indexOf(';');
+                if (p > -1) { // remove properties part if any
+                    ids[i] = rid.substring(0, p);
+                }
+            }
+            fd.requiredBy = ids;
+        }
+
     }
 
     /**

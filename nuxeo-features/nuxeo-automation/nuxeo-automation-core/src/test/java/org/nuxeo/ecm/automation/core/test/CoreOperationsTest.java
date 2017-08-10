@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import javax.inject.Inject;
 
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.automation.AutomationService;
@@ -42,7 +41,6 @@ import org.nuxeo.ecm.automation.core.impl.adapters.StringToProperties;
 import org.nuxeo.ecm.automation.core.operations.FetchContextDocument;
 import org.nuxeo.ecm.automation.core.operations.RestoreDocumentInput;
 import org.nuxeo.ecm.automation.core.operations.RunScript;
-import org.nuxeo.ecm.automation.core.operations.RunScriptFile;
 import org.nuxeo.ecm.automation.core.operations.SetVar;
 import org.nuxeo.ecm.automation.core.operations.blob.AttachBlob;
 import org.nuxeo.ecm.automation.core.operations.blob.GetDocumentBlob;
@@ -90,7 +88,6 @@ import org.nuxeo.runtime.transaction.TransactionHelper;
 @Deploy("org.nuxeo.ecm.automation.core")
 // For version label info
 @LocalDeploy("org.nuxeo.ecm.automation.core:test-operations.xml")
-// @RepositoryConfig(cleanup=Granularity.METHOD)
 public class CoreOperationsTest {
 
     protected DocumentModel src;
@@ -159,25 +156,6 @@ public class CoreOperationsTest {
         service.run(ctx, chain);
         String title = src.getProperty("dc:title").getValue(String.class);
         assertThat(title, is("modified from mvel"));
-    }
-
-    /*
-     * This test is not enabled for now since the operation is disabled until fully implemented Enable this test when
-     * the operation will be enabled.
-     */
-    @Ignore
-    @Test
-    public void testScriptFileOperation() throws Exception {
-        OperationContext ctx = new OperationContext(session);
-        ctx.setInput(src);
-
-        OperationChain chain = new OperationChain("testChain");
-        chain.add(RunScriptFile.ID).set("script", CoreOperationsTest.class.getResource("/test-script.mvel"));
-
-        String oldTitle = src.getTitle();
-        service.run(ctx, chain);
-        assertEquals(oldTitle, ctx.get("script_title"));
-        assertEquals("modified title", src.getPropertyValue("dc:title"));
     }
 
     /**
@@ -326,8 +304,8 @@ public class CoreOperationsTest {
 
         OperationChain chain = new OperationChain("testChain");
         chain.add(FetchContextDocument.ID);
-        chain.add(CreateDocument.ID).set("type", "Note").set("properties", new Properties("dc:title=MyDoc")).set(
-                "name", "note");
+        chain.add(CreateDocument.ID).set("type", "Note").set("properties", new Properties("dc:title=MyDoc")).set("name",
+                "note");
         chain.add(PushDocument.ID);
         chain.add(GetDocumentParent.ID);
         chain.add(SetDocumentProperty.ID).set("xpath", "dc:description").set("value", "parentdoc");
@@ -506,7 +484,7 @@ public class CoreOperationsTest {
         Expression expr = Scripting.newExpression("Document.versionLabel");
         OperationChain chain = new OperationChain("testChain");
         chain.add(FetchContextDocument.ID);
-        chain.add(CreateDocument.ID).set("type", "Note").set("name", "note").set("properties", "dc:title=MyDoc");
+        chain.add(CreateDocument.ID).set("type", "File").set("name", "file").set("properties", "dc:title=MyDoc");
         chain.add(SetVar.ID).set("name", "versionLabel_1").set("value", expr);
         chain.add(CreateVersion.ID).set("increment", "Major");
         chain.add(SetVar.ID).set("name", "versionLabel_2").set("value", expr);
@@ -533,7 +511,7 @@ public class CoreOperationsTest {
         Expression expr = Scripting.newExpression("Document.versionLabel");
         OperationChain chain = new OperationChain("testChain");
         chain.add(FetchContextDocument.ID);
-        chain.add(CreateDocument.ID).set("type", "Note").set("name", "note").set("properties", "dc:title=MyDoc");
+        chain.add(CreateDocument.ID).set("type", "File").set("name", "file").set("properties", "dc:title=MyDoc");
         chain.add(SetVar.ID).set("name", "versionLabel_1").set("value", expr);
         // update document to test if version change (it should not change)
         chain.add(SetDocumentProperty.ID).set("xpath", "dc:title").set("value", "MyDoc2");
@@ -553,7 +531,7 @@ public class CoreOperationsTest {
         Expression expr = Scripting.newExpression("Document.versionLabel");
         OperationChain chain = new OperationChain("testChain");
         chain.add(FetchContextDocument.ID);
-        chain.add(CreateDocument.ID).set("type", "Note").set("name", "note").set("properties", "dc:title=MyDoc");
+        chain.add(CreateDocument.ID).set("type", "File").set("name", "file").set("properties", "dc:title=MyDoc");
         chain.add(SetVar.ID).set("name", "versionLabel_1").set("value", expr);
         chain.add(SetDocumentLifeCycle.ID).set("value", "approve");
         chain.add(CheckInDocument.ID).set("version", "major").set("comment", "yo").set("versionVarName", "ver");
@@ -619,27 +597,30 @@ public class CoreOperationsTest {
     @Test
     public void testRunInNewTxOperation() throws Exception {
         OperationContext ctx = new OperationContext(session);
-        OperationChain chain = new OperationChain("testChain");
 
-        chain = new OperationChain("testChain");
         // test that the global transaction is not marked for rollback
-        chain.add(RunInNewTransaction.ID).set("id", "testExitChain").set("isolate", "false").set(
-                "rollbackGlobalOnError", "false");
         try {
+            OperationChain chain = new OperationChain("testChain");
+            chain.add(RunInNewTransaction.ID)
+                 .set("id", "testExitChain")
+                 .set("isolate", "false")
+                 .set("rollbackGlobalOnError", "false");
             service.run(ctx, chain);
         } finally {
             assertFalse(TransactionHelper.isTransactionMarkedRollback());
         }
 
         // test that the global transaction is marked for rollback
-        chain.add(RunInNewTransaction.ID).set("id", "testExitChain").set("isolate", "false").set(
-                "rollbackGlobalOnError", "true");
         try {
+            OperationChain chain = new OperationChain("testChain");
+            chain.add(RunInNewTransaction.ID)
+                 .set("id", "testExitChain")
+                 .set("isolate", "false")
+                 .set("rollbackGlobalOnError", "true");
             service.run(ctx, chain);
         } catch (Exception e) {
             assertTrue(TransactionHelper.isTransactionMarkedRollback());
         }
-
         // needed for session cleanup
         TransactionHelper.commitOrRollbackTransaction();
         TransactionHelper.startTransaction();

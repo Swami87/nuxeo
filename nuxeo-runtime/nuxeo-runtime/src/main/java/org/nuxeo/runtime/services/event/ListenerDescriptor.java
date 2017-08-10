@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime.services.event;
 
 import java.util.Arrays;
@@ -35,7 +32,7 @@ import org.nuxeo.common.xmap.annotation.XObject;
 @XObject("listener")
 public class ListenerDescriptor {
 
-    private static final NullListener NULL_LISTENER = new NullListener();
+    private static final EventListener NULL_LISTENER = event -> {};
 
     private static final Log log = LogFactory.getLog(ListenerDescriptor.class);
 
@@ -57,19 +54,6 @@ public class ListenerDescriptor {
     @Override
     public String toString() {
         return listener + " { " + Arrays.toString(topics) + " }";
-    }
-
-}
-
-class NullListener implements EventListener {
-
-    @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return false;
-    }
-
-    @Override
-    public void handleEvent(Event event) {
     }
 
 }

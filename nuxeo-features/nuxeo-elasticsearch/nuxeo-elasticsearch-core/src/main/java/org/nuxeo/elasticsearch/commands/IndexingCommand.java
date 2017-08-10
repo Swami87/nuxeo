@@ -25,11 +25,12 @@ import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.JsonGenerator;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
-import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
+import org.nuxeo.ecm.core.api.CoreSessionService;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.IdRef;
+import org.nuxeo.runtime.api.Framework;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -39,7 +40,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Holds information about what type of indexing operation must be processed. IndexingCommands are create "on the fly"
@@ -56,7 +57,7 @@ public class IndexingCommand implements Serializable {
         INSERT, UPDATE, UPDATE_SECURITY, DELETE, UPDATE_DIRECT_CHILDREN,
     }
 
-    public static final String PREFIX = "IndexingCommand-";
+    public static final String PREFIX = "IxCd-";
 
     protected String id;
 
@@ -78,6 +79,8 @@ public class IndexingCommand implements Serializable {
 
     protected transient String sessionId;
 
+    protected transient static AtomicLong seq = new AtomicLong(0);
+
     protected IndexingCommand() {
     }
 
@@ -91,7 +94,7 @@ public class IndexingCommand implements Serializable {
      * @param recurse the command affect the document and all its descendants
      */
     public IndexingCommand(DocumentModel document, Type commandType, boolean sync, boolean recurse) {
-        id = PREFIX + UUID.randomUUID().toString();
+        id = PREFIX + seq.incrementAndGet();
         type = commandType;
         this.sync = sync;
         this.recurse = recurse;
@@ -150,7 +153,7 @@ public class IndexingCommand implements Serializable {
     public DocumentModel getTargetDocument() {
         CoreSession session = null;
         if (sessionId != null) {
-            session = CoreInstance.getInstance().getSession(sessionId);
+            session = Framework.getService(CoreSessionService.class).getCoreSession(sessionId);
         }
         if (session == null) {
             throw new IllegalStateException("Command is not attached to a valid session: " + this);

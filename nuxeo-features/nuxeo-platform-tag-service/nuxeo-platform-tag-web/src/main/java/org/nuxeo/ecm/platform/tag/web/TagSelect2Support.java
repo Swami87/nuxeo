@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,12 @@ package org.nuxeo.ecm.platform.tag.web;
 import static org.jboss.seam.ScopeType.EVENT;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
 import org.jboss.seam.Component;
@@ -49,6 +46,9 @@ import org.nuxeo.ecm.platform.tag.TagService;
 import org.nuxeo.ecm.platform.ui.select2.common.Select2Common;
 import org.nuxeo.ecm.platform.ui.web.api.NavigationContext;
 import org.nuxeo.runtime.api.Framework;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 
 /**
  * Helper component for tagging widget relying on select2.
@@ -81,11 +81,14 @@ public class TagSelect2Support {
         if (currentDocumentTags == null || currentDocumentTags.isEmpty()) {
             return "[]";
         } else {
+            String docId = navigationContext.getCurrentDocument().getId();
+            TagService tagService = getTagService();
             JSONArray result = new JSONArray();
             for (Tag tag : currentDocumentTags) {
                 JSONObject obj = new JSONObject();
                 obj.element(Select2Common.ID, tag.getLabel());
                 obj.element(Select2Common.LABEL, tag.getLabel());
+                obj.element(Select2Common.LOCKED, !tagService.canUntag(documentManager, docId, tag.getLabel()));
                 result.add(obj);
             }
             return result.toString();
@@ -108,11 +111,7 @@ public class TagSelect2Support {
         if (currentDocumentTags == null || currentDocumentTags.isEmpty()) {
             return null;
         } else {
-            List<String> result = new ArrayList<String>();
-            for (Tag tag : currentDocumentTags) {
-                result.add(tag.getLabel());
-            }
-            return result;
+            return currentDocumentTags.stream().map(Tag::getLabel).collect(Collectors.toList());
         }
     }
 
@@ -188,7 +187,7 @@ public class TagSelect2Support {
     }
 
     public String encodeParametersForCurrentDocument(final Map<String, Serializable> widgetProperties) {
-        Map<String, String> parameters = new HashMap<String, String>();
+        Map<String, String> parameters = new HashMap<>();
         parameters.put("onAddEntryHandler", "addTagHandler");
         parameters.put("onRemoveEntryHandler", "removeTagHandler");
         parameters.put("containerCssClass", "s2tagContainerCssClass");
@@ -225,7 +224,7 @@ public class TagSelect2Support {
         obj.put("tokenSeparators", tokenSeparator);
         if (additionalParameters != null) {
             for (Entry<String, String> entry : additionalParameters.entrySet()) {
-                obj.put(entry.getKey(), entry.getValue().toString());
+                obj.put(entry.getKey(), entry.getValue());
             }
         }
         for (Entry<String, Serializable> entry : widgetProperties.entrySet()) {

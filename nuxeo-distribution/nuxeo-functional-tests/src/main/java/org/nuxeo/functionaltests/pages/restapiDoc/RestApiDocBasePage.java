@@ -25,7 +25,6 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 
 /**
- *
  * @since 7.3
  */
 public class RestApiDocBasePage {
@@ -57,6 +56,10 @@ public class RestApiDocBasePage {
     @Required
     @FindBy(linkText = "group")
     public WebElement groupLink;
+
+    @Required
+    @FindBy(linkText = "me")
+    public WebElement meLink;
 
     @Required
     @FindBy(linkText = "directory")
@@ -97,5 +100,9 @@ public class RestApiDocBasePage {
     @Required
     @FindBy(linkText = "task")
     public WebElement taskLink;
+
+    @Required
+    @FindBy(linkText = "search")
+    public WebElement searchLink;
 
 }

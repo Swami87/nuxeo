@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2012-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2012-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,24 +52,17 @@ public interface WorkManager {
          */
         IF_NOT_SCHEDULED(State.SCHEDULED),
         /**
-         * If there is a running work equals to this one, then don't schedule the work.
-         *
-         * @deprecated unused
-         */
-        @Deprecated
-        IF_NOT_RUNNING(State.RUNNING),
-        /**
          * If there is a running or scheduled work equals to this one, then don't schedule the work.
          */
         IF_NOT_RUNNING_OR_SCHEDULED;
 
         public final State state;
 
-        private Scheduling() {
+        Scheduling() {
             state = null;
         }
 
-        private Scheduling(State state) {
+        Scheduling(State state) {
             this.state = state;
         }
     }
@@ -138,11 +131,8 @@ public interface WorkManager {
      */
     WorkQueueDescriptor getWorkQueueDescriptor(String queueId);
 
-
     /**
      * Is processing enabled for at least one queue
-     *
-     * @param queueId
      *
      * @since 8.3
      */
@@ -150,8 +140,6 @@ public interface WorkManager {
 
     /**
      * Set processing for all queues
-     *
-     * @param queueId
      *
      * @since 8.3
      */
@@ -161,8 +149,6 @@ public interface WorkManager {
     /**
      * Is processing enabled for a given queue id.
      *
-     * @param queueId
-     *
      * @since 8.3
      */
     boolean isProcessingEnabled(String queueId);
@@ -170,17 +156,12 @@ public interface WorkManager {
     /**
      * Set processing for a given queue id.
      *
-     * @param queueId
-     * @throws InterruptedException
-     *
      * @since 8.3
      */
-    void enableProcessing(String queueId, boolean value) throws InterruptedException;
+    void enableProcessing(String queueId, boolean value);
 
     /**
      * Is queuing enabled for a given queue id.
-     *
-     * @param queueId
      *
      * @since 8.3
      */
@@ -213,8 +194,6 @@ public interface WorkManager {
      */
     boolean shutdown(long timeout, TimeUnit unit) throws InterruptedException;
 
-
-
     /**
      * Gets the number of work instances in a given queue in a defined state.
      * <p>
@@ -229,16 +208,6 @@ public interface WorkManager {
      */
     @Deprecated
     int getQueueSize(String queueId, State state);
-
-    /**
-     * Gets the size of the non-completed work (scheduled + running) for a give queue.
-     *
-     * @param queueId the queue id
-     * @return the number of non-completed work instances
-     * @deprecated since 5.8, use {@link #getQueueSize} with {@code null} state instead
-     */
-    @Deprecated
-    int getNonCompletedWorkSize(String queueId);
 
     /**
      * Gets the metrics for the {@code queueId}
@@ -293,28 +262,13 @@ public interface WorkManager {
     /**
      * Finds a work instance.
      *
-     * @param work the work to find
-     * @param state the state defining the state to look into, {@link State#SCHEDULED SCHEDULED}, {@link State#RUNNING
-     *            RUNNING}, {@link State#COMPLETED COMPLETED}, or {@code null} for non-completed
-     * @param useEquals ignored, always uses work id equality
-     * @param pos ignored, pass null
-     * @return the found work instance, or {@code null} if not found
-     * @deprecated since 5.8, use {@link #getWorkState} instead
-     */
-    @Deprecated
-    Work find(Work work, State state, boolean useEquals, int[] pos);
-
-    /**
-     * Finds a work instance.
-     *
      * @param workId the id of the work to find
      * @param state the state defining the state to look into, {@link State#SCHEDULED SCHEDULED}, {@link State#RUNNING
-     *            RUNNING},  or {@code null} for non-completed
+     *            RUNNING}, or {@code null} for non-completed
      * @return the found work instance, or {@code null} if not found
      * @since 7.3
      */
     Work find(String workId, State state);
-
 
     /**
      * Lists the work instances in a given queue in a defined state.

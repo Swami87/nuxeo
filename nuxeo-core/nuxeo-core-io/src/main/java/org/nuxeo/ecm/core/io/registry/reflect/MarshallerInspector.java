@@ -35,6 +35,7 @@ import org.apache.commons.lang3.reflect.TypeUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.NuxeoGroup;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.model.Property;
@@ -55,7 +56,8 @@ import org.nuxeo.runtime.api.Framework;
  * To get a valid marshaller instance :
  * <ul>
  * <li>Create an inspector for your marshaller class using constructor {@link #MarshallerInspector(Class)}. This will
- * checks your marshaller has annotation {@link Setup} and inspect every attributes having {@link Inject} annotation.</li>
+ * checks your marshaller has annotation {@link Setup} and inspect every attributes having {@link Inject}
+ * annotation.</li>
  * <li>You can check it's a valid marshaller by calling @ #isValid()}</li>
  * <li>You can check it's a {@link Writer} by calling {@link #isWriter()}</li>
  * <li>You can check it's a {@link Reader} by calling {@link #isReader()}</li>
@@ -89,6 +91,11 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
     private List<Field> contextFields = new ArrayList<Field>();
 
     private Object singleton;
+
+    /**
+     * A boolean to save the service instrumentation state
+     */
+    private volatile boolean servicesInjected;
 
     private ThreadLocal<Object> threadInstance;
 
@@ -165,9 +172,12 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
         loadInjections(clazz);
         // warn if several context found
         if (contextFields.size() > 1) {
-            log.warn("The marshaller "
-                    + clazz.getName()
+            log.warn("The marshaller " + clazz.getName()
                     + " has more than one context injected property. You probably should use a context from a parent class.");
+        }
+        if (instantiation == Instantiations.SINGLETON) {
+            singleton = getNewInstance(null, true); // the context is empty since it's not required at this place (no
+                                                    // use - just preparing)
         }
     }
 
@@ -269,7 +279,7 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
         case EACH_TIME:
             return (T) getNewInstance(realCtx, false);
         default:
-            return null;
+            throw new NuxeoException("unable to create a marshaller instance for clazz " + clazz.getName());
         }
     }
 
@@ -303,19 +313,22 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
      * @since 7.2
      */
     private Object getSingletonInstance(RenderingContext ctx) {
-        if (singleton == null) {
-            singleton = getNewInstance(ctx, true);
-        } else {
-            for (Field contextField : contextFields) {
-                ThreadSafeRenderingContext value;
-                try {
-                    value = (ThreadSafeRenderingContext) contextField.get(singleton);
-                } catch (IllegalArgumentException | IllegalAccessException e) {
-                    log.error("unable to create a marshaller instance for clazz " + clazz.getName(), e);
-                    return null;
+        if (!servicesInjected) {
+            synchronized (this) {
+                if (!servicesInjected) {
+                    injectServices(singleton);
+                    servicesInjected = true;
                 }
-                value.configureThread(ctx);
             }
+        }
+        for (Field contextField : contextFields) {
+            ThreadSafeRenderingContext value;
+            try {
+                value = (ThreadSafeRenderingContext) contextField.get(singleton);
+            } catch (IllegalArgumentException | IllegalAccessException e) {
+                throw new NuxeoException("unable to create a marshaller instance for clazz " + clazz.getName(), e);
+            }
+            value.configureThread(ctx);
         }
         return singleton;
     }
@@ -340,8 +353,7 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
                 try {
                     contextField.set(instance, ctx);
                 } catch (IllegalArgumentException | IllegalAccessException e) {
-                    log.error("unable to create a marshaller instance for clazz " + clazz.getName(), e);
-                    return null;
+                    throw new NuxeoException("unable to create a marshaller instance for clazz " + clazz.getName(), e);
                 }
             }
         }
@@ -349,17 +361,35 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
     }
 
     /**
-     * Create a new instance of the marshaller.
+     * Create a new instance of the marshaller. It injects the required services if the marshaller is not a singleton.
+     * If it's a singleton, it prepares the context variables to handle thread localized context. Then it injects the
+     * given ctx.
      *
      * @param ctx The {@link RenderingContext} to inject.
      * @return An instance of the marshaller.
      * @since 7.2
      */
-    public Object getNewInstance(RenderingContext ctx, boolean threadSafe) {
+    public Object getNewInstance(RenderingContext ctx, boolean singleton) {
         try {
             Object instance = clazz.newInstance();
+            if (!singleton) {
+                // inject services right now - do not for the singleton
+                injectServices(instance);
+            }
+            injectCtx(instance, ctx, singleton);
+            return instance;
+        } catch (IllegalArgumentException | IllegalAccessException | InstantiationException e) {
+            throw new NuxeoException("unable to create a marshaller instance for clazz " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Inject the context.
+     */
+    public void injectCtx(Object instance, RenderingContext ctx, boolean singleton) {
+        try {
             for (Field contextField : contextFields) {
-                if (threadSafe) {
+                if (singleton) {
                     ThreadSafeRenderingContext safeCtx = new ThreadSafeRenderingContext();
                     safeCtx.configureThread(ctx);
                     contextField.set(instance, safeCtx);
@@ -367,19 +397,28 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
                     contextField.set(instance, ctx);
                 }
             }
+        } catch (IllegalArgumentException | IllegalAccessException e) {
+            throw new NuxeoException("unable to inject the ctx in the marshaller instance for clazz " + clazz.getName(),
+                    e);
+        }
+    }
+
+    /**
+     * Inject the services.
+     */
+    public void injectServices(Object instance) {
+        try {
             for (Field serviceField : serviceFields) {
                 Object service = Framework.getService(serviceField.getType());
                 if (service == null) {
-                    log.error("unable to inject a service " + serviceField.getType().getName()
+                    throw new NuxeoException("unable to inject a service " + serviceField.getType().getName()
                             + " in the marshaller clazz " + clazz.getName());
-                    return null;
                 }
                 serviceField.set(instance, service);
             }
-            return instance;
-        } catch (IllegalArgumentException | IllegalAccessException | InstantiationException e) {
-            log.error("unable to create a marshaller instance for clazz " + clazz.getName(), e);
-            return null;
+        } catch (IllegalArgumentException | IllegalAccessException e) {
+            throw new NuxeoException(
+                    "unable to inject the services in the marshaller instance for clazz " + clazz.getName(), e);
         }
     }
 
@@ -480,23 +519,32 @@ public class MarshallerInspector implements Comparable<MarshallerInspector> {
                 || TypeUtils.isAssignable(type, TypeUtils.parameterize(List.class, DocumentModel.class));
     }
 
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((clazz == null) ? 0 : clazz.hashCode());
+        return result;
+    }
+
     /**
      * Two {@link MarshallerInspector} are equals if their managed clazz are the same.
      */
     @Override
     public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
         if (!(obj instanceof MarshallerInspector)) {
             return false;
         }
-        MarshallerInspector inspector = (MarshallerInspector) obj;
-        if (clazz != null) {
-            return clazz.equals(inspector.clazz);
-        } else {
-            if (inspector.clazz == null) {
-                return true;
-            }
-        }
-        return false;
+        MarshallerInspector other = (MarshallerInspector) obj;
+        return clazz.equals(other.clazz);
     }
+
+
 
 }

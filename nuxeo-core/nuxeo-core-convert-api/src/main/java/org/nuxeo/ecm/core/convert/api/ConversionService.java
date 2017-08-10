@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,17 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
+ *     Estelle Giuly <egiuly@nuxeo.com>
  *
  */
 package org.nuxeo.ecm.core.convert.api;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 
+import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
 
 /**
@@ -51,8 +54,18 @@ public interface ConversionService {
     /**
      * Converts a Blob given a target destination MimeType.
      */
-    BlobHolder convertToMimeType(String destinationMimeType, BlobHolder blobHolder, Map<String, Serializable> parameters)
-            throws ConversionException;
+    BlobHolder convertToMimeType(String destinationMimeType, BlobHolder blobHolder,
+            Map<String, Serializable> parameters) throws ConversionException;
+
+    /**
+     * Converts a Blob to PDF. If the blob has inner blobs such as images, they will be correctly rendered in the PDF.
+     *
+     * @since 9.1
+     * @deprecated since 9.2, use {@link #convertToMimeType(String, BlobHolder, Map)} with the PDF mimetype as
+     *             destination instead
+     */
+    @Deprecated
+    Blob convertBlobToPDF(Blob blob) throws IOException;
 
     /**
      * Returns the names of the registered converters.
@@ -106,7 +119,8 @@ public interface ConversionService {
      *
      * @since 7.10
      */
-    String scheduleConversionToMimeType(String destinationMimeType, BlobHolder blobHolder, Map<String, Serializable> parameters);
+    String scheduleConversionToMimeType(String destinationMimeType, BlobHolder blobHolder,
+            Map<String, Serializable> parameters);
 
     /**
      * Returns the status of a scheduled conversion given its {@code id}, or {@code null} if no conversion scheduled.
@@ -121,4 +135,5 @@ public interface ConversionService {
      * @since 7.4
      */
     BlobHolder getConversionResult(String id, boolean cleanTransientStoreEntry);
+
 }

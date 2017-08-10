@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,7 @@
  *     Thierry Delprat
  *     Benoit Delbosc
  */
-
 package org.nuxeo.elasticsearch.commands;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.nuxeo.ecm.core.api.DocumentModel;
-import org.nuxeo.ecm.core.api.LifeCycleConstants;
-import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
-import org.nuxeo.elasticsearch.ElasticSearchConstants;
-import org.nuxeo.elasticsearch.commands.IndexingCommand.Type;
-import java.util.Map;
 
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.BEFORE_DOC_UPDATE;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.BINARYTEXT_UPDATED;
@@ -36,11 +26,26 @@ import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_CHECKEDOU
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_CHILDREN_ORDER_CHANGED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_CREATED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_CREATED_BY_COPY;
+import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_IMPORTED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_MOVED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_PROXY_UPDATED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_REMOVED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_SECURITY_UPDATED;
 import static org.nuxeo.ecm.core.api.event.DocumentEventTypes.DOCUMENT_TAG_UPDATED;
+
+import java.util.Map;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.nuxeo.ecm.core.api.AbstractSession;
+import org.nuxeo.ecm.core.api.CoreSession;
+import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.IdRef;
+import org.nuxeo.ecm.core.api.LifeCycleConstants;
+import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.elasticsearch.ElasticSearchConstants;
+import org.nuxeo.elasticsearch.commands.IndexingCommand.Type;
+import org.nuxeo.runtime.api.Framework;
 
 /**
  * Contains logic to stack ElasticSearch commands depending on Document events This class is mainly here to make testing
@@ -63,6 +68,10 @@ public abstract class IndexingCommandsStacker {
         if (doc == null) {
             return;
         }
+        if ("/".equals(doc.getPathAsString())) {
+            log.debug("Skip indexing command for root document");
+            return;
+        }
         Boolean block = (Boolean) docCtx.getProperty(ElasticSearchConstants.DISABLE_AUTO_INDEXING);
         if (block != null && block) {
             if (log.isDebugEnabled()) {
@@ -81,7 +90,7 @@ public abstract class IndexingCommandsStacker {
             return sync;
         }
         // 2. look at document context
-        sync = (Boolean) doc.getContextData().get(ElasticSearchConstants.ES_SYNC_INDEXING_FLAG);
+        sync = (Boolean) doc.getContextData(ElasticSearchConstants.ES_SYNC_INDEXING_FLAG);
         if (sync != null) {
             return sync;
         }
@@ -95,40 +104,56 @@ public abstract class IndexingCommandsStacker {
         Type type;
         boolean recurse = false;
         switch (eventId) {
-            case DOCUMENT_CREATED:
-            case LifeCycleConstants.TRANSITION_EVENT:
-                type = Type.INSERT;
-                break;
-            case DOCUMENT_CREATED_BY_COPY:
-                type = Type.INSERT;
-                recurse = isFolderish(doc);
-                break;
-            case BEFORE_DOC_UPDATE:
-            case DOCUMENT_CHECKEDOUT:
-            case DOCUMENT_CHECKEDIN:
-            case BINARYTEXT_UPDATED:
-            case DOCUMENT_TAG_UPDATED:
-            case DOCUMENT_PROXY_UPDATED:
-                type = Type.UPDATE;
-                break;
-            case DOCUMENT_MOVED:
-                type = Type.UPDATE;
-                recurse = isFolderish(doc);
-                break;
-            case DOCUMENT_REMOVED:
-                type = Type.DELETE;
-                recurse = isFolderish(doc);
-                break;
-            case DOCUMENT_SECURITY_UPDATED:
-                type = Type.UPDATE_SECURITY;
-                recurse = isFolderish(doc);
-                break;
-            case DOCUMENT_CHILDREN_ORDER_CHANGED:
-                type = Type.UPDATE_DIRECT_CHILDREN;
-                recurse = true;
-                break;
-            default:
-                return;
+        case DOCUMENT_CREATED:
+        case DOCUMENT_IMPORTED:
+            type = Type.INSERT;
+            break;
+        case DOCUMENT_CREATED_BY_COPY:
+            type = Type.INSERT;
+            recurse = isFolderish(doc);
+            break;
+        case BEFORE_DOC_UPDATE:
+        case DOCUMENT_CHECKEDOUT:
+        case BINARYTEXT_UPDATED:
+        case DOCUMENT_TAG_UPDATED:
+        case DOCUMENT_PROXY_UPDATED:
+        case LifeCycleConstants.TRANSITION_EVENT:
+            if (doc.isProxy() && !doc.isImmutable()) {
+                stackCommand(doc.getCoreSession().getDocument(new IdRef(doc.getSourceId())), BEFORE_DOC_UPDATE, false);
+            }
+            type = Type.UPDATE;
+            break;
+        case DOCUMENT_CHECKEDIN:
+            if (indexIsLatestVersion()) {
+                CoreSession session = doc.getCoreSession();
+                if (session != null) {
+                    // The previous doc version with isLastestVersion and isLatestMajorVersion need to be updated
+                    // Here we have no way to get this exact doc version so we reindex all versions
+                    for (DocumentModel version : doc.getCoreSession().getVersions(doc.getRef())) {
+                        stackCommand(version, BEFORE_DOC_UPDATE, false);
+                    }
+                }
+            }
+            type = Type.UPDATE;
+            break;
+        case DOCUMENT_MOVED:
+            type = Type.UPDATE;
+            recurse = isFolderish(doc);
+            break;
+        case DOCUMENT_REMOVED:
+            type = Type.DELETE;
+            recurse = isFolderish(doc);
+            break;
+        case DOCUMENT_SECURITY_UPDATED:
+            type = Type.UPDATE_SECURITY;
+            recurse = isFolderish(doc);
+            break;
+        case DOCUMENT_CHILDREN_ORDER_CHANGED:
+            type = Type.UPDATE_DIRECT_CHILDREN;
+            recurse = true;
+            break;
+        default:
+            return;
         }
         if (sync && recurse) {
             // split into 2 commands one sync and an async recurse
@@ -139,8 +164,12 @@ public abstract class IndexingCommandsStacker {
         }
     }
 
+    private boolean indexIsLatestVersion() {
+        return !Framework.isBooleanPropertyTrue(AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY);
+    }
+
     private boolean isFolderish(DocumentModel doc) {
-        return doc.isFolder() && ! doc.isVersion();
+        return doc.isFolder() && !doc.isVersion();
     }
 
     protected IndexingCommands getOrCreateCommands(DocumentModel doc) {

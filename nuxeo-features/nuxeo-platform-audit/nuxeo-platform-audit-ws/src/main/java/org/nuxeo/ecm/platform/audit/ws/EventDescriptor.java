@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2008 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,10 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.audit.ws;
 
 import java.io.Serializable;
-import java.util.Date;
 
 import org.nuxeo.ecm.platform.audit.api.LogEntry;
 
@@ -52,18 +48,6 @@ public class EventDescriptor implements Serializable {
         this.docUUID = logEntry.getDocUUID();
         this.lifeCycle = logEntry.getDocLifeCycle();
         this.repoId = logEntry.getRepositoryId();
-    }
-
-    /**
-     * @deprecated since 5.4.2, use the other constructor
-     */
-    @Deprecated
-    public EventDescriptor(String eventId, Date eventDate, String docPath, String docUUID, String lifeCycle) {
-        this.eventDate = eventDate.toString();
-        this.eventId = eventId;
-        this.docPath = docPath;
-        this.docUUID = docUUID;
-        this.lifeCycle = lifeCycle;
     }
 
     public String getEventId() {

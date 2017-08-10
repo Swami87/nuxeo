@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,12 @@
  *
  * Contributors:
  *     bstefanescu
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.core.io.impl;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
@@ -31,13 +29,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.dom4j.Document;
 import org.dom4j.Element;
 import org.nuxeo.common.collections.PrimitiveArrays;
-import org.nuxeo.common.collections.ScopeType;
-import org.nuxeo.common.utils.Base64;
 import org.nuxeo.common.utils.Path;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
@@ -56,6 +53,7 @@ import org.nuxeo.ecm.core.io.ExportedDocument;
 import org.nuxeo.ecm.core.schema.SchemaManager;
 import org.nuxeo.ecm.core.schema.TypeConstants;
 import org.nuxeo.ecm.core.schema.types.ComplexType;
+import org.nuxeo.ecm.core.schema.types.CompositeType;
 import org.nuxeo.ecm.core.schema.types.Field;
 import org.nuxeo.ecm.core.schema.types.JavaTypes;
 import org.nuxeo.ecm.core.schema.types.ListType;
@@ -148,9 +146,10 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
         loadSchemas(xdoc, doc, xdoc.getDocument());
 
         if (doc.hasSchema("uid")) {
-            doc.putContextData(ScopeType.REQUEST, VersioningService.SKIP_VERSIONING, true);
+            doc.putContextData(VersioningService.SKIP_VERSIONING, true);
         }
 
+        beforeCreateDocument(doc);
         doc = session.createDocument(doc);
 
         // load into the document the system properties, document needs to exist
@@ -163,6 +162,13 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
     }
 
     /**
+     * @since 8.4
+     */
+    protected void beforeCreateDocument(DocumentModel doc) {
+        // Empty default implementation
+    }
+
+    /**
      * Updates an existing document.
      */
     protected DocumentModel updateDocument(ExportedDocument xdoc, DocumentModel doc) {
@@ -171,12 +177,20 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
 
         loadFacetsInfo(doc, xdoc.getDocument());
 
+        beforeSaveDocument(doc);
         doc = session.saveDocument(doc);
 
         unsavedDocuments += 1;
         saveIfNeeded();
 
         return doc;
+    }
+
+    /**
+     * @since 8.4
+     */
+    protected void beforeSaveDocument(DocumentModel doc) {
+        // Empty default implementation
     }
 
     public int getSaveInterval() {
@@ -199,6 +213,20 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
         while (facets.hasNext()) {
             Element element = facets.next();
             String facet = element.getTextTrim();
+
+            SchemaManager schemaManager = Framework.getService(SchemaManager.class);
+            CompositeType facetType = schemaManager.getFacet(facet);
+
+            if (facetType == null) {
+                log.warn("The document " + docModel.getName() + " with id=" + docModel.getId() + " and type="
+                        + docModel.getDocumentType().getName() + " contains the facet '" + facet
+                        + "', which is not registered as available in the schemaManager. This facet will be ignored.");
+                if (log.isDebugEnabled()) {
+                    log.debug("Available facets: " + Arrays.toString(schemaManager.getFacets()));
+                }
+                continue;
+            }
+
             if (!docModel.hasFacet(facet)) {
                 docModel.addFacet(facet);
                 added = true;
@@ -228,8 +256,7 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
                     ACP acp = new ACPImpl();
                     ACL acl = new ACLImpl(ACL.LOCAL_ACL);
                     acp.addACL(acl);
-                    for (int i = 0; i < size; i++) {
-                        Element el = entries.get(i);
+                    for (Element el : entries) {
                         String username = el.attributeValue(ExportConstants.PRINCIPAL_ATTR);
                         String permission = el.attributeValue(ExportConstants.PERMISSION_ATTR);
                         String grant = el.attributeValue(ExportConstants.GRANT_ATTR);
@@ -272,7 +299,13 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
             String schemaName = element.attributeValue(ExportConstants.NAME_ATTR);
             Schema schema = schemaMgr.getSchema(schemaName);
             if (schema == null) {
-                throw new NuxeoException("Schema not found: " + schemaName);
+                log.warn("The document " + docModel.getName() + " with id=" + docModel.getId() + " and type="
+                        + docModel.getDocumentType() + " contains the schema '" + schemaName
+                        + "', which is not registered as available in the schemaManager. This schema will be ignored.");
+                if (log.isDebugEnabled()) {
+                    log.debug("Available schemas: " + Arrays.toString(schemaMgr.getSchemas()));
+                }
+                continue;
             }
             loadSchema(xdoc, schema, docModel, element);
         }
@@ -281,15 +314,15 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
     @SuppressWarnings("unchecked")
     protected static void loadSchema(ExportedDocument xdoc, Schema schema, DocumentModel doc, Element schemaElement) {
         String schemaName = schemaElement.attributeValue(ExportConstants.NAME_ATTR);
-        Map<String, Object> data = new HashMap<String, Object>();
+        Map<String, Object> data = new HashMap<>();
         Iterator<Element> it = schemaElement.elementIterator();
         while (it.hasNext()) {
             Element element = it.next();
             String name = element.getName();
             Field field = schema.getField(name);
             if (field == null) {
-                throw new NuxeoException("Invalid input document. No such property was found " + name + " in schema "
-                        + schemaName);
+                throw new NuxeoException(
+                        "Invalid input document. No such property was found " + name + " in schema " + schemaName);
             }
             Object value = getElementData(xdoc, element, field.getType());
             data.put(name, value);
@@ -317,7 +350,7 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
             return type.decode(element.getText());
         } else if (type.isListType()) {
             ListType ltype = (ListType) type;
-            List<Object> list = new ArrayList<Object>();
+            List<Object> list = new ArrayList<>();
             Iterator<Element> it = element.elementIterator();
             while (it.hasNext()) {
                 Element el = it.next();
@@ -349,7 +382,7 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
                 }
                 if (blob == null) { // maybe the blob is embedded in Base64
                     // encoded data
-                    byte[] bytes = Base64.decode(content);
+                    byte[] bytes = Base64.decodeBase64(content);
                     blob = Blobs.createBlob(bytes);
                 }
                 blob.setMimeType(mimeType);
@@ -357,7 +390,7 @@ public abstract class AbstractDocumentModelWriter extends AbstractDocumentWriter
                 blob.setFilename(filename);
                 return blob;
             } else { // a complex type
-                Map<String, Object> map = new HashMap<String, Object>();
+                Map<String, Object> map = new HashMap<>();
                 Iterator<Element> it = element.elementIterator();
                 while (it.hasNext()) {
                     Element el = it.next();

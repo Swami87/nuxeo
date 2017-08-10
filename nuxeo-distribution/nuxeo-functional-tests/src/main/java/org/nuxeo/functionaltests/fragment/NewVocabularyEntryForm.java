@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  *
  * Contributors:
  *     <a href="mailto:grenard@nuxeo.com">Guillaume</a>
+ *     Yannis JULIENNE
  */
 package org.nuxeo.functionaltests.fragment;
 
@@ -22,6 +23,7 @@ import java.util.Arrays;
 
 import org.nuxeo.functionaltests.Locator;
 import org.nuxeo.functionaltests.Required;
+import org.nuxeo.functionaltests.pages.AbstractPage;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -74,7 +76,7 @@ public class NewVocabularyEntryForm extends WebFragmentImpl {
     }
 
     public void save() {
-        getElement().findElement(By.xpath("//input[@value='Create']")).click();
+        Locator.waitUntilEnabledAndClick(getElement().findElement(By.xpath("//input[@value='Create']")));
     }
 
     public void setNewVocabularyEnglishLabel(final String vocabularyEnglishLabel) {
@@ -91,9 +93,9 @@ public class NewVocabularyEntryForm extends WebFragmentImpl {
 
     public void setNewVocabularyObsolete(final boolean obsolete) {
         if (obsolete) {
-            obsoleteInput.click();
+            Locator.waitUntilEnabledAndClick(obsoleteInput);
         } else {
-            notObsoleteInput.click();
+            Locator.waitUntilEnabledAndClick(notObsoleteInput);
         }
     }
 
@@ -103,8 +105,8 @@ public class NewVocabularyEntryForm extends WebFragmentImpl {
     }
 
     public void setNewVocabularyParentId(final String parentLabelPath) {
-        newParentPopup.click();
-        WebElement selectParentFancyBox = Locator.findElementWithTimeout(By.id("fancybox-content"));
+        Locator.waitUntilEnabledAndClick(newParentPopup);
+        WebElement selectParentFancyBox = AbstractPage.getFancyBoxContent();
         String[] split = parentLabelPath.split("/");
         findParentNodeAndSelect(selectParentFancyBox, split);
     }

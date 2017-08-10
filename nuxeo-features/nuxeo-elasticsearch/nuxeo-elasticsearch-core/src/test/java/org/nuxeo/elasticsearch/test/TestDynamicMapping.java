@@ -58,32 +58,38 @@ public class TestDynamicMapping extends TestMapping {
         startTransaction();
 
         DocumentModel doc = session.createDocumentModel("/", "note", "Note");
-        doc = session.createDocument(doc);
         // put some raw json in the node and checked is indexed dynamically
         doc.setPropertyValue(
                 "note:note",
                 String.format(
                         "{\"type1\":[{\"type1:id_int\":10},{\"type1:name_string\":\"test\"},{\"type1:creation_date\":\"%s\"}]}",
                         "2015-01-01T12:30:00"));
-        doc = session.saveDocument(doc);
+        doc = session.createDocument(doc);
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForIndexing();
-        assertNumberOfCommandProcessed(1);
+        // automatic versioning system check in all notes after an update
+        // 3 commands processed:
+        // - update of version - stacker stacks UPDATE command when document is checkined -> UPDATE on version
+        // - creation of version - automatically done by versioning system at creation step -> UPDATE on note
+        // - creation of version - automatically done by versioning system -> INSERT on version
+        // - creation of note -> INSERT on note
+        assertNumberOfCommandProcessed(4);
 
         startTransaction();
         // check that the custom mapping applied
 
-        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE type1:id_int = 11"));
+        // Since ES 2.x we need to express the full path of property: type1:id_int becomes dynamic/type1/type1:id_int
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dynamic/type1/type1:id_int = 11"));
         Assert.assertEquals(0, ret.totalSize());
 
-        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE type1:id_int = 10"));
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dynamic/type1/type1:id_int = 10 AND ecm:isCheckedInVersion = 0"));
         Assert.assertEquals(1, ret.totalSize());
 
-        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE type1:name_string LIKE 'test'"));
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dynamic/type1/type1:name_string LIKE 'test' AND ecm:isCheckedInVersion = 0"));
         Assert.assertEquals(1, ret.totalSize());
 
-        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE type1:creation_date BETWEEN DATE '2015-01-01' AND DATE '2015-01-02'"));
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE dynamic/type1/type1:creation_date BETWEEN DATE '2015-01-01' AND DATE '2015-01-02' AND ecm:isCheckedInVersion = 0"));
         Assert.assertEquals(1, ret.totalSize());
     }
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.runtime;
 
 /**
@@ -80,16 +77,34 @@ public class RuntimeServiceEvent {
         return getEventName();
     }
 
-    // FIXME: review this, this looks suspicious (doesn't check on this.id).
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + id;
+        result = prime * result + runtime.hashCode();
+        return result;
+    }
+
     @Override
     public boolean equals(Object obj) {
-        if (obj == this) {
+        if (this == obj) {
             return true;
         }
         if (obj == null) {
             return false;
         }
-        return obj.getClass().equals(this.getClass());
+        if (!(obj instanceof RuntimeServiceEvent)) {
+            return false;
+        }
+        RuntimeServiceEvent other = (RuntimeServiceEvent) obj;
+        if (id != other.id) {
+            return false;
+        }
+        if (!runtime.equals(other.runtime)) {
+            return false;
+        }
+        return true;
     }
 
 }

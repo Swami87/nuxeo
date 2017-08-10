@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,16 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
+ *     Estelle Giuly <egiuly@nuxeo.com>
  */
 
 package org.nuxeo.common.utils;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -26,10 +32,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 
-import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.SystemUtils;
 import org.junit.Test;
-
-import static org.junit.Assert.*;
 
 public class TestFileUtils {
 
@@ -39,7 +44,7 @@ public class TestFileUtils {
                 3, 4, 34, 34, 24, 3, 1, 65, 67, 68, 7, 58, 7, 8, 75, 98, 7, 9, 5, 7, 45, 7, 43, 6, };
 
         final InputStream is = new ByteArrayInputStream(data);
-        final byte[] readData = FileUtils.readBytes(is);
+        final byte[] readData = IOUtils.toByteArray(is);
 
         assertEquals(data.length, readData.length);
         assertTrue(Arrays.equals(data, readData));
@@ -53,7 +58,7 @@ public class TestFileUtils {
             data[i] = (byte) (i % 256);
         }
         final InputStream is = new ByteArrayInputStream(data);
-        final byte[] readData = FileUtils.readBytes(is);
+        final byte[] readData = IOUtils.toByteArray(is);
 
         assertEquals(data.length, readData.length);
         assertTrue(Arrays.equals(data, readData));
@@ -67,7 +72,7 @@ public class TestFileUtils {
             data[i] = (byte) (i % 256);
         }
         final InputStream is = new ByteArrayInputStream(data);
-        final byte[] readData = FileUtils.readBytes(is);
+        final byte[] readData = IOUtils.toByteArray(is);
 
         assertEquals(data.length, readData.length);
         assertTrue(Arrays.equals(data, readData));
@@ -81,7 +86,7 @@ public class TestFileUtils {
             data[i] = (byte) (i % 256);
         }
         final InputStream is = new ByteArrayInputStream(data);
-        final byte[] readData = FileUtils.readBytes(is);
+        final byte[] readData = IOUtils.toByteArray(is);
 
         assertEquals(data.length, readData.length);
         assertTrue(Arrays.equals(data, readData));
@@ -151,6 +156,14 @@ public class TestFileUtils {
     @Deprecated
     public static boolean isWindows() {
         return SystemUtils.IS_OS_WINDOWS;
+    }
+
+    @Test
+    public void testGetSafeFilename() {
+        assertEquals("my-image.png", FileUtils.getSafeFilename("my-image.png"));
+        assertEquals("_", FileUtils.getSafeFilename(".."));
+        assertEquals("tmp___2349_876398___foo.png", FileUtils.getSafeFilename("tmp/../2349:876398/*/foo.png"));
+        assertEquals("_tmp___2349_876398___foo.png", FileUtils.getSafeFilename("\\tmp\\..\\2349:876398\\*\\foo.png"));
     }
 
 }

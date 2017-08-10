@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import javax.faces.context.FacesContext;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.platform.query.api.PageProvider;
+import org.nuxeo.ecm.platform.query.api.QuickFilter;
 
 /**
  * A content view is a notion to handle lists of objects rendering, as well as query filters to build the list.
@@ -41,28 +42,28 @@ import org.nuxeo.ecm.platform.query.api.PageProvider;
  */
 public interface ContentView extends Serializable {
 
-    public static final String SEARCH_DOCUMENT_EL_VARIABLE = "searchDocument";
+    String SEARCH_DOCUMENT_EL_VARIABLE = "searchDocument";
 
     /**
      * Seam event to be fired when the current page of the content view's page provider has changed
      *
      * @since 5.7
      */
-    public static final String CONTENT_VIEW_PAGE_CHANGED_EVENT = "contentViewPageChanged";
+    String CONTENT_VIEW_PAGE_CHANGED_EVENT = "contentViewPageChanged";
 
     /**
      * Seam event to be fired when the content view's page provider has refreshed
      *
      * @since 5.7
      */
-    public static final String CONTENT_VIEW_REFRESH_EVENT = "contentViewRefresh";
+    String CONTENT_VIEW_REFRESH_EVENT = "contentViewRefresh";
 
     /**
      * Seam event to be fired when the page size of the content view has changed
      *
      * @since 5.7
      */
-    public static final String CONTENT_VIEW_PAGE_SIZE_CHANGED_EVENT = "contentViewPageSizeChanged";
+    String CONTENT_VIEW_PAGE_SIZE_CHANGED_EVENT = "contentViewPageSizeChanged";
 
     /**
      * Returns the name of this content view
@@ -152,12 +153,6 @@ public interface ContentView extends Serializable {
      * Sets the current page size.
      */
     void setCurrentPageSize(Long pageSize);
-
-    /**
-     * @deprecated use {@link #getCurrentResultLayoutColumns()} instead
-     */
-    @Deprecated
-    List<String> getResultLayoutColumns();
 
     /**
      * Returns the list of selected result layout columns, resolving the bound EL expression set in the content view
@@ -304,7 +299,7 @@ public interface ContentView extends Serializable {
      *
      * @since 5.4.2
      */
-    public boolean getShowFilterForm();
+    boolean getShowFilterForm();
 
     /**
      * Returns the search document model as set on the content view.
@@ -372,13 +367,22 @@ public interface ContentView extends Serializable {
      *
      * @since 7.4
      */
-    public boolean isExecuted();
+    boolean isExecuted();
 
     /**
      * Sets the content view execution status.
      *
      * @since 7.4
      */
-    public void setExecuted(boolean executed);
+    void setExecuted(boolean executed);
 
+    /**
+     * @since 8.4
+     */
+    void setQuickFilters(List<QuickFilter> quickFilters);
+
+    /**
+     * @since 8.4
+     */
+    List<QuickFilter> getQuickFilters();
 }

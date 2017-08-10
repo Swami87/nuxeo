@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2014-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import java.util.Map;
 
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -61,11 +62,12 @@ import org.nuxeo.ecm.webengine.model.impl.AbstractResource;
 import org.nuxeo.ecm.webengine.model.impl.ResourceTypeImpl;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.services.config.ConfigurationService;
+import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
  * Exposes {@link Batch} as a JAX-RS resource
  *
- * @deprecated Use {@link org.nuxeo.ecm.restapi.server.jaxrs.BatchUploadObject} instead.
+ * @deprecated since 7.4, use {@link org.nuxeo.ecm.restapi.server.jaxrs.BatchUploadObject} instead.
  * @author Tiry (tdelprat@nuxeo.com)
  * @author Antoine Taillefer
  */
@@ -110,22 +112,21 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
     }
 
     /**
-     * @deprecated since 5.7.2. The timeout is managed by the {@link BatchManager#execute} method.
-     */
-    @Deprecated
-    protected int getUploadWaitTimeout() {
-        String t = Framework.getProperty("org.nuxeo.batch.upload.wait.timeout", "5");
-        return Integer.parseInt(t);
-    }
-
-    /**
      * @deprecated since 7.4, use {@link BatchUploadObject#upload(HttpServletRequest, String, String)} instead.
      */
     @Deprecated
     @POST
     @Path("/upload")
     public Object doPost(@Context HttpServletRequest request) throws IOException {
+        TransactionHelper.commitOrRollbackTransaction();
+        try {
+            return uploadNoTransaction(request);
+        } finally {
+            TransactionHelper.startTransaction();
+        }
+    }
 
+    protected Object uploadNoTransaction(@Context HttpServletRequest request) throws IOException {
         boolean useIFrame = false;
 
         // Parameters are passed as request header
@@ -167,12 +168,14 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
         if (StringUtils.isEmpty(batchId)) {
             batchId = bm.initBatch();
         } else if (!bm.hasBatch(batchId)) {
-            if (!Framework.getService(ConfigurationService.class).isBooleanPropertyTrue(
-                    BatchManagerComponent.CLIENT_BATCH_ID_FLAG)) {
+            if (!Framework.getService(ConfigurationService.class)
+                          .isBooleanPropertyTrue(BatchManagerComponent.CLIENT_BATCH_ID_FLAG)) {
                 String errorMsg = String.format(
                         "Cannot upload a file with a client-side generated batch id, please use new upload API or set configuration property %s to true (not recommended)",
                         BatchManagerComponent.CLIENT_BATCH_ID_FLAG);
-                return Response.status(Status.INTERNAL_SERVER_ERROR).entity("{\"error\" : \"" + errorMsg + "\"}").build();
+                return Response.status(Status.INTERNAL_SERVER_ERROR)
+                               .entity("{\"error\" : \"" + errorMsg + "\"}")
+                               .build();
             } else {
                 log.warn(String.format(
                         "Allowing to initialize upload batch with a client-side generated id since configuration property %s is set to true but this is not recommended, please use new upload API instead",
@@ -181,7 +184,7 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
         }
         bm.addStream(batchId, idx, is, fileName, mimeType);
 
-        Map<String, String> result = new HashMap<String, String>();
+        Map<String, String> result = new HashMap<>();
         result.put("batchId", batchId);
         result.put("uploaded", "true");
         return buildFromMap(result, useIFrame);
@@ -191,7 +194,7 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
     @POST
     @Produces("application/json")
     @Path("/execute")
-    public Object exec(@Context HttpServletRequest request, ExecutionRequest xreq) {
+    public Object exec(@Context HttpServletRequest request, @Context HttpServletResponse response, ExecutionRequest xreq) {
         Map<String, Object> params = xreq.getParams();
         String batchId = (String) params.get(REQUEST_BATCH_ID);
         String fileIdx = (String) params.get(REQUEST_FILE_IDX);
@@ -202,23 +205,20 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
         final BatchManager bm = Framework.getLocalService(BatchManager.class);
         // register commit hook for cleanup
         request.setAttribute(REQUEST_BATCH_ID, batchId);
-        RequestContext.getActiveContext(request).addRequestCleanupHandler(new RequestCleanupHandler() {
-            @Override
-            public void cleanup(HttpServletRequest req) {
-                String bid = (String) req.getAttribute(REQUEST_BATCH_ID);
-                bm.clean(bid);
-            }
-
+        RequestContext.getActiveContext(request).addRequestCleanupHandler(req -> {
+            String bid = (String) req.getAttribute(REQUEST_BATCH_ID);
+            bm.clean(bid);
         });
 
         try {
-            OperationContext ctx = xreq.createContext(request, getCoreSession(request));
+            CoreSession session = getCoreSession(request);
+            OperationContext ctx = xreq.createContext(request, response, session);
 
             Object result;
             if (StringUtils.isEmpty(fileIdx)) {
-                result = bm.execute(batchId, operationId, getCoreSession(request), ctx, params);
+                result = bm.execute(batchId, operationId, session, ctx, params);
             } else {
-                result = bm.execute(batchId, fileIdx, operationId, getCoreSession(request), ctx, params);
+                result = bm.execute(batchId, fileIdx, operationId, session, ctx, params);
             }
             return ResponseHelper.getResponse(result, request);
         } catch (NuxeoException | MessagingException | IOException e) {
@@ -226,7 +226,9 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
             if (WebException.isSecurityError(e)) {
                 return Response.status(Status.FORBIDDEN).entity("{\"error\" : \"" + e.getMessage() + "\"}").build();
             } else {
-                return Response.status(Status.INTERNAL_SERVER_ERROR).entity("{\"error\" : \"" + e.getMessage() + "\"}").build();
+                return Response.status(Status.INTERNAL_SERVER_ERROR)
+                               .entity("{\"error\" : \"" + e.getMessage() + "\"}")
+                               .build();
             }
         }
     }
@@ -265,7 +267,7 @@ public class BatchResource extends AbstractResource<ResourceTypeImpl> {
         BatchManager bm = Framework.getLocalService(BatchManager.class);
         bm.clean(batchId);
 
-        Map<String, String> result = new HashMap<String, String>();
+        Map<String, String> result = new HashMap<>();
         result.put("batchId", batchId);
         result.put("dropped", "true");
         return buildFromMap(result);

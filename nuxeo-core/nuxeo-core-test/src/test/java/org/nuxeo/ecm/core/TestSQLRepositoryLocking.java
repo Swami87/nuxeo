@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,6 @@ public class TestSQLRepositoryLocking {
 
         DocumentModel doc = new DocumentModelImpl("/", "doc", "File");
         doc = session.createDocument(doc);
-        assertNull(doc.getLock()); // old
         assertNull(doc.getLockInfo());
         assertFalse(doc.isLocked());
         session.save();
@@ -86,7 +85,6 @@ public class TestSQLRepositoryLocking {
 
         assertEquals(ADMINISTRATOR, doc.getLockInfo().getOwner());
         assertNotNull(doc.getLockInfo().getCreated());
-        assertTrue(doc.getLock().startsWith(ADMINISTRATOR + ':')); // old
         assertTrue(doc.isLocked());
 
         nextTransaction();
@@ -95,7 +93,6 @@ public class TestSQLRepositoryLocking {
 
         assertEquals(ADMINISTRATOR, doc.getLockInfo().getOwner());
         assertNotNull(doc.getLockInfo().getCreated());
-        assertTrue(doc.getLock().startsWith(ADMINISTRATOR + ':')); // old
         assertTrue(doc.isLocked());
 
         nextTransaction();

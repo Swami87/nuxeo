@@ -54,16 +54,18 @@ public interface ReloadService extends TimestampedService {
      * <p>
      * Also calls {@link #reloadProperties()} by default, but not other reload methods as they could alter the running
      * application behaviour.
+     * @throws InterruptedException
      *
      * @since 5.5
      * @see #reloadProperties()
      */
-    void reload();
+    void reload() throws InterruptedException;
 
     /**
      * Reloads the Nuxeo repository configuration
+     * @throws InterruptedException
      */
-    void reloadRepository();
+    void reloadRepository() throws InterruptedException;
 
     /**
      * Reloads runtime framework properties
@@ -150,8 +152,9 @@ public interface ReloadService extends TimestampedService {
      * Copies the bundle web resources into the nuxeo WAR directory.
      *
      * @since 5.5
-     * @deprecated since 5.6: {@link #runDeploymentPreprocessor()} method now re-deploys all jars so that the nuxeo.war
-     *             holds the same content than it would at startup.
+     * @deprecated since 5.6: use {@link #runDeploymentPreprocessor()} method instead, now re-deploys all jars so that
+     *             the nuxeo.war holds the same content than it would at startup. This method is called by reflection by
+     *             ReloadServiceInvoker#hotDeployBundles. Keep it as compatibility code until NXP-9642 is done.
      */
     @Deprecated
     void installWebResources(File file) throws IOException;

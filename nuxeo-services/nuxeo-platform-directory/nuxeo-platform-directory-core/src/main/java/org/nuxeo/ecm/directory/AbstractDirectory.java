@@ -21,6 +21,7 @@
 package org.nuxeo.ecm.directory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +31,8 @@ import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelComparator;
+import org.nuxeo.ecm.core.schema.types.Field;
+import org.nuxeo.ecm.directory.api.DirectoryDeleteConstraint;
 import org.nuxeo.runtime.metrics.MetricsService;
 
 import com.codahale.metrics.Counter;
@@ -54,8 +57,19 @@ public abstract class AbstractDirectory implements Directory {
 
     protected final Counter sessionMaxCount;
 
-    protected AbstractDirectory(BaseDirectoryDescriptor descriptor) {
+    protected Map<String, Field> schemaFieldMap;
+
+    protected List<String> types = new ArrayList<>();
+
+    protected Class<? extends Reference> referenceClass;
+
+    protected AbstractDirectory(BaseDirectoryDescriptor descriptor, Class<? extends Reference> referenceClass) {
+        this.referenceClass = referenceClass;
         this.descriptor = descriptor;
+        // is the directory visible in the ui
+        if (descriptor.types != null) {
+            this.types = Arrays.asList(descriptor.types);
+        }
         if (!descriptor.template && doSanityChecks()) {
             if (StringUtils.isEmpty(descriptor.idField)) {
                 throw new DirectoryException("idField configuration is missing for directory: " + getName());
@@ -64,17 +78,25 @@ public abstract class AbstractDirectory implements Directory {
                 throw new DirectoryException("schema configuration is missing for directory " + getName());
             }
         }
-        cache = new DirectoryCache(getName());
+
         sessionCount = registry.counter(MetricRegistry.name("nuxeo", "directories", getName(), "sessions", "active"));
         sessionMaxCount = registry.counter(MetricRegistry.name("nuxeo", "directories", getName(), "sessions", "max"));
+
+        // add references
+        addInverseReferences(descriptor.getInverseReferences());
+        addReferences(descriptor.getReferences());
+
+        // cache parameterization
+        cache = new DirectoryCache(getName());
+        cache.setEntryCacheName(descriptor.cacheEntryName);
+        cache.setEntryCacheWithoutReferencesName(descriptor.cacheEntryWithoutReferencesName);
+        cache.setNegativeCaching(descriptor.negativeCaching);
+
     }
 
     protected boolean doSanityChecks() {
         return true;
     }
-
-    /** To be implemented with a more specific return type. */
-    public abstract BaseDirectoryDescriptor getDescriptor();
 
     @Override
     public String getName() {
@@ -110,9 +132,7 @@ public abstract class AbstractDirectory implements Directory {
         descriptor.setReadOnly(readOnly);
     }
 
-    /**
-     * Invalidate my cache and the caches of linked directories by references.
-     */
+    @Override
     public void invalidateCaches() throws DirectoryException {
         cache.invalidateAll();
         for (Reference ref : getReferences()) {
@@ -171,6 +191,25 @@ public abstract class AbstractDirectory implements Directory {
         }
     }
 
+    protected void addInverseReferences(InverseReferenceDescriptor[] references) {
+        if (references != null) {
+            Arrays.stream(references).map(InverseReference::new).forEach(this::addReference);
+        }
+    }
+
+    protected void addReferences(ReferenceDescriptor[] references) {
+        if (references != null) {
+            for (ReferenceDescriptor desc : references) {
+                try {
+                    addReference(referenceClass.getDeclaredConstructor(ReferenceDescriptor.class).newInstance(desc));
+                } catch (ReflectiveOperationException e) {
+                    throw new DirectoryException(
+                            "An error occurred while instantiating reference class " + referenceClass.getName(), e);
+                }
+            }
+        }
+    }
+
     @Override
     public Collection<Reference> getReferences() {
         List<Reference> allRefs = new ArrayList<>(2);
@@ -222,4 +261,24 @@ public abstract class AbstractDirectory implements Directory {
         sessionMaxCount.dec(sessionMaxCount.getCount());
     }
 
+    /**
+     * since @8.4
+     */
+    @Override
+    public List<String> getTypes() {
+        return types;
+    }
+
+    /**
+     * @since 8.4
+     */
+    @Override
+    public List<DirectoryDeleteConstraint> getDirectoryDeleteConstraints() {
+        return descriptor.getDeleteConstraints();
+    }
+
+    @Override
+    public Map<String, Field> getSchemaFieldMap() {
+        return schemaFieldMap;
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 import org.nuxeo.osgi.OSGiAdapter;
 import org.nuxeo.runtime.model.RuntimeContext;
@@ -42,7 +43,7 @@ public interface RuntimeHarness {
     File getWorkingDir();
 
     /**
-     * Fires the event {@code FrameworkEvent.STARTED}.
+     * Resume the runtime
      */
     void fireFrameworkStarted() throws Exception;
 
@@ -67,18 +68,6 @@ public interface RuntimeHarness {
      * @param contrib the contribution
      */
     void undeployContrib(String bundle, String contrib) throws Exception;
-
-    /**
-     * @deprecated use {@link #undeployContrib(String, String)} instead
-     */
-    @Deprecated
-    void undeployContrib(String contrib);
-
-    /**
-     * @deprecated use {@link #undeployContrib(String, String)} instead
-     */
-    @Deprecated
-    void undeploy(String contrib);
 
     RuntimeContext deployTestContrib(String bundle, URL contrib) throws Exception;
 
@@ -110,29 +99,20 @@ public interface RuntimeHarness {
      */
     void deployContrib(String bundle, String contrib) throws Exception;
 
-    /**
-     * Deploys a contribution file by looking for it in the class loader.
-     * <p>
-     * The first contribution file found by the class loader will be used. You have no guarantee in case of name
-     * collisions.
-     *
-     * @deprecated use the less ambiguous {@link #deployContrib(String, String)}
-     * @param contrib the relative path to the contribution file
-     */
-    @Deprecated
-    void deployContrib(String contrib);
-
-    /**
-     * @deprecated use <code>deployContrib()</code> instead
-     */
-    @Deprecated
-    void deploy(String contrib);
-
     void start() throws Exception;
 
     void stop() throws Exception;
 
     boolean isStarted();
+
+    /**
+     * Deploys a subset of a Bundle defined per the targetExtensions parameter
+     *
+     * @param bundle the name of the component
+     * @param targetExtensions Set of allowed TargetExtensions in the final contribution
+     * @since 9.1
+     */
+    RuntimeContext deployPartial(String bundle, Set<TargetExtensions> targetExtensions) throws Exception;
 
     void deployFolder(File folder, ClassLoader loader) throws Exception;
 
@@ -162,18 +142,18 @@ public interface RuntimeHarness {
     /**
      * @since 5.5
      */
-    public boolean isRestart();
+    boolean isRestart();
 
     /**
      * @since 5.5
      * @throws Exception
      */
-    public void restart() throws Exception;
+    void restart() throws Exception;
 
     /**
      * @throws URISyntaxException
      * @since 5.7
      */
-    public List<String> getClassLoaderFiles() throws URISyntaxException;
+    List<String> getClassLoaderFiles() throws URISyntaxException;
 
 }

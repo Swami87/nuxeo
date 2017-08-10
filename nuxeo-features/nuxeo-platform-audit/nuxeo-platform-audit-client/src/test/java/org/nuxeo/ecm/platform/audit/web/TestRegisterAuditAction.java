@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2007 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,14 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
- * $Id$
  */
-
 package org.nuxeo.ecm.platform.audit.web;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Before;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
 import org.nuxeo.ecm.platform.actions.Action;
 import org.nuxeo.ecm.platform.actions.ActionService;
 import org.nuxeo.runtime.test.NXRuntimeTestCase;
@@ -46,7 +44,7 @@ public class TestRegisterAuditAction extends NXRuntimeTestCase {
 
     @Test
     public void testRegistration() {
-        Action act1 = as.getActionRegistry().getAction("TAB_CONTENT_HISTORY");
+        Action act1 = as.getAction("TAB_CONTENT_HISTORY");
 
         assertEquals("action.view.history", act1.getLabel());
         assertEquals("/icons/file.gif", act1.getIcon());

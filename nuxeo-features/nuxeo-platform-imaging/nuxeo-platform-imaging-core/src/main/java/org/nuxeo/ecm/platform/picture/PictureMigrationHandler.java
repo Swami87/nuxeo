@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,8 @@ import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.repository.RepositoryInitializationHandler;
 import org.nuxeo.ecm.platform.picture.api.PictureView;
 import org.nuxeo.ecm.platform.picture.api.adapters.MultiviewPicture;
+import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
@@ -62,24 +64,28 @@ public class PictureMigrationHandler extends RepositoryInitializationHandler {
 
     public static final String FILE_CONTENT_PROPERTY = "file:content";
 
-    public static final String FILE_FILENAME_PROPERTY = "file:filename";
-
     public static final int BATCH_SIZE = 50;
 
     public static final String DISABLE_QUOTA_CHECK_LISTENER = "disableQuotaListener";
 
     @Override
     public void doInitializeRepository(CoreSession session) {
-        boolean txStarted = false;
-        if (!TransactionHelper.isTransactionActive()) {
-            txStarted = true;
-        }
+        if (Framework.getService(ConfigurationService.class).isBooleanPropertyTrue("nuxeo.picture.migration.enabled")) {
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "Starting picture migration handler (this may take some time depending on the number of documents)");
+            }
+            boolean txStarted = false;
+            if (!TransactionHelper.isTransactionActive()) {
+                txStarted = true;
+            }
 
-        try {
-            doMigration(session);
-        } finally {
-            if (txStarted) {
-                TransactionHelper.commitOrRollbackTransaction();
+            try {
+                doMigration(session);
+            } finally {
+                if (txStarted) {
+                    TransactionHelper.commitOrRollbackTransaction();
+                }
             }
         }
     }
@@ -90,8 +96,8 @@ public class PictureMigrationHandler extends RepositoryInitializationHandler {
             return;
         }
 
-        if (log.isWarnEnabled()) {
-            log.warn(String.format("Started migration of %d documents with the 'Picture' facet", pictureIds.size()));
+        if (log.isInfoEnabled()) {
+            log.info(String.format("Started migration of %d documents with the 'Picture' facet", pictureIds.size()));
         }
 
         long pictureMigratedCount = 0;
@@ -109,8 +115,8 @@ public class PictureMigrationHandler extends RepositoryInitializationHandler {
             TransactionHelper.startTransaction();
         }
 
-        if (log.isWarnEnabled()) {
-            log.warn(String.format("Finished migration of %d/%d documents with the 'Picture' facet",
+        if (log.isInfoEnabled()) {
+            log.info(String.format("Finished migration of %d/%d documents with the 'Picture' facet",
                     pictureMigratedCount, pictureIds.size()));
         }
     }
@@ -156,7 +162,6 @@ public class PictureMigrationHandler extends RepositoryInitializationHandler {
         filename = StringUtils.defaultString(filename).replaceAll("^Original_", "");
         blob.setFilename(filename);
         picture.setPropertyValue(FILE_CONTENT_PROPERTY, (Serializable) blob);
-        picture.setPropertyValue(FILE_FILENAME_PROPERTY, filename);
         multiviewPicture.removeView(ORIGINAL_VIEW_TITLE);
         if (picture.isVersion()) {
             picture.putContextData(ALLOW_VERSION_WRITE, Boolean.TRUE);

@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2010-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,10 +12,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  * Contributors:
- * Nuxeo - initial API and implementation
+ *   Nuxeo - initial API and implementation
  */
-
 package org.nuxeo.ecm.platform.rendition.service;
 
 import java.util.List;
@@ -36,12 +36,18 @@ public interface RenditionService {
     /**
      * Returns a {@code List} of registered {@code RenditionDefinition}. The order of the List does not depend on the
      * registering order.
+     *
+     * @deprecated since 7.2 because unused
      */
+    @Deprecated
     List<RenditionDefinition> getDeclaredRenditionDefinitions();
 
     /**
      * Returns a {@code List} of registered {@code RenditionDefinition} matching a given provider type
+     *
+     * @deprecated since 7.2 because unused
      */
+    @Deprecated
     List<RenditionDefinition> getDeclaredRenditionDefinitionsForProviderType(String providerType);
 
     /**
@@ -109,4 +115,10 @@ public interface RenditionService {
      */
     List<Rendition> getAvailableRenditions(DocumentModel doc, boolean onlyVisible);
 
+    /**
+     * Query and delete stored renditions where the related version or live document does not exist anymore.
+     *
+     * @since 8.4
+     */
+    void deleteStoredRenditions(String repositoryName);
 }

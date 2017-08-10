@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ package org.nuxeo.ecm.automation.core.impl;
 
 import org.nuxeo.ecm.automation.AutomationAdmin;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.reload.ReloadService;
 import org.nuxeo.runtime.services.event.Event;
 import org.nuxeo.runtime.services.event.EventListener;
 
@@ -29,14 +30,9 @@ import org.nuxeo.runtime.services.event.EventListener;
 public class ReloadListener implements EventListener {
 
     @Override
-    public boolean aboutToHandleEvent(Event event) {
-        return true;
-    }
-
-    @Override
     public void handleEvent(Event event) {
         final String id = event.getId();
-        if ("flushCompiledChains".equals(id) || "flush".equals(id)) {
+        if ("flushCompiledChains".equals(id) || ReloadService.FLUSH_EVENT_ID.equals(id)) {
             AutomationAdmin svc = Framework.getLocalService(AutomationAdmin.class);
             svc.flushCompiledChains();
         }

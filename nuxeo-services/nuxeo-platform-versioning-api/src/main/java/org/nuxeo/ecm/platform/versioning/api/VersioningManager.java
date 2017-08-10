@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2010 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
  *     Dragos Mihalache
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.platform.versioning.api;
 
 import org.nuxeo.ecm.core.api.DocumentModel;
@@ -42,39 +41,5 @@ public interface VersioningManager {
      * @return the version label
      */
     String getVersionLabel(DocumentModel doc);
-
-    /**
-     * Returns the property name to use when setting the major version for this document type.
-     *
-     * @deprecated since 5.4, use {@link DocumentModel#MAJOR_VERSION} directly
-     */
-    @Deprecated
-    String getMajorVersionPropertyName(String documentType);
-
-    /**
-     * Returns the property name to use when setting the minor version for this document type.
-     *
-     * @deprecated since 5.4, use {@link DocumentModel#MINOR_VERSION} directly
-     */
-    @Deprecated
-    String getMinorVersionPropertyName(String documentType);
-
-    /**
-     * Increments the minor version of a document.
-     *
-     * @param doc the document
-     * @deprecated since 5.4
-     */
-    @Deprecated
-    DocumentModel incrementMinor(DocumentModel doc);
-
-    /**
-     * Increments the major version of a document and sets the minor to 0.
-     *
-     * @param doc the document
-     * @deprecated since 5.4
-     */
-    @Deprecated
-    DocumentModel incrementMajor(DocumentModel doc);
 
 }

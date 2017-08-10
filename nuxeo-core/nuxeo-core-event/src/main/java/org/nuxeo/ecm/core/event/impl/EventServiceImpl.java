@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,18 @@
  *     Bogdan Stefanescu
  *     Thierry Delprat
  *     Florent Guillaume
+ *     Andrei Nechaev
  */
 package org.nuxeo.ecm.core.event.impl;
 
 import java.rmi.dgc.VMID;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import javax.naming.NamingException;
 import javax.transaction.RollbackException;
@@ -50,6 +51,11 @@ import org.nuxeo.ecm.core.event.EventStats;
 import org.nuxeo.ecm.core.event.PostCommitEventListener;
 import org.nuxeo.ecm.core.event.ReconnectedEventBundle;
 import org.nuxeo.ecm.core.event.jms.AsyncProcessorConfig;
+import org.nuxeo.ecm.core.event.pipe.EventPipeDescriptor;
+import org.nuxeo.ecm.core.event.pipe.EventPipeRegistry;
+import org.nuxeo.ecm.core.event.pipe.dispatch.EventBundleDispatcher;
+import org.nuxeo.ecm.core.event.pipe.dispatch.EventDispatcherDescriptor;
+import org.nuxeo.ecm.core.event.pipe.dispatch.EventDispatcherRegistry;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.transaction.TransactionHelper;
 
@@ -73,7 +79,7 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
         boolean registeredSynchronization;
 
-        final Map<String, EventBundle> byRepository = new HashMap<String, EventBundle>();
+        final Map<String, EventBundle> byRepository = new HashMap<>();
 
         void push(Event event) {
             String repositoryName = event.getContext().getRepositoryName();
@@ -91,13 +97,19 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
     protected volatile AsyncEventExecutor asyncExec;
 
-    protected final List<AsyncWaitHook> asyncWaitHooks = new CopyOnWriteArrayList<AsyncWaitHook>();
+    protected final List<AsyncWaitHook> asyncWaitHooks = new CopyOnWriteArrayList<>();
 
     protected boolean blockAsyncProcessing = false;
 
     protected boolean blockSyncPostCommitProcessing = false;
 
     protected boolean bulkModeEnabled = false;
+
+    protected EventPipeRegistry registeredPipes = new EventPipeRegistry();
+
+    protected EventDispatcherRegistry dispatchers = new EventDispatcherRegistry();
+
+    protected EventBundleDispatcher pipeDispatcher;
 
     public EventServiceImpl() {
         listenerDescriptors = new EventListenerList();
@@ -107,21 +119,34 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
     public void init() {
         asyncExec.init();
+
+        EventDispatcherDescriptor dispatcherDescriptor = dispatchers.getDispatcherDescriptor();
+        if (dispatcherDescriptor != null) {
+            List<EventPipeDescriptor> pipes = registeredPipes.getPipes();
+            if (!pipes.isEmpty()) {
+                pipeDispatcher = dispatcherDescriptor.getInstance();
+                pipeDispatcher.init(pipes, dispatcherDescriptor.getParameters());
+            }
+        }
+    }
+
+    public EventBundleDispatcher getEventBundleDispatcher() {
+        return pipeDispatcher;
     }
 
     public void shutdown(long timeoutMillis) throws InterruptedException {
         postCommitExec.shutdown(timeoutMillis);
-        Set<AsyncWaitHook> notTerminated = new HashSet<AsyncWaitHook>();
-        for (AsyncWaitHook hook : asyncWaitHooks) {
-            if (hook.shutdown() == false) {
-                notTerminated.add(hook);
-            }
-        }
+        Set<AsyncWaitHook> notTerminated = asyncWaitHooks.stream().filter(hook -> !hook.shutdown()).collect(
+                Collectors.toSet());
         if (!notTerminated.isEmpty()) {
             throw new RuntimeException("Asynch services are still running : " + notTerminated);
         }
-        if (asyncExec.shutdown(timeoutMillis) == false) {
+
+        if (!asyncExec.shutdown(timeoutMillis)) {
             throw new RuntimeException("Async executor is still running, timeout expired");
+        }
+        if (pipeDispatcher != null) {
+            pipeDispatcher.shutdown();
         }
     }
 
@@ -133,14 +158,6 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
         asyncWaitHooks.remove(callback);
     }
 
-    /**
-     * @deprecated use {@link #waitForAsyncCompletion()} instead.
-     */
-    @Deprecated
-    public int getActiveAsyncTaskCount() {
-        return asyncExec.getUnfinishedCount();
-    }
-
     @Override
     public void waitForAsyncCompletion() {
         waitForAsyncCompletion(Long.MAX_VALUE);
@@ -148,12 +165,9 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
     @Override
     public void waitForAsyncCompletion(long timeout) {
-        Set<AsyncWaitHook> notCompleted = new HashSet<AsyncWaitHook>();
-        for (AsyncWaitHook hook : asyncWaitHooks) {
-            if (!hook.waitForAsyncCompletion()) {
-                notCompleted.add(hook);
-            }
-        }
+        Set<AsyncWaitHook> notCompleted = asyncWaitHooks.stream()
+                                                        .filter(hook -> !hook.waitForAsyncCompletion())
+                                                        .collect(Collectors.toSet());
         if (!notCompleted.isEmpty()) {
             throw new RuntimeException("Async tasks are still running : " + notCompleted);
         }
@@ -166,6 +180,14 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
             // TODO change signature
             throw new RuntimeException(e);
         }
+        if (pipeDispatcher != null) {
+            try {
+                pipeDispatcher.waitForCompletion(timeout);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     @Override
@@ -174,10 +196,30 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
         log.debug("Registered event listener: " + listener.getName());
     }
 
+    public void addEventPipe(EventPipeDescriptor pipeDescriptor) {
+        registeredPipes.addContribution(pipeDescriptor);
+        log.debug("Registered event pipe: " + pipeDescriptor.getName());
+    }
+
+    public void addEventDispatcher(EventDispatcherDescriptor dispatcherDescriptor) {
+        dispatchers.addContrib(dispatcherDescriptor);
+        log.debug("Registered event dispatcher: " + dispatcherDescriptor.getName());
+    }
+
     @Override
     public void removeEventListener(EventListenerDescriptor listener) {
         listenerDescriptors.removeDescriptor(listener);
         log.debug("Unregistered event listener: " + listener.getName());
+    }
+
+    public void removeEventPipe(EventPipeDescriptor pipeDescriptor) {
+        registeredPipes.removeContribution(pipeDescriptor);
+        log.debug("Unregistered event pipe: " + pipeDescriptor.getName());
+    }
+
+    public void removeEventDispatcher(EventDispatcherDescriptor dispatcherDescriptor) {
+        dispatchers.removeContrib(dispatcherDescriptor);
+        log.debug("Unregistered event dispatcher: " + dispatcherDescriptor.getName());
     }
 
     @Override
@@ -275,7 +317,7 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
         if (bulkModeEnabled) {
             // run all listeners synchronously in one transaction
-            List<EventListenerDescriptor> listeners = new ArrayList<EventListenerDescriptor>();
+            List<EventListenerDescriptor> listeners = new ArrayList<>();
             if (!blockSyncPostCommitProcessing) {
                 listeners = postCommitSync;
             }
@@ -311,7 +353,12 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
         if (AsyncProcessorConfig.forceJMSUsage() && !comesFromJMS) {
             log.debug("Skipping async exec, this will be triggered via JMS");
         } else {
-            asyncExec.run(postCommitAsync, event);
+            if (pipeDispatcher == null) {
+                asyncExec.run(postCommitAsync, event);
+            } else {
+                // rather than sending to the WorkManager: send to the Pipe
+                pipeDispatcher.sendEventBundle(event);
+            }
         }
     }
 
@@ -332,7 +379,7 @@ public class EventServiceImpl implements EventService, EventServiceAdmin, Synchr
 
     @Override
     public List<PostCommitEventListener> getPostCommitEventListeners() {
-        List<PostCommitEventListener> result = new ArrayList<PostCommitEventListener>();
+        List<PostCommitEventListener> result = new ArrayList<>();
 
         result.addAll(listenerDescriptors.getSyncPostCommitListeners());
         result.addAll(listenerDescriptors.getAsyncPostCommitListeners());

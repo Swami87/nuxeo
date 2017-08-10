@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.time.Duration;
 import java.util.Collections;
 import java.util.jar.Manifest;
 
@@ -37,9 +36,9 @@ import org.nuxeo.common.utils.ZipUtils;
 import org.nuxeo.runtime.RuntimeService;
 import org.nuxeo.runtime.RuntimeServiceException;
 import org.nuxeo.runtime.api.Framework;
-import org.nuxeo.runtime.api.ServicePassivator;
 import org.nuxeo.runtime.deployment.preprocessor.DeploymentPreprocessor;
 import org.nuxeo.runtime.model.ComponentContext;
+import org.nuxeo.runtime.model.ComponentManager;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.services.event.Event;
 import org.nuxeo.runtime.services.event.EventService;
@@ -81,16 +80,35 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
         bundle = null;
     }
 
+    protected void refreshComponents() {
+        String reloadStrategy = Framework.getProperty("org.nuxeo.runtime.reload_strategy", "restart");
+        log.info("Refresh components. Strategy: " + reloadStrategy);
+        // reload components / contributions
+        ComponentManager mgr = Framework.getRuntime().getComponentManager();
+        if ("unstash".equals(reloadStrategy)) {
+            // compat mode
+            mgr.unstash();
+        } else if ("standby".equals(reloadStrategy)) { // standby / resume
+            mgr.standby();
+            mgr.unstash();
+            mgr.resume();
+        } else { // restart mode
+            mgr.refresh(false);
+        }
+    }
+
     @Override
-    public void reload() {
+    public void reload() throws InterruptedException {
         if (log.isDebugEnabled()) {
             log.debug("Starting reload");
         }
+
         try {
             reloadProperties();
         } catch (IOException e) {
             throw new RuntimeServiceException(e);
         }
+
         triggerReloadWithNewTransaction(RELOAD_EVENT_ID);
     }
 
@@ -101,7 +119,7 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
     }
 
     @Override
-    public void reloadRepository() {
+    public void reloadRepository() throws InterruptedException {
         log.info("Reload repository");
         triggerReloadWithNewTransaction(RELOAD_REPOSITORIES_ID);
     }
@@ -109,8 +127,8 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
     @Override
     public void reloadSeamComponents() {
         log.info("Reload Seam components");
-        Framework.getLocalService(EventService.class).sendEvent(
-                new Event(RELOAD_TOPIC, RELOAD_SEAM_EVENT_ID, this, null));
+        Framework.getLocalService(EventService.class)
+                 .sendEvent(new Event(RELOAD_TOPIC, RELOAD_SEAM_EVENT_ID, this, null));
     }
 
     @Override
@@ -124,16 +142,16 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
     @Override
     public void flushJaasCache() {
         log.info("Flush the JAAS cache");
-        Framework.getLocalService(EventService.class).sendEvent(
-                new Event("usermanager", "user_changed", this, "Deployer"));
+        Framework.getLocalService(EventService.class)
+                 .sendEvent(new Event("usermanager", "user_changed", this, "Deployer"));
         setFlushedNow();
     }
 
     @Override
     public void flushSeamComponents() {
         log.info("Flush Seam components");
-        Framework.getLocalService(EventService.class).sendEvent(
-                new Event(RELOAD_TOPIC, FLUSH_SEAM_EVENT_ID, this, null));
+        Framework.getLocalService(EventService.class)
+                 .sendEvent(new Event(RELOAD_TOPIC, FLUSH_SEAM_EVENT_ID, this, null));
         setFlushedNow();
     }
 
@@ -146,7 +164,8 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
     public String deployBundle(File file, boolean reloadResourceClasspath) throws BundleException {
         String name = getOSGIBundleName(file);
         if (name == null) {
-            log.error(String.format("No Bundle-SymbolicName found in MANIFEST for jar at '%s'", file.getAbsolutePath()));
+            log.error(
+                    String.format("No Bundle-SymbolicName found in MANIFEST for jar at '%s'", file.getAbsolutePath()));
             return null;
         }
 
@@ -172,6 +191,7 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
         Transaction tx = TransactionHelper.suspendTransaction();
         try {
             newBundle.start();
+            refreshComponents();
         } finally {
             TransactionHelper.resumeTransaction(tx);
         }
@@ -221,6 +241,7 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
                     try {
                         b.stop();
                         b.uninstall();
+                        refreshComponents();
                     } finally {
                         TransactionHelper.resumeTransaction(tx);
                     }
@@ -247,7 +268,8 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
     }
 
     /**
-     * @deprecated since 5.6, use {@link #runDeploymentPreprocessor()} instead
+     * @deprecated since 5.6, use {@link #runDeploymentPreprocessor()} instead.
+     *             Keep it as compatibility code until NXP-9642 is done.
      */
     @Override
     @Deprecated
@@ -322,7 +344,7 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
         return msg.toString();
     }
 
-    protected void triggerReloadWithNewTransaction(String id) {
+    protected void triggerReloadWithNewTransaction(String id) throws InterruptedException {
         if (TransactionHelper.isTransactionMarkedRollback()) {
             throw new AssertionError("The calling transaction is marked rollback");
         }
@@ -332,7 +354,7 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
         TransactionHelper.startTransaction();
         try {
             try {
-                triggerReloadWithPassivate(id);
+                triggerReload(id);
             } catch (RuntimeException cause) {
                 TransactionHelper.setTransactionRollbackOnly();
                 throw cause;
@@ -344,22 +366,15 @@ public class ReloadComponent extends DefaultComponent implements ReloadService {
         }
     }
 
-    protected void triggerReloadWithPassivate(String id) {
-        log.info("about to passivate for " + id);
-        Framework.getLocalService(EventService.class).sendEvent(
-                new Event(RELOAD_TOPIC, BEFORE_RELOAD_EVENT_ID, this, null));
+    protected void triggerReload(String id) throws InterruptedException {
+        log.info("about to reload for " + id);
+        Framework.getLocalService(EventService.class)
+                 .sendEvent(new Event(RELOAD_TOPIC, BEFORE_RELOAD_EVENT_ID, this, null));
         try {
-            ServicePassivator.proceed(Duration.ofSeconds(5), Duration.ofSeconds(30), true, () -> {
-                log.info("about to send " + id);
-                Framework.getLocalService(EventService.class).sendEvent(new Event(RELOAD_TOPIC, id, this, null));
-            }).onFailure(
-                    snapshot -> {
-                        throw new UnsupportedOperationException("Detected access, should initiate a reboot "
-                                + snapshot.toString());
-                    });
+            Framework.getLocalService(EventService.class).sendEvent(new Event(RELOAD_TOPIC, id, this, null));
         } finally {
-            Framework.getLocalService(EventService.class).sendEvent(
-                    new Event(RELOAD_TOPIC, AFTER_RELOAD_EVENT_ID, this, null));
+            Framework.getLocalService(EventService.class)
+                     .sendEvent(new Event(RELOAD_TOPIC, AFTER_RELOAD_EVENT_ID, this, null));
             log.info("returning from " + id);
         }
     }

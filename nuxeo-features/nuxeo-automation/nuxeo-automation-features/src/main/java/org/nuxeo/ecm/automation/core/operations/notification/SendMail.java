@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,16 +22,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 import javax.mail.MessagingException;
 import javax.mail.Session;
 
+import org.apache.commons.io.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
 import org.nuxeo.ecm.automation.core.Constants;
@@ -66,7 +68,8 @@ import freemarker.template.TemplateException;
  *
  * @author <a href="mailto:bs@nuxeo.com">Bogdan Stefanescu</a>
  */
-@Operation(id = SendMail.ID, category = Constants.CAT_NOTIFICATION, label = "Send E-Mail", description = "Send an email using the input document to the specified recipients. You can use the HTML parameter to specify whether you message is in HTML format or in plain text. Also you can attach any blob on the current document to the message by using the comma separated list of xpath expressions 'files'. If you xpath points to a blob list all blobs in the list will be attached. Return back the input document(s). If rollbackOnError is true, the whole chain will be rollbacked if an error occurs while trying to send the email (for instance if no SMTP server is configured), else a simple warning will be logged and the chain will continue.", aliases = { "Notification.SendMail" })
+@Operation(id = SendMail.ID, category = Constants.CAT_NOTIFICATION, label = "Send E-Mail", description = "Send an email using the input document to the specified recipients. You can use the HTML parameter to specify whether you message is in HTML format or in plain text. Also you can attach any blob on the current document to the message by using the comma separated list of xpath expressions 'files'. If you xpath points to a blob list all blobs in the list will be attached. Return back the input document(s). If rollbackOnError is true, the whole chain will be rollbacked if an error occurs while trying to send the email (for instance if no SMTP server is configured), else a simple warning will be logged and the chain will continue.", aliases = {
+        "Notification.SendMail" })
 public class SendMail {
 
     protected static final Log log = LogFactory.getLog(SendMail.class);
@@ -133,8 +136,8 @@ public class SendMail {
     protected String viewId = "view_documents";
 
     @OperationMethod(collector = DocumentModelCollector.class)
-    public DocumentModel run(DocumentModel doc) throws TemplateException, RenderingException, OperationException,
-            MessagingException, IOException {
+    public DocumentModel run(DocumentModel doc)
+            throws TemplateException, RenderingException, OperationException, MessagingException, IOException {
         send(doc);
         return doc;
     }
@@ -147,15 +150,16 @@ public class SendMail {
             if (url == null) {
                 throw new OperationException("No such mail template: " + name);
             }
-            InputStream in = url.openStream();
-            return FileUtils.read(in);
+            try (InputStream in = url.openStream()) {
+                return IOUtils.toString(in, Charsets.UTF_8);
+            }
         } else {
             return StringEscapeUtils.unescapeHtml(message);
         }
     }
 
-    protected void send(DocumentModel doc) throws TemplateException, RenderingException, OperationException,
-            MessagingException, IOException {
+    protected void send(DocumentModel doc)
+            throws TemplateException, RenderingException, OperationException, MessagingException, IOException {
         // TODO should sent one by one to each recipient? and have the template
         // rendered for each recipient? Use: "mailto" var name?
         try {
@@ -179,6 +183,7 @@ public class SendMail {
             map.put("Runtime", Framework.getRuntime());
             Mailer.Message msg = createMessage(doc, getContent(), map);
             msg.setSubject(subject, "UTF-8");
+            msg.setSentDate(new Date());
 
             addMailBoxInfo(msg);
 
@@ -188,10 +193,9 @@ public class SendMail {
             if (rollbackOnError) {
                 throw e;
             } else {
-                log.warn(
-                        String.format(
-                                "An error occured while trying to execute the %s operation, see complete stack trace below. Continuing chain since 'rollbackOnError' was set to false.",
-                                ID), e);
+                log.warn(String.format(
+                        "An error occured while trying to execute the %s operation, see complete stack trace below. Continuing chain since 'rollbackOnError' was set to false.",
+                        ID), e);
             }
         }
     }
@@ -237,7 +241,7 @@ public class SendMail {
                 return COMPOSER.newTextMessage(message, map);
             }
         } else {
-            ArrayList<Blob> blobs = new ArrayList<Blob>();
+            List<Blob> blobs = new ArrayList<>();
             for (String xpath : blobXpath) {
                 try {
                     Property p = doc.getProperty(xpath);
@@ -260,7 +264,6 @@ public class SendMail {
                 } catch (PropertyException pe) {
                     log.error("Error while fetching blobs: " + pe.getMessage());
                     log.debug(pe, pe);
-                    continue;
                 }
             }
             return COMPOSER.newMixedMessage(message, map, asHtml ? "html" : "plain", blobs);

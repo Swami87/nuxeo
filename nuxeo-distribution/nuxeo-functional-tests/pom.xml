@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.nuxeo</groupId>
     <artifactId>nuxeo-ecm</artifactId>
-    <version>8.3-SNAPSHOT</version>
+    <version>9.3-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
 
@@ -13,6 +13,10 @@
   <description>Framework for testing Nuxeo distributions</description>
 
   <dependencies>
+    <dependency>
+      <groupId>org.nuxeo.client</groupId>
+      <artifactId>nuxeo-java-client</artifactId>
+    </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
@@ -44,7 +48,7 @@
     </dependency>
     <dependency>
       <groupId>org.seleniumhq.selenium</groupId>
-      <artifactId>selenium-htmlunit-driver</artifactId>
+      <artifactId>htmlunit-driver</artifactId>
     </dependency>
     <dependency>
       <groupId>firebug</groupId>
@@ -68,9 +72,8 @@
       <artifactId>JSErrorCollector</artifactId>
     </dependency>
     <dependency>
-      <!-- needed by htmlunit -->
-      <groupId>org.apache.james</groupId>
-      <artifactId>apache-mime4j</artifactId>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>okhttp</artifactId>
     </dependency>
   </dependencies>
 

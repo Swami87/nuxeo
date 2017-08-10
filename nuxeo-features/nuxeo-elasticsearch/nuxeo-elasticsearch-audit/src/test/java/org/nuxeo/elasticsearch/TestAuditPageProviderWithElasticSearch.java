@@ -26,7 +26,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 
@@ -35,7 +34,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.ecm.core.api.CoreSession;
-import org.nuxeo.ecm.platform.audit.api.AuditLogger;
 import org.nuxeo.ecm.platform.audit.api.ExtendedInfo;
 import org.nuxeo.ecm.platform.audit.api.LogEntry;
 import org.nuxeo.ecm.platform.audit.impl.ExtendedInfoImpl;
@@ -43,18 +41,17 @@ import org.nuxeo.ecm.platform.audit.impl.LogEntryImpl;
 import org.nuxeo.ecm.platform.query.api.PageProvider;
 import org.nuxeo.ecm.platform.query.api.PageProviderService;
 import org.nuxeo.elasticsearch.api.ElasticSearchAdmin;
+import org.nuxeo.elasticsearch.audit.pageprovider.ESAuditPageProvider;
 import org.nuxeo.elasticsearch.test.RepositoryElasticSearchFeature;
-import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Deploy;
 import org.nuxeo.runtime.test.runner.Features;
 import org.nuxeo.runtime.test.runner.FeaturesRunner;
 import org.nuxeo.runtime.test.runner.LocalDeploy;
-import org.nuxeo.runtime.transaction.TransactionHelper;
 
-@Deploy({ "org.nuxeo.runtime.metrics", "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.ecm.platform.audit", "org.nuxeo.ecm.platform.uidgen.core",
-        "org.nuxeo.elasticsearch.seqgen",
+@Deploy({ "org.nuxeo.runtime.metrics", "org.nuxeo.ecm.platform.audit.api", "org.nuxeo.ecm.platform.audit",
+        "org.nuxeo.ecm.platform.uidgen.core", "org.nuxeo.elasticsearch.seqgen",
         "org.nuxeo.elasticsearch.seqgen.test:elasticsearch-seqgen-index-test-contrib.xml",
-        "org.nuxeo.elasticsearch.audit" })
+        "org.nuxeo.elasticsearch.audit", "org.nuxeo.admin.center" })
 @RunWith(FeaturesRunner.class)
 @Features({ RepositoryElasticSearchFeature.class })
 @LocalDeploy({ "org.nuxeo.elasticsearch.audit:elasticsearch-test-contrib.xml",
@@ -74,19 +71,9 @@ public class TestAuditPageProviderWithElasticSearch {
 
     @Before
     public void setupIndex() throws Exception {
+        // make sure that the audit bulker don't drain pending log entries while we reset the index
+        LogEntryGen.flushAndSync();
         esa.initIndexes(true);
-    }
-
-    protected void flushAndSync() throws Exception {
-
-        TransactionHelper.commitOrRollbackTransaction();
-        TransactionHelper.startTransaction();
-
-        Assert.assertTrue(Framework.getLocalService(AuditLogger.class).await(10, TimeUnit.SECONDS));
-
-        esa.getClient().admin().indices().prepareFlush(esa.getIndexNameForType(ElasticSearchConstants.ENTRY_TYPE)).execute().actionGet();
-        esa.getClient().admin().indices().prepareRefresh(esa.getIndexNameForType(ElasticSearchConstants.ENTRY_TYPE)).execute().actionGet();
-
     }
 
     protected Map<String, ExtendedInfo> createExtendedInfos() {
@@ -169,9 +156,38 @@ public class TestAuditPageProviderWithElasticSearch {
         PageProvider<?> pp = pps.getPageProvider("ADMIN_HISTORY", null, Long.valueOf(5), Long.valueOf(0),
                 new HashMap<String, Serializable>());
         assertNotNull(pp);
-
         List<LogEntry> entries = (List<LogEntry>) pp.getCurrentPage();
+        Assert.assertTrue(pp.isNextPageAvailable());
+        Assert.assertTrue(pp.isLastPageAvailable());
         Assert.assertEquals(5, entries.size());
+    }
+
+    @Test
+    public void testMaxResultWindow() throws Exception {
+        LogEntryGen.generate("uuid2", "aentry", "acategory", 10);
+
+        PageProvider<?> pp = pps.getPageProvider("ADMIN_HISTORY", null, 2L, 0L,
+                new HashMap<String, Serializable>());
+        // get current page
+        List<?> p = pp.getCurrentPage();
+        // limit the result window to the 6 first results
+        ((ESAuditPageProvider) pp).setMaxResultWindow(6);
+
+        Assert.assertEquals(10, pp.getResultsCount());
+        Assert.assertEquals(5, pp.getNumberOfPages());
+        Assert.assertTrue(pp.isNextPageAvailable());
+        // last page is not accessible
+        Assert.assertFalse(pp.isLastPageAvailable());
+        // only 3 pages are navigable
+        Assert.assertEquals(3, pp.getPageLimit());
+        Assert.assertTrue(pp.isNextPageAvailable());
+        // page 2
+        pp.nextPage();
+        Assert.assertTrue(pp.isNextPageAvailable());
+        // page 3 reach the max result window of 6 docs
+        pp.nextPage();
+        Assert.assertFalse(pp.isNextPageAvailable());
+        Assert.assertFalse(pp.isLastPageAvailable());
     }
 
 }

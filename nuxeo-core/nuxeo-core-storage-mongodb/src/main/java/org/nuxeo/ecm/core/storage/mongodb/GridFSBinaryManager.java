@@ -35,7 +35,7 @@ import org.apache.commons.lang.StringUtils;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.impl.blob.FileBlob;
-import org.nuxeo.ecm.core.blob.BlobManager;
+import org.nuxeo.ecm.core.blob.BlobInfo;
 import org.nuxeo.ecm.core.blob.BlobProvider;
 import org.nuxeo.ecm.core.blob.binary.AbstractBinaryManager;
 import org.nuxeo.ecm.core.blob.binary.Binary;
@@ -43,7 +43,6 @@ import org.nuxeo.ecm.core.blob.binary.BinaryBlobProvider;
 import org.nuxeo.ecm.core.blob.binary.BinaryGarbageCollector;
 import org.nuxeo.ecm.core.blob.binary.BinaryManager;
 import org.nuxeo.ecm.core.blob.binary.BinaryManagerStatus;
-import org.nuxeo.ecm.core.model.Document;
 
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
@@ -127,9 +126,8 @@ public class GridFSBinaryManager extends AbstractBinaryManager implements BlobPr
 
         private static final long serialVersionUID = 1L;
 
-        protected GridFSBinary(String digest, long length, String blobProviderId) {
+        protected GridFSBinary(String digest, String blobProviderId) {
             super(digest, blobProviderId);
-            this.length = length;
         }
 
         @Override
@@ -146,7 +144,6 @@ public class GridFSBinaryManager extends AbstractBinaryManager implements BlobPr
         }
         // we already have a file so can compute the length and digest efficiently
         File file = ((FileBlob) blob).getFile();
-        long length = file.length();
         String digest;
         try (InputStream in = new FileInputStream(file)) {
             digest = DigestUtils.md5Hex(in);
@@ -159,7 +156,7 @@ public class GridFSBinaryManager extends AbstractBinaryManager implements BlobPr
                 inputFile.save();
             }
         }
-        return new GridFSBinary(digest, length, blobProviderId);
+        return new GridFSBinary(digest, blobProviderId);
     }
 
     @Override
@@ -168,7 +165,6 @@ public class GridFSBinaryManager extends AbstractBinaryManager implements BlobPr
         GridFSInputFile inputFile = gridFS.createFile(in, true);
         inputFile.save();
         // now we know length and digest
-        long length = inputFile.getLength();
         String digest = inputFile.getMD5();
         // if the digest is already known then reuse it instead
         GridFSDBFile dbFile = gridFS.findOne(digest);
@@ -180,28 +176,28 @@ public class GridFSBinaryManager extends AbstractBinaryManager implements BlobPr
             // file already existed, no need for the temporary one
             gridFS.remove(inputFile);
         }
-        return new GridFSBinary(digest, length, blobProviderId);
+        return new GridFSBinary(digest, blobProviderId);
     }
 
     @Override
     public Binary getBinary(String digest) {
         GridFSDBFile dbFile = gridFS.findOne(digest);
         if (dbFile != null) {
-            return new GridFSBinary(digest, dbFile.getLength(), blobProviderId);
+            return new GridFSBinary(digest, blobProviderId);
         }
         return null;
     }
 
     @Override
-    public Blob readBlob(BlobManager.BlobInfo blobInfo) throws IOException {
+    public Blob readBlob(BlobInfo blobInfo) throws IOException {
         // just delegate to avoid copy/pasting code
         return new BinaryBlobProvider(this).readBlob(blobInfo);
     }
 
     @Override
-    public String writeBlob(Blob blob, Document doc) throws IOException {
+    public String writeBlob(Blob blob) throws IOException {
         // just delegate to avoid copy/pasting code
-        return new BinaryBlobProvider(this).writeBlob(blob, doc);
+        return new BinaryBlobProvider(this).writeBlob(blob);
     }
 
     @Override

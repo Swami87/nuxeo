@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2015-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Nicolas Chapurlat <nchapurlat@nuxeo.com>
  */
-
 package org.nuxeo.ecm.core.io.marshallers.json.document;
 
 import static org.nuxeo.ecm.core.io.registry.reflect.Instantiations.SINGLETON;
@@ -77,7 +76,6 @@ import org.nuxeo.ecm.core.schema.types.resolver.ObjectResolver;
  *   ]
  * }
  * </pre>
- *
  * </p>
  *
  * @since 7.2
@@ -92,19 +90,19 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
 
     @Override
     public List<Property> read(JsonNode jn) throws IOException {
-        List<Property> properties = new ArrayList<Property>();
+        List<Property> properties = new ArrayList<>();
         Iterator<Entry<String, JsonNode>> propertyNodes = jn.getFields();
         while (propertyNodes.hasNext()) {
             Entry<String, JsonNode> propertyNode = propertyNodes.next();
             String propertyName = propertyNode.getKey();
-            Field field = null;
-            Property parent = null;
+            Field field;
+            Property parent;
             if (propertyName.contains(":")) {
                 field = schemaManager.getField(propertyName);
                 if (field == null) {
                     continue;
                 }
-                parent = new DocumentPartImpl(field.getType().getSchema());
+                parent = new DocumentPartImpl(field.getDeclaringType().getSchema());
             } else {
                 String shemaName = ctx.getParameter(DEFAULT_SCHEMA_NAME);
                 Schema schema = schemaManager.getSchema(shemaName);
@@ -146,7 +144,7 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
 
     private void fillScalarProperty(Property property, JsonNode jn) throws IOException {
         if ((property instanceof ArrayProperty) && jn.isArray()) {
-            List<Object> values = new ArrayList<Object>();
+            List<Object> values = new ArrayList<>();
             Iterator<JsonNode> it = jn.getElements();
             JsonNode item;
             Type fieldType = ((ListType) property.getType()).getFieldType();
@@ -183,7 +181,14 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
         if (jn.isObject()) {
             ObjectResolver resolver = type.getObjectResolver();
             if (resolver == null) {
-                throw new MarshallingException("Unable to parse the property " + property.getPath());
+                if (type.getSuperType() != null && type.getSuperType() instanceof StringType) {
+                    // Let's assume it is a blob of which content has to be stored in a string property.
+                    Blob blob = readEntity(Blob.class, Blob.class, jn);
+                    if (blob == null) {
+                        throw new MarshallingException("Unable to parse the property " + property.getXPath());
+                    }
+                    return blob.getString();
+                }
             }
             Object object = null;
             for (Class<?> clazz : resolver.getManagedClasses()) {
@@ -194,11 +199,11 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
                 }
             }
             if (object == null) {
-                throw new MarshallingException("Unable to parse the property " + property.getPath());
+                throw new MarshallingException("Unable to parse the property " + property.getXPath());
             }
             value = resolver.getReference(object);
             if (value == null) {
-                throw new MarshallingException("Property " + property.getPath()
+                throw new MarshallingException("Property " + property.getXPath()
                         + " value cannot be resolved by the matching resolver " + resolver.getName());
             }
         } else {
@@ -232,7 +237,7 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
         if (property instanceof ArrayProperty) {
             fillScalarProperty(property, jn);
         } else {
-            JsonNode elNode = null;
+            JsonNode elNode;
             Iterator<JsonNode> it = jn.getElements();
             while (it.hasNext()) {
                 elNode = it.next();
@@ -243,7 +248,7 @@ public class DocumentPropertiesJsonReader extends AbstractJsonReader<List<Proper
     }
 
     private void fillComplexProperty(Property property, JsonNode jn) throws IOException {
-        Entry<String, JsonNode> elNode = null;
+        Entry<String, JsonNode> elNode;
         Iterator<Entry<String, JsonNode>> it = jn.getFields();
         ComplexProperty complexProperty = (ComplexProperty) property;
         ComplexType type = complexProperty.getType();

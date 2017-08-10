@@ -19,9 +19,11 @@
 package org.nuxeo.ecm.automation.jaxrs.io.operations;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.nuxeo.ecm.automation.OperationContext;
 import org.nuxeo.ecm.automation.OperationException;
+import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.webengine.jaxrs.context.RequestCleanupHandler;
 import org.nuxeo.ecm.webengine.jaxrs.context.RequestContext;
 
@@ -41,7 +43,7 @@ public class RestOperationContext extends OperationContext {
      *
      * @since 7.1
      */
-    protected int httpStatus;
+    protected int httpStatus = HttpServletResponse.SC_OK;
 
     /**
      * Must be called before context execution.
@@ -51,9 +53,9 @@ public class RestOperationContext extends OperationContext {
             @Override
             public void cleanup(HttpServletRequest req) {
                 try {
-                    deferredDispose();
+                    close();
                 } catch (OperationException e) {
-                    throw new RuntimeException(e);
+                    throw new NuxeoException(e);
                 }
             }
         });
@@ -71,15 +73,6 @@ public class RestOperationContext extends OperationContext {
      */
     public void setHttpStatus(int httpStatus) {
         this.httpStatus = httpStatus;
-    }
-
-    protected void deferredDispose() throws OperationException {
-        super.dispose();
-    }
-
-    @Override
-    public void dispose() {
-        // do nothing
     }
 
 }

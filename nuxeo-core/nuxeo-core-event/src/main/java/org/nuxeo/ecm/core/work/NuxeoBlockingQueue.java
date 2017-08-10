@@ -53,7 +53,7 @@ public abstract class NuxeoBlockingQueue extends AbstractQueue<Runnable> impleme
 
     protected final Condition activation = activationLock.newCondition();
 
-    protected volatile boolean active = true;
+    protected volatile boolean active = false;
 
     protected final String queueId;
 
@@ -74,7 +74,6 @@ public abstract class NuxeoBlockingQueue extends AbstractQueue<Runnable> impleme
      * @param active {@code true} to make the queue active, or {@code false} to deactivate it
      */
     public WorkQueueMetrics setActive(boolean active) {
-        WorkQueueMetrics metrics = metrics();
         this.active = active;
         activationLock.lock();
         try {
@@ -82,7 +81,7 @@ public abstract class NuxeoBlockingQueue extends AbstractQueue<Runnable> impleme
         } finally {
             activationLock.unlock();
         }
-        return metrics;
+        return metrics();
     }
 
     @Override
@@ -119,7 +118,15 @@ public abstract class NuxeoBlockingQueue extends AbstractQueue<Runnable> impleme
         if (!active) {
             return null;
         }
-        return pollElement();
+        Runnable runnable =  pollElement();
+        if (runnable == null) {
+            return null;
+        }
+        if (!active) {
+            queuing.workReschedule(queueId, WorkHolder.getWork(runnable));
+            return null;
+        }
+        return runnable;
     }
 
     protected long timeUntil(long end) {

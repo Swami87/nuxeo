@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2015 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  *
  * Contributors:
  *     Nuxeo - initial API and implementation
- *
  */
 package org.nuxeo.ecm.platform.pictures.tiles.service;
 
@@ -41,7 +40,6 @@ import org.nuxeo.ecm.platform.picture.magick.utils.ImageConverter;
 import org.nuxeo.ecm.platform.pictures.tiles.api.PictureTiles;
 import org.nuxeo.ecm.platform.pictures.tiles.api.PictureTilesImpl;
 import org.nuxeo.ecm.platform.pictures.tiles.api.PictureTilingService;
-import org.nuxeo.ecm.platform.pictures.tiles.api.imageresource.BlobResource;
 import org.nuxeo.ecm.platform.pictures.tiles.api.imageresource.ImageResource;
 import org.nuxeo.ecm.platform.pictures.tiles.magick.tiler.MagickTiler;
 import org.nuxeo.ecm.platform.pictures.tiles.tilers.PictureTiler;
@@ -64,7 +62,7 @@ public class PictureTilingComponent extends DefaultComponent implements PictureT
 
     protected static Map<String, PictureTilingCacheInfo> cache = new HashMap<>();
 
-    protected static List<String> inprocessTiles = Collections.synchronizedList(new ArrayList<String>());
+    protected static List<String> inprocessTiles = Collections.synchronizedList(new ArrayList<>());
 
     protected static PictureTiler defaultTiler = new MagickTiler();
 
@@ -134,8 +132,8 @@ public class PictureTilingComponent extends DefaultComponent implements PictureT
             dir.mkdir();
         }
         path = dir.getAbsolutePath();
-        if (!path.endsWith("/")) {
-            path += "/";
+        if (!path.endsWith(File.separator)) {
+            path += File.separator;
         }
         return path;
     }
@@ -148,19 +146,13 @@ public class PictureTilingComponent extends DefaultComponent implements PictureT
     protected String getWorkingDirPathForRessource(ImageResource resource) {
         String pathForBlob = getWorkingDirPath();
         String digest = resource.getHash();
-        pathForBlob = pathForBlob + digest + "/";
+        pathForBlob = pathForBlob + digest + File.separator;
         log.debug("WorkingDirPath for resource=" + pathForBlob);
         File wdir = new File(pathForBlob);
         if (!wdir.exists()) {
             wdir.mkdir();
         }
         return pathForBlob;
-    }
-
-    @Override
-    @Deprecated
-    public PictureTiles getTilesFromBlob(Blob blob, int tileWidth, int tileHeight, int maxTiles) {
-        return getTilesFromBlob(blob, tileWidth, tileHeight, maxTiles, 0, 0, false);
     }
 
     @Override
@@ -173,20 +165,11 @@ public class PictureTilingComponent extends DefaultComponent implements PictureT
 
         String outputDirPath = existingTiles.getTilesPath();
 
-        long lastModificationTime = Long.parseLong(existingTiles.getInfo().get(
-                PictureTilesImpl.LAST_MODIFICATION_DATE_KEY));
+        long lastModificationTime = Long.parseLong(
+                existingTiles.getInfo().get(PictureTilesImpl.LAST_MODIFICATION_DATE_KEY));
         return computeTiles(existingTiles.getSourceImageInfo(), outputDirPath, existingTiles.getTilesWidth(),
                 existingTiles.getTilesHeight(), existingTiles.getMaxTiles(), xCenter, yCenter, lastModificationTime,
                 false);
-    }
-
-    @Override
-    @Deprecated
-    public PictureTiles getTilesFromBlob(Blob blob, int tileWidth, int tileHeight, int maxTiles, int xCenter,
-            int yCenter, boolean fullGeneration) {
-
-        ImageResource resource = new BlobResource(blob);
-        return getTiles(resource, tileWidth, tileHeight, maxTiles, xCenter, yCenter, fullGeneration);
     }
 
     @Override
@@ -258,8 +241,9 @@ public class PictureTilingComponent extends DefaultComponent implements PictureT
                         transferBlob(blob, inputFile);
                     }
                 } catch (IOException e) {
-                    String msg = String.format("Unable to transfer blob to file at '%s', "
-                            + "working directory path: '%s'", inputFilePath, wdirPath);
+                    String msg = String.format(
+                            "Unable to transfer blob to file at '%s', " + "working directory path: '%s'", inputFilePath,
+                            wdirPath);
                     log.error(msg, e);
                     throw new NuxeoException(msg, e);
                 }

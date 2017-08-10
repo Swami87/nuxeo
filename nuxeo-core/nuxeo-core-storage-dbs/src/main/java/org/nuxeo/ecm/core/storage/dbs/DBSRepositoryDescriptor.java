@@ -51,10 +51,18 @@ public class DBSRepositoryDescriptor implements Cloneable {
         return isDefault;
     }
 
+    @XNode("idType")
+    public String idType; // "varchar", "uuid", "sequence"
+
     protected FulltextDescriptor fulltextDescriptor = new FulltextDescriptor();
 
     public FulltextDescriptor getFulltextDescriptor() {
         return fulltextDescriptor;
+    }
+
+    @XNode("fulltext@fieldSizeLimit")
+    public void setFulltextFieldSizeLimit(int fieldSizeLimit) {
+        fulltextDescriptor.setFulltextFieldSizeLimit(fieldSizeLimit);
     }
 
     @XNode("fulltext@disabled")
@@ -87,6 +95,68 @@ public class DBSRepositoryDescriptor implements Cloneable {
         fulltextDescriptor.setFulltextIncludedTypes(fulltextIncludedTypes);
     }
 
+    /** @since 8.10 */
+    @XNode("cache@enabled")
+    private Boolean cacheEnabled;
+
+    /** @since 8.10 */
+    public boolean isCacheEnabled() {
+        return defaultFalse(cacheEnabled);
+    }
+
+    /** @since 8.10 */
+    protected void setCacheEnabled(boolean enabled) {
+        cacheEnabled = Boolean.valueOf(enabled);
+    }
+
+    /** @since 8.10 */
+    @XNode("cache@ttl")
+    public Long cacheTTL;
+
+    /** @since 8.10 */
+    @XNode("cache@maxSize")
+    public Long cacheMaxSize;
+
+    /** @since 8.10 */
+    @XNode("cache@concurrencyLevel")
+    public Integer cacheConcurrencyLevel;
+
+    /** @since 8.10 */
+    @XNode("clustering@id")
+    public String clusterNodeId;
+
+    /** @since 8.10 */
+    @XNode("clustering@enabled")
+    private Boolean clusteringEnabled;
+
+    /** @since 8.10 */
+    @XNode("clustering/invalidatorClass")
+    public Class<? extends DBSClusterInvalidator> clusterInvalidatorClass;
+
+    /** @since 8.10 */
+    public boolean isClusteringEnabled() {
+        return defaultFalse(clusteringEnabled);
+    }
+
+    /** @since 8.10 */
+    protected void setClusteringEnabled(boolean enabled) {
+        clusteringEnabled = Boolean.valueOf(enabled);
+    }
+
+    /** @since 9.1 */
+    @XNode("changeTokenEnabled")
+    private Boolean changeTokenEnabled;
+
+    /** @since 9.1 */
+    public boolean isChangeTokenEnabled() {
+        return defaultFalse(changeTokenEnabled);
+    }
+
+    /** @since 9.1 */
+    public void setChangeTokenEnabled(boolean enabled) {
+        this.changeTokenEnabled = Boolean.valueOf(enabled);
+    }
+
     @Override
     public DBSRepositoryDescriptor clone() {
         try {
@@ -108,7 +178,38 @@ public class DBSRepositoryDescriptor implements Cloneable {
         if (other.isDefault != null) {
             isDefault = other.isDefault;
         }
+        if (other.idType != null) {
+            idType = other.idType;
+        }
         fulltextDescriptor.merge(other.fulltextDescriptor);
+        if (other.cacheEnabled != null) {
+            cacheEnabled = other.cacheEnabled;
+        }
+        if (other.cacheTTL != null) {
+            cacheTTL = other.cacheTTL;
+        }
+        if (other.cacheMaxSize != null) {
+            cacheMaxSize = other.cacheMaxSize;
+        }
+        if (other.cacheConcurrencyLevel != null) {
+            cacheConcurrencyLevel = other.cacheConcurrencyLevel;
+        }
+        if (other.clusterNodeId != null) {
+            clusterNodeId = other.clusterNodeId;
+        }
+        if (other.clusteringEnabled != null) {
+            clusteringEnabled = other.clusteringEnabled;
+        }
+        if (other.clusterInvalidatorClass != null) {
+            clusterInvalidatorClass = other.clusterInvalidatorClass;
+        }
+        if (other.changeTokenEnabled != null) {
+            changeTokenEnabled = other.changeTokenEnabled;
+        }
+    }
+
+    private static boolean defaultFalse(Boolean bool) {
+        return Boolean.TRUE.equals(bool);
     }
 
 }

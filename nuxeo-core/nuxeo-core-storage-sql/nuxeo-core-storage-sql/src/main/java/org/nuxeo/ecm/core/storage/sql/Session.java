@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2011 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2017 Nuxeo (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  * Contributors:
  *     Florent Guillaume
  */
-
 package org.nuxeo.ecm.core.storage.sql;
 
 import java.io.Serializable;
@@ -27,6 +26,7 @@ import javax.resource.cci.Connection;
 
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.PartialList;
+import org.nuxeo.ecm.core.api.ScrollResult;
 import org.nuxeo.ecm.core.model.LockManager;
 import org.nuxeo.ecm.core.query.QueryFilter;
 
@@ -52,11 +52,6 @@ public interface Session extends Connection {
     boolean isLive();
 
     /**
-     * Returns {@code true} if all sessions in the current thread share the same state.
-     */
-    boolean isStateSharedByAllThreadSessions();
-
-    /**
      * Gets the session repository name.
      *
      * @return the repository name
@@ -74,7 +69,6 @@ public interface Session extends Connection {
      * Saves the modifications to persistent storage.
      * <p>
      * Modifications will be actually written only upon transaction commit.
-     *
      */
     void save();
 
@@ -134,6 +128,21 @@ public interface Session extends Connection {
      * @since 5.8
      */
     boolean removeMixinType(Node node, String mixin);
+
+    /**
+     * Executes the given query and returns the first batch of results, next batch must be requested within the
+     * {@code keepAliveSeconds} delay.
+     *
+     * @since 8.4
+     */
+    ScrollResult scroll(String query, int batchSize, int keepAliveSeconds);
+
+    /**
+     * Get the next batch of result, the {@code scrollId} is part of the previous {@link ScrollResult} response.
+     *
+     * @since 8.4
+     */
+    ScrollResult scroll(String scrollId);
 
     /**
      * Interface for a class that knows how to resolve a node path into a node id.
@@ -396,14 +405,14 @@ public interface Session extends Connection {
      * Makes a query to the database.
      *
      * @param query the query
-     * @param query the query type
+     * @param queryType the query type
      * @param queryFilter the query filter
      * @param countUpTo if {@code -1}, also count the total size without offset/limit.<br>
      *            If {@code 0}, don't count the total size.<br>
      *            If {@code n}, count the total number if there are less than n documents otherwise set the size to
      *            {@code -1}.
      * @return the resulting list with total size included
-     * @Since 5.6
+     * @since 5.6
      */
     PartialList<Serializable> query(String query, String queryType, QueryFilter queryFilter, long countUpTo);
 
@@ -431,6 +440,24 @@ public interface Session extends Connection {
      */
     IterableQueryResult queryAndFetch(String query, String queryType, QueryFilter queryFilter,
             boolean distinctDocuments, Object... params);
+
+    /**
+     * Makes a query to the database.
+     *
+     * @param query the query
+     * @param queryType the query type
+     * @param queryFilter the query filter
+     * @param distinctDocuments if {@code true} then a maximum of one row per document will be returned
+     * @param countUpTo if {@code -1}, also count the total size without offset/limit.<br>
+     *            If {@code 0}, don't count the total size.<br>
+     *            If {@code n}, count the total number if there are less than n documents otherwise set the size to
+     *            {@code -1}.
+     * @param params optional query-type-dependent parameters
+     * @return a projection
+     * @since 7.10-HF-25, 8.10-HF06, 9.2
+     */
+    PartialList<Map<String,Serializable>> queryProjection(String query, String queryType, QueryFilter queryFilter, boolean distinctDocuments,
+            long countUpTo, Object[] params);
 
     /**
      * Gets the lock manager for this session.
@@ -464,5 +491,22 @@ public interface Session extends Connection {
      * @since 5.9.3
      */
     Map<String, String> getBinaryFulltext(Serializable id);
+
+    /**
+     * Checks if change token management is enabled.
+     *
+     * @since 9.1
+     */
+    boolean isChangeTokenEnabled();
+
+    /**
+     * Marks the document as being modified by a user change.
+     * <p>
+     * This causes an additional change token increment and check during save.
+     *
+     * @param id the document id
+     * @since 9.2
+     */
+    void markUserChange(Serializable id);
 
 }

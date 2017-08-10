@@ -33,7 +33,6 @@ import java.security.cert.X509Certificate;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -44,7 +43,6 @@ import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.SearchControls;
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -79,8 +77,6 @@ public class LDAPDirectory extends AbstractDirectory {
 
     protected SearchControls searchControls;
 
-    protected Map<String, Field> schemaFieldMap;
-
     protected final LDAPDirectoryFactory factory;
 
     protected String baseFilter;
@@ -89,7 +85,7 @@ public class LDAPDirectory extends AbstractDirectory {
     protected ContextProvider testServer;
 
     public LDAPDirectory(LDAPDirectoryDescriptor descriptor) {
-        super(descriptor);
+        super(descriptor, LDAPReference.class);
         if (StringUtils.isEmpty(descriptor.getSearchBaseDn())) {
             throw new DirectoryException("searchBaseDn configuration is missing for directory " + getName());
         }
@@ -103,8 +99,7 @@ public class LDAPDirectory extends AbstractDirectory {
 
     @Override
     public List<Reference> getReferences(String referenceFieldName) {
-        if(schemaFieldMap == null)
-        {
+        if (schemaFieldMap == null) {
             initLDAPConfig();
         }
         return references.get(referenceFieldName);
@@ -116,36 +111,30 @@ public class LDAPDirectory extends AbstractDirectory {
      * @since 6.0
      */
     protected void initLDAPConfig() {
-        LDAPDirectoryDescriptor descriptor = getDescriptor();
+        LDAPDirectoryDescriptor ldapDirectoryDesc = getDescriptor();
         // computing attributes that will be useful for all sessions
         SchemaManager schemaManager = Framework.getLocalService(SchemaManager.class);
         Schema schema = schemaManager.getSchema(getSchema());
         if (schema == null) {
             throw new DirectoryException(getSchema() + " is not a registered schema");
         }
-        schemaFieldMap = new LinkedHashMap<String, Field>();
+        schemaFieldMap = new LinkedHashMap<>();
         for (Field f : schema.getFields()) {
             schemaFieldMap.put(f.getName().getLocalName(), f);
         }
 
         // init field mapper before search fields
-        fieldMapper = new DirectoryFieldMapper(descriptor.fieldMapping);
+        fieldMapper = new DirectoryFieldMapper(ldapDirectoryDesc.fieldMapping);
         contextProperties = computeContextProperties();
-        baseFilter = descriptor.getAggregatedSearchFilter();
+        baseFilter = ldapDirectoryDesc.getAggregatedSearchFilter();
 
         // register the references
-        addReferences(descriptor.getInverseReferences());
-        addReferences(descriptor.getLdapReferences());
+        addReferences(ldapDirectoryDesc.getLdapReferences());
 
         // register the search controls after having registered the references
         // since the list of attributes to fetch my depend on registered
         // LDAPReferences
         searchControls = computeSearchControls();
-
-        // cache parameterization
-        cache.setEntryCacheName(descriptor.cacheEntryName);
-        cache.setEntryCacheWithoutReferencesName(descriptor.cacheEntryWithoutReferencesName);
-        cache.setNegativeCaching(descriptor.negativeCaching);
 
         log.debug(String.format("initialized LDAP directory %s with fields [%s] and references [%s]", getName(),
                 StringUtils.join(schemaFieldMap.keySet().toArray(), ", "),
@@ -156,14 +145,14 @@ public class LDAPDirectory extends AbstractDirectory {
      * @return connection parameters to use for all LDAP queries
      */
     protected Properties computeContextProperties() throws DirectoryException {
-        LDAPDirectoryDescriptor descriptor = getDescriptor();
+        LDAPDirectoryDescriptor ldapDirectoryDesc = getDescriptor();
         // Initialization of LDAP connection parameters from parameters
         // registered in the LDAP "server" extension point
         Properties props = new Properties();
         LDAPServerDescriptor serverConfig = getServer();
 
         if (null == serverConfig) {
-            throw new DirectoryException("LDAP server configuration not found: " + descriptor.getServerName());
+            throw new DirectoryException("LDAP server configuration not found: " + ldapDirectoryDesc.getServerName());
         }
 
         props.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
@@ -232,14 +221,14 @@ public class LDAPDirectory extends AbstractDirectory {
      * @throws DirectoryException
      */
     protected SearchControls computeSearchControls() throws DirectoryException {
-        LDAPDirectoryDescriptor descriptor = getDescriptor();
+        LDAPDirectoryDescriptor ldapDirectoryDesc = getDescriptor();
         SearchControls scts = new SearchControls();
         // respect the scope of the configuration
-        scts.setSearchScope(descriptor.getSearchScope());
+        scts.setSearchScope(ldapDirectoryDesc.getSearchScope());
 
         // only fetch attributes that are defined in the schema or needed to
         // compute LDAPReferences
-        Set<String> attrs = new HashSet<String>();
+        Set<String> attrs = new HashSet<>();
         for (String fieldName : schemaFieldMap.keySet()) {
             if (!references.containsKey(fieldName)) {
                 attrs.add(fieldMapper.getBackendField(fieldName));
@@ -269,8 +258,8 @@ public class LDAPDirectory extends AbstractDirectory {
 
         scts.setReturningAttributes(attrs.toArray(new String[attrs.size()]));
 
-        scts.setCountLimit(descriptor.getQuerySizeLimit());
-        scts.setTimeLimit(descriptor.getQueryTimeLimit());
+        scts.setCountLimit(ldapDirectoryDesc.getQuerySizeLimit());
+        scts.setTimeLimit(ldapDirectoryDesc.getQueryTimeLimit());
 
         return scts;
     }
@@ -281,16 +270,14 @@ public class LDAPDirectory extends AbstractDirectory {
 
     public SearchControls getSearchControls(boolean fetchAllAttributes) {
         if (fetchAllAttributes) {
+            // build a new ftcs instance with no attribute filtering
+            LDAPDirectoryDescriptor ldapDirectoryDesc = getDescriptor();
+            SearchControls scts = new SearchControls();
+            scts.setSearchScope(ldapDirectoryDesc.getSearchScope());
+            return scts;
+        } else {
             // return the precomputed scts instance
             return searchControls;
-        } else {
-            // build a new ftcs instance with no attribute filtering
-            LDAPDirectoryDescriptor descriptor = getDescriptor();
-            SearchControls scts = new SearchControls();
-            scts.setSearchScope(descriptor.getSearchScope());
-            scts.setReturningAttributes(
-                    new String[] { descriptor.rdnAttribute, descriptor.fieldMapping.get(getIdField()) });
-            return scts;
         }
     }
 
@@ -354,10 +341,6 @@ public class LDAPDirectory extends AbstractDirectory {
         }
     }
 
-    public Map<String, Field> getSchemaFieldMap() {
-        return schemaFieldMap;
-    }
-
     public void setTestServer(ContextProvider testServer) {
         this.testServer = testServer;
     }
@@ -371,8 +354,6 @@ public class LDAPDirectory extends AbstractDirectory {
 
         /**
          * Create a new SSLSocketFactory that creates a Socket regardless of the certificate used.
-         *
-         * @throws SSLException if initialization fails.
          */
         public TrustingSSLSocketFactory() {
             try {

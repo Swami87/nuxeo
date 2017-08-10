@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2006-2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2006-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@
  */
 package org.nuxeo.ecm.core.storage.sql.db;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.lang.reflect.Constructor;
+import java.nio.file.Paths;
 import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -47,12 +47,12 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
-import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
@@ -60,12 +60,12 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.LockObtainFailedException;
 import org.apache.lucene.store.RAMDirectory;
-import org.apache.lucene.util.Version;
 import org.h2.message.DbException;
 import org.h2.store.fs.FileUtils;
 import org.h2.tools.SimpleResultSet;
@@ -77,11 +77,9 @@ import org.h2.util.StringUtils;
  */
 public class H2Fulltext {
 
-    private static final Version LUCENE_VERSION = Version.LUCENE_4_10_4;
+    private static final Map<String, Analyzer> analyzers = new ConcurrentHashMap<>();
 
-    private static final Map<String, Analyzer> analyzers = new ConcurrentHashMap<String, Analyzer>();
-
-    private static final Map<String, IndexWriter> indexWriters = new ConcurrentHashMap<String, IndexWriter>();
+    private static final Map<String, IndexWriter> indexWriters = new ConcurrentHashMap<>();
 
     private static final String FT_SCHEMA = "NXFT";
 
@@ -118,8 +116,6 @@ public class H2Fulltext {
      *      &quot;org.nuxeo.ecm.core.storage.sql.db.H2Fulltext.init&quot;;
      *  CALL NXFT_INIT();
      * </pre>
-     *
-     * @param conn
      */
     public static void init(Connection conn) throws SQLException {
         try (Statement st = conn.createStatement()) {
@@ -176,8 +172,8 @@ public class H2Fulltext {
             ps.setString(1, indexName);
             ps.execute();
         }
-        try (PreparedStatement ps = conn.prepareStatement("INSERT INTO " + FT_TABLE
-                + "(NAME, SCHEMA, TABLE, COLUMNS, ANALYZER) VALUES(?, ?, ?, ?, ?)")) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO " + FT_TABLE + "(NAME, SCHEMA, TABLE, COLUMNS, ANALYZER) VALUES(?, ?, ?, ?, ?)")) {
             ps.setString(1, indexName);
             ps.setString(2, schema);
             ps.setString(3, table);
@@ -196,7 +192,7 @@ public class H2Fulltext {
         removeIndexFiles(conn);
         try (Statement st = conn.createStatement()) {
             try (ResultSet rs = st.executeQuery("SELECT * FROM " + FT_TABLE)) {
-                Set<String> done = new HashSet<String>();
+                Set<String> done = new HashSet<>();
                 while (rs.next()) {
                     String schema = rs.getString("SCHEMA");
                     String table = rs.getString("TABLE");
@@ -247,9 +243,9 @@ public class H2Fulltext {
             schema = StringUtils.quoteIdentifier(schema);
             String trigger = schema + '.' + StringUtils.quoteIdentifier(PREFIX + table);
             st.execute("DROP TRIGGER IF EXISTS " + trigger);
-            st.execute(String.format("CREATE TRIGGER %s " + "AFTER INSERT, UPDATE, DELETE ON %s.%s "
-                    + "FOR EACH ROW CALL \"%s\"", trigger, schema, StringUtils.quoteIdentifier(table),
-                    H2Fulltext.Trigger.class.getName()));
+            st.execute(String.format(
+                    "CREATE TRIGGER %s " + "AFTER INSERT, UPDATE, DELETE ON %s.%s " + "FOR EACH ROW CALL \"%s\"",
+                    trigger, schema, StringUtils.quoteIdentifier(table), H2Fulltext.Trigger.class.getName()));
         }
     }
 
@@ -314,8 +310,8 @@ public class H2Fulltext {
         String analyzerName;
 
         // find schema, table and analyzer
-        try (PreparedStatement ps = conn.prepareStatement("SELECT SCHEMA, TABLE, ANALYZER FROM " + FT_TABLE
-                + " WHERE NAME = ?")) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT SCHEMA, TABLE, ANALYZER FROM " + FT_TABLE + " WHERE NAME = ?")) {
             ps.setString(1, indexName);
             try (ResultSet res = ps.executeQuery()) {
                 if (!res.next()) {
@@ -348,16 +344,16 @@ public class H2Fulltext {
 
         // search index
         try {
-            BooleanQuery query = new BooleanQuery();
+            BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
             String defaultField = fieldForIndex(indexName);
             Analyzer analyzer = getAnalyzer(analyzerName);
-            QueryParser parser = new QueryParser(LUCENE_VERSION, defaultField, analyzer);
-            query.add(parser.parse(text), BooleanClause.Occur.MUST);
+            QueryParser parser = new QueryParser(defaultField, analyzer);
+            queryBuilder.add(parser.parse(text), BooleanClause.Occur.MUST);
 
             try (IndexReader reader = DirectoryReader.open(writer.getDirectory())) {
                 IndexSearcher searcher = new IndexSearcher(reader);
                 Collector collector = new ResultSetCollector(rs, reader, type);
-                searcher.search(query, collector);
+                searcher.search(queryBuilder.build(), collector);
             }
         } catch (SQLException | ParseException | IOException e) {
             throw convertException(e);
@@ -365,7 +361,7 @@ public class H2Fulltext {
         return rs;
     }
 
-    protected static class ResultSetCollector extends Collector {
+    protected static class ResultSetCollector implements Collector, LeafCollector {
         protected final SimpleResultSet rs;
 
         protected IndexReader reader;
@@ -381,8 +377,9 @@ public class H2Fulltext {
         }
 
         @Override
-        public void setNextReader(AtomicReaderContext context) {
+        public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
             docBase = context.docBase;
+            return this;
         }
 
         @Override
@@ -390,8 +387,8 @@ public class H2Fulltext {
         }
 
         @Override
-        public boolean acceptsDocsOutOfOrder() {
-            return true;
+        public boolean needsScores() {
+            return false;
         }
 
         @Override
@@ -401,7 +398,7 @@ public class H2Fulltext {
             Object key;
             try {
                 key = asObject(doc.get(FIELD_KEY), type);
-                rs.addRow(new Object[] { key });
+                rs.addRow(key);
             } catch (SQLException e) {
                 throw new IOException(e);
             }
@@ -436,8 +433,8 @@ public class H2Fulltext {
         if (analyzer == null) {
             try {
                 Class<?> klass = Class.forName(analyzerName);
-                Constructor<?> constructor = klass.getConstructor(Version.class);
-                analyzer = (Analyzer) constructor.newInstance(LUCENE_VERSION);
+                Constructor<?> constructor = klass.getConstructor();
+                analyzer = (Analyzer) constructor.newInstance();
             } catch (ReflectiveOperationException e) {
                 throw new SQLException(e.toString());
             }
@@ -479,9 +476,9 @@ public class H2Fulltext {
                 return indexWriter;
             }
             try {
-                Directory dir = path == null ? new RAMDirectory() : FSDirectory.open(new File(path));
+                Directory dir = path == null ? new RAMDirectory() : FSDirectory.open(Paths.get(path));
                 Analyzer an = getAnalyzer(analyzer);
-                IndexWriterConfig iwc = new IndexWriterConfig(LUCENE_VERSION, an);
+                IndexWriterConfig iwc = new IndexWriterConfig(an);
                 iwc.setOpenMode(OpenMode.CREATE_OR_APPEND);
                 indexWriter = new IndexWriter(dir, iwc);
             } catch (LockObtainFailedException e) {
@@ -629,7 +626,8 @@ public class H2Fulltext {
             try (ResultSet rs = meta.getPrimaryKeys(null, schema, table)) {
                 while (rs.next()) {
                     if (primaryKeyName != null) {
-                        throw new SQLException("Can only index primary keys on one column for: " + schema + '.' + table);
+                        throw new SQLException(
+                                "Can only index primary keys on one column for: " + schema + '.' + table);
                     }
                     primaryKeyName = rs.getString("COLUMN_NAME");
                 }
@@ -648,8 +646,8 @@ public class H2Fulltext {
             }
 
             // find all columns info
-            Map<String, Integer> allColumnTypes = new HashMap<String, Integer>();
-            Map<String, Integer> allColumnIndices = new HashMap<String, Integer>();
+            Map<String, Integer> allColumnTypes = new HashMap<>();
+            Map<String, Integer> allColumnIndices = new HashMap<>();
             try (ResultSet rs = meta.getColumns(null, schema, table, null)) {
                 while (rs.next()) {
                     String name = rs.getString("COLUMN_NAME");
@@ -661,13 +659,13 @@ public class H2Fulltext {
             }
 
             // find columns configured for indexing
-            try (PreparedStatement ps = conn.prepareStatement("SELECT NAME, COLUMNS, ANALYZER FROM " + FT_TABLE
-                    + " WHERE SCHEMA = ? AND TABLE = ?")) {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT NAME, COLUMNS, ANALYZER FROM " + FT_TABLE + " WHERE SCHEMA = ? AND TABLE = ?")) {
                 ps.setString(1, schema);
                 ps.setString(2, table);
                 try (ResultSet rs = ps.executeQuery()) {
-                    columnTypes = new HashMap<String, int[]>();
-                    columnIndices = new HashMap<String, int[]>();
+                    columnTypes = new HashMap<>();
+                    columnIndices = new HashMap<>();
                     while (rs.next()) {
                         String index = rs.getString(1);
                         String columns = rs.getString(2);
@@ -741,9 +739,8 @@ public class H2Fulltext {
                 throw convertException(e);
             } catch (org.apache.lucene.store.AlreadyClosedException e) {
                 // DEBUG
-                log.error(
-                        "org.apache.lucene.store.AlreadyClosedException in thread " + Thread.currentThread().getName()
-                                + ", last close was in thread " + lastIndexWriterCloseThread, lastIndexWriterClose);
+                log.error("org.apache.lucene.store.AlreadyClosedException in thread " + Thread.currentThread().getName()
+                        + ", last close was in thread " + lastIndexWriterCloseThread, lastIndexWriterClose);
                 throw e;
             }
         }

@@ -12,7 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  * Contributors:
  *     Nuxeo - initial API and implementation
  *
@@ -35,14 +35,28 @@ import org.apache.commons.logging.LogFactory;
  * <p>
  * Used to store context data and invalidate some data given its scope. Implements Map for easier use from interface.
  *
+ * @deprecated since 9.1, use a regular {@link HashMap} instead
  * @see ScopeType
  * @author <a href="mailto:at@nuxeo.com">Anahide Tchertchian</a>
  */
+@Deprecated
 public class ScopedMap extends HashMap<String, Serializable> {
 
     private static final Log log = LogFactory.getLog(ScopedMap.class);
 
-    private static final long serialVersionUID = -616031057117818344L;
+    private static final long serialVersionUID = 1L;
+
+    private static final String DEFAULT_PREFIX = ScopeType.DEFAULT.getScopePrefix();
+
+    private static final String REQUEST_PREFIX = ScopeType.REQUEST.getScopePrefix();
+
+    public ScopedMap() {
+        super();
+    }
+
+    public ScopedMap(Map<String, Serializable> map) {
+        super(map);
+    }
 
     /**
      * Gets value for given scope and given key.
@@ -50,7 +64,7 @@ public class ScopedMap extends HashMap<String, Serializable> {
     public Serializable getScopedValue(ScopeType scope, String key) {
         Serializable res = null;
         if (scope != null && key != null) {
-            res = get(scope.getScopedKey(key));
+            res = super.get(scope.getScopedKey(key));
         }
         return res;
     }
@@ -94,7 +108,7 @@ public class ScopedMap extends HashMap<String, Serializable> {
         if (scope == null || key == null) {
             log.error(String.format("Cannot set scope value using scopeType=%s and key=%s", scope, key));
         } else {
-            put(scope.getScopedKey(key), value);
+            super.put(scope.getScopedKey(key), value);
         }
     }
 
@@ -123,6 +137,44 @@ public class ScopedMap extends HashMap<String, Serializable> {
             for (String key : toRemove) {
                 remove(key);
             }
+        }
+    }
+
+    // used in unit tests
+    protected Serializable superGet(Object key) {
+        return super.get(key);
+    }
+
+    // used in unit tests
+    protected Serializable superPut(String key, Serializable value) {
+        return super.put(key, value);
+    }
+
+    /* Compatibility with code using old keys */
+    @Override
+    public Serializable get(Object key) {
+        if (key instanceof String) {
+            key = compatKey((String) key);
+        }
+        return super.get(key);
+    }
+
+    /* Compatibility with code using old keys */
+    @Override
+    public Serializable put(String key, Serializable value) {
+        return super.put(compatKey(key), value);
+    }
+
+    /**
+     * Removes the prefix default/ or request/ from the key.
+     */
+    protected String compatKey(String key) {
+        if (key.startsWith(DEFAULT_PREFIX)) {
+            return key.substring(DEFAULT_PREFIX.length());
+        } else if (key.startsWith(REQUEST_PREFIX)) {
+            return key.substring(REQUEST_PREFIX.length());
+        } else {
+            return key;
         }
     }
 

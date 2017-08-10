@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2014 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,13 +30,20 @@ import org.openqa.selenium.WebDriver;
 public class NoteCreationFormPage extends DublinCoreCreationDocumentFormPage {
 
     /**
-     * @param driver
+     * @param driver the driver
      */
     public NoteCreationFormPage(WebDriver driver) {
         super(driver);
     }
 
     public NoteDocumentBasePage createNoteDocument(String title, String description, boolean defineNote,
+            String noteContent) {
+        fillCreateNoteForm(title, description, defineNote, noteContent);
+        create();
+        return asPage(NoteDocumentBasePage.class);
+    }
+
+    public NoteCreationFormPage fillCreateNoteForm(String title, String description, boolean defineNote,
             String noteContent) {
         titleTextInput.sendKeys(title);
         descriptionTextInput.sendKeys(description);
@@ -46,7 +53,6 @@ public class NoteCreationFormPage extends DublinCoreCreationDocumentFormPage {
             editor.setInputValue(noteContent);
         }
 
-        create();
-        return asPage(NoteDocumentBasePage.class);
+        return this;
     }
 }
