@@ -123,8 +123,8 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
                 }
                 URL url = contributor.getContext().getLocalResource(path);
                 if (url == null) {
-                    log.error(String.format("Cannot resolve local URL for resource '%s' with path '%s'",
-                            resource.getName(), resource.getPath()));
+                    log.error("Cannot resolve local URL for resource '" + resource.getName() + "' with path '"
+                            + resource.getPath() + "'");
                 } else {
                     String builtUri = url.toString();
                     if (hasWildcard) {
@@ -212,7 +212,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
             for (String dn : deps) {
                 Resource d = getResource(dn);
                 if (d == null) {
-                    log.error(String.format("Unknown resource dependency named '%s'", dn));
+                    log.error("Unknown resource dependency named '" + dn + "'");
                     continue;
                 }
                 if (!ResourceType.matches(type, d)) {
@@ -236,6 +236,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Register resource bundle '%s'", bundle.getName()));
         resourceBundles.addContribution(bundle);
         log.info(String.format("Done registering resource bundle '%s'", bundle.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -243,6 +244,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Removing resource bundle '%s'", bundle.getName()));
         resourceBundles.removeContribution(bundle);
         log.info(String.format("Done removing resource bundle '%s'", bundle.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -250,6 +252,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Register resource '%s'", resource.getName()));
         resources.addContribution(resource);
         log.info(String.format("Done registering resource '%s'", resource.getName()));
+        setModifiedNow();
     }
 
     @Override
@@ -257,6 +260,7 @@ public class WebResourceManagerImpl extends DefaultComponent implements WebResou
         log.info(String.format("Removing resource '%s'", resource.getName()));
         resources.removeContribution(resource);
         log.info(String.format("Done removing resource '%s'", resource.getName()));
+        setModifiedNow();
     }
 
 }

@@ -3,6 +3,9 @@
   xmlns:nxu="http://nuxeo.org/nxweb/util"
   xmlns:nxd="http://nuxeo.org/nxweb/document"
   xmlns:c="http://java.sun.com/jstl/core" xmlns:f="http://java.sun.com/jsf/core">
+
+<c:if test="#{webActions.checkFilter('only_for_manager')}">
+
   <a4j:outputPanel id="connectStatusPanel" layout="block">
 
     <h:panelGroup rendered="#{!registredConnectInstance}">
@@ -181,12 +184,12 @@
           <tr>
             <td class="focusColumn"><h:outputText
                 value="#{messages['label.nuxeo.connect.id.CLID']}" /></td>
-            <td><h:outputText value="#{connectStatus.registredCLID}" /></td>
+            <td class="wordbreak"><h:outputText value="#{connectStatus.registredCLID}" /></td>
           </tr>
           <tr>
             <td class="focusColumn"><h:outputText
                 value="#{messages['label.nuxeo.connect.id.CTID']}" /></td>
-            <td><h:outputText value="#{connectStatus.getCTID()}" /></td>
+            <td class="wordbreak"><h:outputText value="#{connectStatus.getCTID()}" /></td>
           </tr>
           <tr>
             <td class="focusColumn"></td>
@@ -235,4 +238,7 @@
     </h:panelGroup>
 
   </a4j:outputPanel>
+
+</c:if>
+
 </div>

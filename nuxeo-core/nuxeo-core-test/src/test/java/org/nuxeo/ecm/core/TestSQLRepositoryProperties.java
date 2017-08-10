@@ -56,6 +56,7 @@ import org.nuxeo.ecm.core.api.model.DeltaLong;
 import org.nuxeo.ecm.core.api.model.DocumentPart;
 import org.nuxeo.ecm.core.api.model.Property;
 import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
+import org.nuxeo.ecm.core.api.model.impl.ListProperty;
 import org.nuxeo.ecm.core.api.model.impl.primitives.ExternalBlobProperty;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.model.Repository;
@@ -65,6 +66,7 @@ import org.nuxeo.ecm.core.schema.types.ComplexTypeImpl;
 import org.nuxeo.ecm.core.schema.types.Field;
 import org.nuxeo.ecm.core.schema.types.ListType;
 import org.nuxeo.ecm.core.schema.types.Type;
+import org.nuxeo.ecm.core.storage.State;
 import org.nuxeo.ecm.core.storage.State.StateDiff;
 import org.nuxeo.ecm.core.storage.dbs.DBSRepository;
 import org.nuxeo.ecm.core.test.CoreFeature;
@@ -160,6 +162,18 @@ public class TestSQLRepositoryProperties {
         out.write("Hello External Blob");
         out.close();
         return file;
+    }
+
+    /** Helper function to build a simple map with minimal syntax. */
+    protected static Map<String, Serializable> map(Object... values) {
+        if (values.length % 2 != 0) {
+            throw new IllegalArgumentException("Invalid number of parameters");
+        }
+        Map<String, Serializable> map = new HashMap<>();
+        for (int i = 0; i < values.length; i += 2) {
+            map.put((String) values[i], (Serializable) values[i+1]);
+        }
+        return map;
     }
 
     @Test
@@ -374,6 +388,79 @@ public class TestSQLRepositoryProperties {
         assertComplexListElements(actual, 0, "baz", 333);
     }
 
+    // DBS-only test for in-db data corruption(?) (NXP-21278)
+    @Test
+    public void testComplexListElementNullInStorage() throws Exception {
+        assumeTrue(coreFeature.getStorageConfiguration().isDBS());
+
+        doc.setPropertyValue("tp:complexList",
+                (Serializable) Arrays.asList( //
+                        Collections.singletonMap("string", "foo"), //
+                        Collections.singletonMap("string", "bar")));
+        doc = session.saveDocument(doc);
+        String id = doc.getId();
+        session.save();
+        nextTransaction();
+
+        // change data
+        StateDiff diff = new StateDiff();
+        State state = new State();
+        state.put("string", "bar");
+        diff.put("tp:complexList",
+                (Serializable) Arrays.asList( //
+                        null, // null as first element of the list
+                        state));
+        changeDoc(id, diff);
+
+        // check that we don't crash on read
+        doc = session.getDocument(doc.getRef());
+        List<?> list = (List<?>) doc.getPropertyValue("tp:complexList");
+        assertEquals(2, list.size());
+        assertComplexListElements(list, 0, null, -1);
+        assertComplexListElements(list, 1, "bar", -1);
+    }
+
+    @Test
+    public void testComplexListPropertyRemove() throws Exception {
+        List<Map<String, Serializable>> values = Arrays.asList( //
+                Collections.singletonMap("string", "foo"), //
+                Collections.singletonMap("string", "bar"), //
+                Collections.singletonMap("string", "gee"));
+        doc.setPropertyValue("tp:complexList", (Serializable) values);
+        doc = session.saveDocument(doc);
+
+        doc = session.getDocument(new PathRef("/doc"));
+        List<?> actual = (List<?>) doc.getPropertyValue("tp:complexList");
+        assertEquals(3, actual.size());
+        assertComplexListElements(actual, 0, "foo", -1);
+        assertComplexListElements(actual, 1, "bar", -1);
+        assertComplexListElements(actual, 2, "gee", -1);
+
+        // change ListProperty by removing non-final element
+
+        // remove using index
+        ListProperty prop = (ListProperty) doc.getProperty("tp:complexList");
+        prop.remove(1);
+        doc = session.saveDocument(doc);
+
+        doc = session.getDocument(new PathRef("/doc"));
+        actual = (List<?>) doc.getPropertyValue("tp:complexList");
+        assertEquals(2, actual.size());
+        assertComplexListElements(actual, 0, "foo", -1);
+        assertComplexListElements(actual, 1, "gee", -1);
+
+        // remove using property
+        prop = (ListProperty) doc.getProperty("tp:complexList");
+        prop.remove(prop.get(0));
+        doc = session.saveDocument(doc);
+
+        doc = session.getDocument(new PathRef("/doc"));
+        actual = (List<?>) doc.getPropertyValue("tp:complexList");
+        assertEquals(1, actual.size());
+        assertComplexListElements(actual, 0, "gee", -1);
+
+    }
+
     @Test
     public void testComplexListPartialUpdate() throws Exception {
         List<Map<String, Serializable>> list = Arrays.asList(Collections.singletonMap("string", "foo"));
@@ -397,7 +484,7 @@ public class TestSQLRepositoryProperties {
     protected static void assertComplexListElements(List<?> list, int i, String string, int theint) {
         Map<String, Serializable> map = (Map<String, Serializable>) list.get(i);
         assertEquals(string, map.get("string"));
-        assertEquals(Long.valueOf(theint), map.get("int"));
+        assertEquals(theint == -1 ? null : Long.valueOf(theint), map.get("int"));
     }
 
     // NXP-912
@@ -1277,6 +1364,133 @@ public class TestSQLRepositoryProperties {
         Map<String, Serializable> map = list.get(0);
         assertEquals(1, ((String[]) map.get("array")).length);
         assertEquals("baz", ((String[]) map.get("array"))[0]);
+    }
+
+    /**
+     * <pre>
+     * write {"foo": "foo1"}
+     * => {"foo": "foo1", "bar": null}
+     * </pre>
+     */
+    @Test
+    public void testGetComplexMap() {
+        DocumentModel doc = session.createDocumentModel("/", "mydoc", "MyDocType2");
+        doc.setPropertyValue("cpx:complex", (Serializable) map("foo", "foo1"));
+        doc = session.createDocument(doc);
+        session.save();
+
+        // check
+        @SuppressWarnings("unchecked")
+        Map<String, Serializable> updatedMap = (Map<String, Serializable>) doc.getPropertyValue("cpx:complex");
+        Map<String, Serializable> expectedMap = map("foo", "foo1", "bar", null);
+        assertEquals(expectedMap, updatedMap);
+    }
+
+    /**
+     * <pre>
+     * from {"foo": "foo1", "bar": "bar1"}
+     * write {"foo": "foo2"}
+     * => {"foo": "foo2", "bar": null}
+     * COMPAT {"foo": "foo2", "bar": "bar1"}
+     * </pre>
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testSetComplexMap() {
+        DocumentModel doc = session.createDocumentModel("/", "mydoc", "MyDocType2");
+        doc.setPropertyValue("cpx:complex", (Serializable) map("foo", "foo1", "bar", "bar1"));
+        doc = session.createDocument(doc);
+        session.save();
+
+        // update
+        doc.setPropertyValue("cpx:complex", (Serializable) map("foo", "foo2"));
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // check
+        Map<String, Serializable> updatedMap = (Map<String, Serializable>) doc.getPropertyValue("cpx:complex");
+        Map<String, Serializable> expectedMap;
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            expectedMap = map("foo", "foo2", "bar", null);
+        } else {
+            expectedMap = map("foo", "foo2", "bar", "bar1");
+        }
+        assertEquals(expectedMap, updatedMap);
+
+        // update again
+        // do an individual update through property xpath
+        doc.getProperty("cpx:complex/bar").setValue("bar2");
+
+        // check
+        updatedMap = (Map<String, Serializable>) doc.getPropertyValue("cpx:complex");
+        expectedMap = map("foo", "foo2", "bar", "bar2");
+        assertEquals(expectedMap, updatedMap);
+    }
+
+    /**
+     * <pre>
+     * from {"foo": "foo1", "bar": "bar1"}
+     * write {"foo": null}
+     * => {"foo": null, "bar": null}
+     * COMPAT: {"foo": null, "bar": "bar1"}
+     * </pre>
+     */
+    @Test
+    public void testSetComplexMapWithNullValue() {
+        DocumentModel doc = session.createDocumentModel("/", "mydoc", "MyDocType2");
+        doc.setPropertyValue("cpx:complex", (Serializable) map("foo", "foo1", "bar", "bar1"));
+        doc = session.createDocument(doc);
+        session.save();
+
+        // update with a null value
+        doc.setPropertyValue("cpx:complex", (Serializable) map("foo", null));
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // check
+        @SuppressWarnings("unchecked")
+        Map<String, Serializable> updatedMap = (Map<String, Serializable>) doc.getPropertyValue("cpx:complex");
+        Map<String, Serializable> expectedMap;
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            expectedMap = map("foo", null, "bar", null);
+        } else {
+            expectedMap = map("foo", null, "bar", "bar1");
+        }
+        assertEquals(expectedMap, updatedMap);
+    }
+
+    /**
+     * <pre>
+     * from [{"foo": "foo1", "bar": "bar1"}]
+     * write [{"foo": "foo2"}]
+     * => [{"foo": "foo2", "bar": null}]
+     * COMPAT: [{"foo": "foo2", "bar": "bar1"}]
+     * </pre>
+     */
+    @Test
+    public void testSetComplexMapInList() {
+        DocumentModel doc = session.createDocumentModel("/", "mydoc", "MyDocType2");
+        doc.setPropertyValue("cpxl:complexList", (Serializable) Arrays.asList(map("foo", "foo1", "bar", "bar1")));
+        doc = session.createDocument(doc);
+        session.save();
+
+        // update
+        List<Map<String, Serializable>> updateList = Arrays.asList(map("foo", "foo2"));
+        doc.setPropertyValue("cpxl:complexList", (Serializable) updateList);
+        doc = session.saveDocument(doc);
+        session.save();
+
+        // check
+        @SuppressWarnings("unchecked")
+        List<Map<String, Serializable>> updatedList = (List<Map<String, Serializable>>) doc.getPropertyValue(
+                "cpxl:complexList");
+        List<Map<String, Serializable>> expectedList;
+        if (schemaManager.getClearComplexPropertyBeforeSet()) {
+            expectedList = Arrays.asList(map("foo", "foo2", "bar", null));
+        } else {
+            expectedList = Arrays.asList(map("foo", "foo2", "bar", "bar1"));
+        }
+        assertEquals(expectedList, updatedList);
     }
 
 }

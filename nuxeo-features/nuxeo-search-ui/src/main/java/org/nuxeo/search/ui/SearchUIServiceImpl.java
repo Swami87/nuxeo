@@ -30,6 +30,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.DocumentModelFactory;
+import org.nuxeo.ecm.core.api.DocumentRef;
 import org.nuxeo.ecm.core.api.SortInfo;
 import org.nuxeo.ecm.core.api.localconfiguration.LocalConfigurationService;
 import org.nuxeo.ecm.core.api.pathsegment.PathSegmentService;
@@ -113,6 +115,13 @@ public class SearchUIServiceImpl implements SearchUIService {
         DocumentModel uws = userWorkspaceService.getCurrentUserPersonalWorkspace(session, null);
 
         DocumentModel searchDoc = searchContentViewState.getSearchDocumentModel();
+        DocumentRef ref = searchDoc.getRef();
+        if (ref != null && session.exists(ref)) {
+            // already a saved search, init a new doc
+            DocumentModel bareDoc = DocumentModelFactory.createDocumentModel(searchDoc.getType());
+            bareDoc.copyContent(searchDoc);
+            searchDoc = bareDoc;
+        }
         searchDoc.setPropertyValue("dc:title", title);
 
         if (searchDoc.hasFacet(CONTENT_VIEW_DISPLAY_FACET)) {
@@ -125,10 +134,11 @@ public class SearchUIServiceImpl implements SearchUIService {
                 }
                 searchDoc.setPropertyValue("cvd:sortInfos", list);
             }
-            searchDoc.setPropertyValue("cvd:selectedLayoutColumns", (Serializable) searchContentViewState.getResultColumns());
+            searchDoc.setPropertyValue("cvd:selectedLayoutColumns",
+                    (Serializable) searchContentViewState.getResultColumns());
         } else {
             log.warn(String.format("Search document type %s is missing %s facet", searchDoc.getType(),
-                CONTENT_VIEW_DISPLAY_FACET));
+                    CONTENT_VIEW_DISPLAY_FACET));
         }
 
         PathSegmentService pathService = Framework.getLocalService(PathSegmentService.class);
@@ -144,8 +154,7 @@ public class SearchUIServiceImpl implements SearchUIService {
     }
 
     @SuppressWarnings("unchecked")
-    protected List<DocumentModel> getDocuments(String pageProviderName, CoreSession session, Object... parameters)
-            {
+    protected List<DocumentModel> getDocuments(String pageProviderName, CoreSession session, Object... parameters) {
         PageProviderService pageProviderService = Framework.getService(PageProviderService.class);
         Map<String, Serializable> properties = new HashMap<String, Serializable>();
         properties.put("coreSession", (Serializable) session);
@@ -163,7 +172,7 @@ public class SearchUIServiceImpl implements SearchUIService {
     public ContentViewState loadSearch(DocumentModel savedSearch) {
         if (!savedSearch.hasFacet(CONTENT_VIEW_DISPLAY_FACET)) {
             log.warn(String.format("Search document type %s is missing %s facet", savedSearch.getType(),
-                CONTENT_VIEW_DISPLAY_FACET));
+                    CONTENT_VIEW_DISPLAY_FACET));
             return null;
         }
         ContentViewState state = new ContentViewStateImpl();
@@ -177,7 +186,7 @@ public class SearchUIServiceImpl implements SearchUIService {
     @SuppressWarnings("unchecked")
     List<SortInfo> getSortInfos(DocumentModel savedSearch) {
         List<Map<String, Serializable>> list = (List<Map<String, Serializable>>) savedSearch.getPropertyValue(
-            "cvd:sortInfos");
+                "cvd:sortInfos");
         List<SortInfo> sortInfos = new ArrayList<>();
         for (Map<String, Serializable> info : list) {
             sortInfos.add(SortInfo.asSortInfo(info));

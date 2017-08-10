@@ -64,6 +64,7 @@ import org.nuxeo.ecm.core.api.RecoverableClientException;
 import org.nuxeo.ecm.core.api.impl.DocumentModelListImpl;
 import org.nuxeo.ecm.core.api.security.SecurityConstants;
 import org.nuxeo.ecm.core.schema.types.Field;
+import org.nuxeo.ecm.core.schema.types.SimpleTypeImpl;
 import org.nuxeo.ecm.core.schema.types.Type;
 import org.nuxeo.ecm.core.utils.SIDGenerator;
 import org.nuxeo.ecm.directory.BaseSession;
@@ -177,7 +178,7 @@ public class LDAPSession extends BaseSession implements EntrySource {
 
             for (String fieldId : fieldMap.keySet()) {
                 String backendFieldId = directory.getFieldMapper().getBackendField(fieldId);
-                if (backendFieldId.equals(getPasswordField())) {
+                if (fieldId.equals(getPasswordField())) {
                     attr = new BasicAttribute(backendFieldId);
                     String password = (String) fieldMap.get(fieldId);
                     password = PasswordHelper.hashPassword(password, passwordHashAlgorithm);
@@ -254,7 +255,7 @@ public class LDAPSession extends BaseSession implements EntrySource {
     @Override
     public DocumentModel getEntryFromSource(String id, boolean fetchReferences) throws DirectoryException {
         try {
-            SearchResult result = getLdapEntry(id, true);
+            SearchResult result = getLdapEntry(id, false);
             if (result == null) {
                 return null;
             }
@@ -693,6 +694,10 @@ public class LDAPSession extends BaseSession implements EntrySource {
 
         Field field = schemaFieldMap.get(fieldName);
         Type type = field.getType();
+        if (type instanceof SimpleTypeImpl) {
+            // type with constraint
+            type = type.getSuperType();
+        }
         Object defaultValue = field.getDefaultValue();
         String typeName = type.getName();
         if (attribute == null) {
@@ -779,6 +784,10 @@ public class LDAPSession extends BaseSession implements EntrySource {
             throw new DirectoryException(message);
         }
         Type type = field.getType();
+        if (type instanceof SimpleTypeImpl) {
+            // type with constraint
+            type = type.getSuperType();
+        }
         String typeName = type.getName();
 
         if ("string".equals(typeName)) {

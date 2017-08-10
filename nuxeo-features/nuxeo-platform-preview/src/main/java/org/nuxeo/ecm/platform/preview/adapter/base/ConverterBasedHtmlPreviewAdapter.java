@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.codec.digest.DigestUtils;
@@ -27,6 +28,7 @@ import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.blobholder.BlobHolder;
 import org.nuxeo.ecm.core.api.blobholder.DocumentBlobHolder;
+import org.nuxeo.ecm.core.api.model.PropertyNotFoundException;
 import org.nuxeo.ecm.core.convert.api.ConversionException;
 import org.nuxeo.ecm.core.convert.api.ConversionService;
 import org.nuxeo.ecm.platform.mimetype.MimetypeDetectionException;
@@ -37,6 +39,7 @@ import org.nuxeo.ecm.platform.preview.adapter.PreviewAdapterManager;
 import org.nuxeo.ecm.platform.preview.api.NothingToPreviewException;
 import org.nuxeo.ecm.platform.preview.api.PreviewException;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.services.config.ConfigurationService;
 
 /**
  * Base class for preview based on "on the fly" HTML transformers
@@ -50,6 +53,11 @@ public class ConverterBasedHtmlPreviewAdapter extends AbstractHtmlPreviewAdapter
     protected String defaultFieldXPath;
 
     protected MimetypeRegistry mimeTypeService;
+
+    /**
+     * @since 8.10
+     */
+    protected static final String ALLOW_ZIP_PREVIEW = "nuxeo.preview.zip.enabled";
 
     public ConversionService getConversionService() {
         return Framework.getService(ConversionService.class);
@@ -97,7 +105,12 @@ public class ConverterBasedHtmlPreviewAdapter extends AbstractHtmlPreviewAdapter
     public List<Blob> getPreviewBlobs(String xpath) throws PreviewException {
 
         BlobHolder blobHolder2preview = getBlobHolder2preview(xpath);
-        Blob blob2Preview = getBlob2preview(blobHolder2preview);
+        Blob blob2Preview;
+        try {
+            blob2Preview = getBlob2preview(blobHolder2preview);
+        } catch (NothingToPreviewException e) {
+            return Collections.emptyList();
+        }
 
         List<Blob> blobResults = new ArrayList<>();
 
@@ -134,7 +147,12 @@ public class ConverterBasedHtmlPreviewAdapter extends AbstractHtmlPreviewAdapter
      * @since 5.7.3
      */
     private Blob getBlob2preview(BlobHolder blobHolder2preview) throws PreviewException {
-        Blob blob2Preview = blobHolder2preview.getBlob();
+        Blob blob2Preview;
+        try {
+            blob2Preview = blobHolder2preview.getBlob();
+        } catch (PropertyNotFoundException e) {
+            blob2Preview = null;
+        }
         if (blob2Preview == null) {
             throw new NothingToPreviewException("Can not preview a document without blob");
         } else {
@@ -219,7 +237,8 @@ public class ConverterBasedHtmlPreviewAdapter extends AbstractHtmlPreviewAdapter
         } catch (NothingToPreviewException e) {
             return false;
         }
-        if (blob2Preview == null) {
+        if (blob2Preview == null || ("application/zip".equals(getMimeType(blob2Preview))
+                && !Framework.getService(ConfigurationService.class).isBooleanPropertyTrue(ALLOW_ZIP_PREVIEW))) {
             return false;
         }
         return true;

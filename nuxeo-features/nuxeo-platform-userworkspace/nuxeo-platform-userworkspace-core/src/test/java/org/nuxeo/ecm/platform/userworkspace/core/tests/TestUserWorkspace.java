@@ -20,9 +20,13 @@
 package org.nuxeo.ecm.platform.userworkspace.core.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+
+import java.security.Principal;
+import java.util.Arrays;
 
 import javax.inject.Inject;
 
@@ -42,6 +46,7 @@ import org.nuxeo.ecm.core.api.security.impl.ACLImpl;
 import org.nuxeo.ecm.core.api.security.impl.ACPImpl;
 import org.nuxeo.ecm.core.test.CoreFeature;
 import org.nuxeo.ecm.platform.userworkspace.api.UserWorkspaceService;
+import org.nuxeo.ecm.platform.userworkspace.core.service.AbstractUserWorkspaceImpl;
 import org.nuxeo.ecm.platform.userworkspace.core.service.UserWorkspaceServiceImplComponent;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.test.runner.Deploy;
@@ -247,11 +252,11 @@ public class TestUserWorkspace {
         DocumentModel context = session.getRootDocument();
 
         // Automatically create the user workspace
-        DocumentModel uw = uwm.getUserPersonalWorkspace("Jack Von", context);
+        DocumentModel uw = uwm.getUserPersonalWorkspace("AC/DC", context);
 
         assertNotNull(uw);
         // Check the document name was mapped
-        assertEquals(uw.getPath().lastSegment(), "Jack-Von");
+        assertEquals(uw.getPath().lastSegment(), "AC~2fDC");
     }
 
     @Test
@@ -320,5 +325,82 @@ public class TestUserWorkspace {
         }
     }
 
+    @Test
+    public void testCandidateNames() {
+        expectCandidateNames("user", //
+                "user");
+        expectCandidateNames("Dr. John Doe", //
+                "Dr. John Doe", //
+                "Dr-John-Doe");
+        expectCandidateNames("user@example.com", //
+                "user~40example.com", //
+                "user-example-com");
+        expectCandidateNames("a/b@c~d?f&g", //
+                "a~2fb~40c~7ed~3ff~26g", //
+                "a-b-c-d-f-g");
+        // 23 chars
+        expectCandidateNames("useruseruseruseruseruse", //
+                "useruseruseruseruseruse");
+        // 24 chars
+        expectCandidateNames("useruseruseruseruseruser", //
+                "useruseruseruseruseruser", //
+                "useruseruseruser37fcb8c6");
+        // 26 chars
+        expectCandidateNames("useruseruseruseruseruserus", //
+                "useruseruseruseruseruserus", //
+                "useruseruseruseruseruser", //
+                "useruseruserusercc1f8605");
+        // 30 chars
+        expectCandidateNames("useruseruseruseruseruseruserus", //
+                "useruseruseruseruseruseruserus", //
+                "useruseruseruseruseruser", //
+                "useruseruseruserbe8cd76e", //
+                "useruseruseruseruserusbe8cd76e");
+        // 32 chars
+        expectCandidateNames("useruseruseruseruseruseruseruser", //
+                "useruseruseruseruseruseruseruser", //
+                "useruseruseruseruseruser", //
+                "useruseruseruser13980873", //
+                "useruseruseruseruseruseruserus", //
+                "useruseruseruseruserus13980873");
+    }
+
+    protected void expectCandidateNames(String username, String... expected) {
+        assertEquals(Arrays.asList(expected),
+                ((AbstractUserWorkspaceImpl) uwm).getCandidateUserWorkspaceNames(username));
+    }
+
+    @Test
+    public void testIsUnderUserWorkspace() {
+        doTestIsUnderUserWorkspace("user1");
+    }
+
+    @Test
+    public void testIsUnderUserWorkspaceWithMangledName() {
+        doTestIsUnderUserWorkspace("user1@example.com");
+    }
+
+    protected void doTestIsUnderUserWorkspace(String username) {
+        DocumentModel foo = session.createDocumentModel("/", "foo" + username, "File");
+        foo = session.createDocument(foo);
+        ACP acp = new ACPImpl();
+        acp.addACE(ACL.LOCAL_ACL, new ACE(username, SecurityConstants.READ, true));
+        foo.setACP(acp, true);
+        session.save();
+
+        try (CoreSession userSession = coreFeature.openCoreSession(username)) {
+            Principal principal = userSession.getPrincipal();
+            DocumentModel uw = uwm.getCurrentUserPersonalWorkspace(userSession, userSession.getRootDocument());
+            DocumentModel bar = userSession.createDocumentModel(uw.getPathAsString(), "bar", "File");
+            bar = userSession.createDocument(bar);
+            userSession.save();
+
+            assertTrue(uwm.isUnderUserWorkspace(principal, null, uw));
+            assertTrue(uwm.isUnderUserWorkspace(principal, null, bar));
+
+            assertFalse(uwm.isUnderUserWorkspace(principal, null, userSession.getRootDocument()));
+            assertFalse(uwm.isUnderUserWorkspace(principal, null, userSession.getDocument(foo.getRef())));
+        }
+    }
 
 }

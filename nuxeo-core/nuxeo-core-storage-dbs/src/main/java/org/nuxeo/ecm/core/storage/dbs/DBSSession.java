@@ -17,6 +17,7 @@
 package org.nuxeo.ecm.core.storage.dbs;
 
 import static java.lang.Boolean.TRUE;
+import static org.nuxeo.ecm.core.api.AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACE_BEGIN;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACE_CREATOR;
 import static org.nuxeo.ecm.core.storage.dbs.DBSDocument.KEY_ACE_END;
@@ -83,6 +84,8 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentExistsException;
 import org.nuxeo.ecm.core.api.DocumentNotFoundException;
@@ -126,7 +129,12 @@ import org.nuxeo.ecm.core.storage.QueryOptimizer;
 import org.nuxeo.ecm.core.storage.State;
 import org.nuxeo.ecm.core.storage.StateHelper;
 import org.nuxeo.runtime.api.Framework;
+import org.nuxeo.runtime.metrics.MetricsService;
 import org.nuxeo.runtime.transaction.TransactionHelper;
+
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.SharedMetricRegistries;
+import com.codahale.metrics.Timer;
 
 /**
  * Implementation of a {@link Session} for Document-Based Storage.
@@ -134,6 +142,8 @@ import org.nuxeo.runtime.transaction.TransactionHelper;
  * @since 5.9.4
  */
 public class DBSSession implements Session {
+
+    private static final Log log = LogFactory.getLog(DBSSession.class);
 
     protected final DBSRepository repository;
 
@@ -143,11 +153,28 @@ public class DBSSession implements Session {
 
     protected boolean closed;
 
+    protected final MetricRegistry registry = SharedMetricRegistries.getOrCreate(MetricsService.class.getName());
+
+    private final Timer saveTimer;
+
+    private final Timer queryTimer;
+
+    private static final String LOG_MIN_DURATION_KEY = "org.nuxeo.dbs.query.log_min_duration_ms";
+
+    private long LOG_MIN_DURATION_NS = -1 * 1000000;
+
+    protected boolean isLatestVersionDisabled = false;
+
     public DBSSession(DBSRepository repository) {
         this.repository = repository;
         transaction = new DBSTransactionState(repository, this);
         FulltextConfiguration fulltextConfiguration = repository.getFulltextConfiguration();
         fulltextSearchDisabled = fulltextConfiguration == null || fulltextConfiguration.fulltextSearchDisabled;
+
+        saveTimer = registry.timer(MetricRegistry.name("nuxeo", "repositories", repository.getName(), "saves"));
+        queryTimer = registry.timer(MetricRegistry.name("nuxeo", "repositories", repository.getName(), "queries"));
+        LOG_MIN_DURATION_NS = Long.parseLong(Framework.getProperty(LOG_MIN_DURATION_KEY, "-1")) * 1000000;
+        isLatestVersionDisabled = Framework.isBooleanPropertyTrue(DISABLED_ISLATESTVERSION_PROPERTY);
     }
 
     @Override
@@ -167,9 +194,14 @@ public class DBSSession implements Session {
 
     @Override
     public void save() {
-        transaction.save();
-        if (!TransactionHelper.isTransactionActiveOrMarkedRollback()) {
-            transaction.commit();
+        final Timer.Context timerContext = saveTimer.time();
+        try {
+            transaction.save();
+            if (!TransactionHelper.isTransactionActiveOrMarkedRollback()) {
+                transaction.commit();
+            }
+        } finally {
+            timerContext.stop();
         }
     }
 
@@ -531,7 +563,10 @@ public class DBSSession implements Session {
         docState.put(KEY_IS_CHECKED_IN, TRUE);
         docState.put(KEY_BASE_VERSION_ID, verId);
 
-        recomputeVersionSeries(id);
+        if (!isLatestVersionDisabled) {
+            recomputeVersionSeries(id);
+        }
+
         transaction.save();
 
         return getDocument(verId);
@@ -650,7 +685,10 @@ public class DBSSession implements Session {
         }
         // pos fixup
         copyState.put(KEY_POS, pos);
+
         // update read acls
+        // the save also makes copy results visible in searches, like in VCS
+        transaction.save(); // read acls update needs full tree
         transaction.updateReadAcls(copyId);
 
         return getDocument(copyState);
@@ -774,6 +812,7 @@ public class DBSSession implements Session {
         transaction.updateAncestors(sourceId, ndel, ancestorIds);
 
         // update read acls
+        transaction.save(); // read acls update needs full tree
         transaction.updateReadAcls(sourceId);
 
         return source;
@@ -1224,6 +1263,8 @@ public class DBSSession implements Session {
         String id = doc.getUUID();
         DBSDocumentState docState = transaction.getStateForUpdate(id);
         docState.put(KEY_ACP, acpToMem(acp));
+
+        // update read acls
         transaction.save(); // read acls update needs full tree
         transaction.updateReadAcls(id);
     }
@@ -1390,13 +1431,28 @@ public class DBSSession implements Session {
     }
 
     protected PartialList<String> doQuery(String query, String queryType, QueryFilter queryFilter, int countUpTo) {
-        PartialList<Map<String, Serializable>> pl = doQueryAndFetch(query, queryType, queryFilter, true, countUpTo);
-        List<String> ids = new ArrayList<String>(pl.list.size());
-        for (Map<String, Serializable> map : pl.list) {
-            String id = (String) map.get(NXQL.ECM_UUID);
-            ids.add(id);
+        final Timer.Context timerContext = queryTimer.time();
+        try {
+           PartialList<Map<String, Serializable>> pl = doQueryAndFetch(query, queryType, queryFilter, true, countUpTo);
+           List<String> ids = new ArrayList<String>(pl.list.size());
+           for (Map<String, Serializable> map : pl.list) {
+               String id = (String) map.get(NXQL.ECM_UUID);
+               ids.add(id);
+           }
+           return new PartialList<>(ids, pl.totalSize);
+
+        }  finally {
+            long duration = timerContext.stop();
+            if (LOG_MIN_DURATION_NS >= 0 && duration > LOG_MIN_DURATION_NS) {
+                String msg = String.format("duration_ms:\t%.2f\t%s %s\tquery\t%s", duration / 1000000.0, queryFilter,
+                        countUpToAsString(countUpTo), query);
+                if (log.isTraceEnabled()) {
+                    log.info(msg, new Throwable("Slow query stack trace"));
+                } else {
+                    log.info(msg);
+                }
+            }
         }
-        return new PartialList<String>(ids, pl.totalSize);
     }
 
     protected PartialList<Map<String, Serializable>> doQueryAndFetch(String query, String queryType,
@@ -1599,9 +1655,52 @@ public class DBSSession implements Session {
     @Override
     public IterableQueryResult queryAndFetch(String query, String queryType, QueryFilter queryFilter,
             boolean distinctDocuments, Object[] params) {
-        PartialList<Map<String, Serializable>> pl = doQueryAndFetch(query, queryType, queryFilter, distinctDocuments,
-                -1);
-        return new DBSQueryResult(pl);
+        final Timer.Context timerContext = queryTimer.time();
+        try {
+            PartialList<Map<String, Serializable>> pl = doQueryAndFetch(query, queryType, queryFilter, distinctDocuments,
+                    -1);
+            return new DBSQueryResult(pl);
+       } finally {
+            long duration = timerContext.stop();
+            if (LOG_MIN_DURATION_NS >= 0 && duration > LOG_MIN_DURATION_NS) {
+                String msg = String.format("duration_ms:\t%.2f\t%s\tqueryAndFetch\t%s", duration / 1000000.0,
+                        queryFilter, query);
+                if (log.isTraceEnabled()) {
+                    log.info(msg, new Throwable("Slow query stack trace"));
+                } else {
+                    log.info(msg);
+                }
+            }
+
+        }
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, String queryType,
+            QueryFilter queryFilter, boolean distinctDocuments, long countUpTo, Object[] params) {
+        final Timer.Context timerContext = queryTimer.time();
+        try {
+            return doQueryAndFetch(query, queryType, queryFilter, distinctDocuments, (int) countUpTo);
+        } finally {
+            long duration = timerContext.stop();
+            if (LOG_MIN_DURATION_NS >= 0 && duration > LOG_MIN_DURATION_NS) {
+                String msg = String.format("duration_ms:\t%.2f\t%s\tqueryProjection\t%s", duration / 1000000.0,
+                        queryFilter, query);
+                if (log.isTraceEnabled()) {
+                    log.info(msg, new Throwable("Slow query stack trace"));
+                } else {
+                    log.info(msg);
+                }
+            }
+
+        }
+    }
+
+    private String countUpToAsString(long countUpTo) {
+        if (countUpTo > 0) {
+            return String.format("count total results up to %d", countUpTo);
+        }
+        return countUpTo == -1 ? "count total results UNLIMITED" : "";
     }
 
     protected static class DBSQueryResult implements IterableQueryResult, Iterator<Map<String, Serializable>> {

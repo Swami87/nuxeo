@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.nuxeo</groupId>
   <artifactId>nuxeo-ecm</artifactId>
-  <version>7.10-HF10-SNAPSHOT</version>
+  <version>7.10-HF30-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Nuxeo ECM Projects</name>
   <description>Nuxeo ECM Platform and related components.</description>
@@ -102,14 +102,6 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <!-- Sonar & JaCoCo -->
-    <sonar.host.url>https://sonar.nuxeo.org/</sonar.host.url>
-    <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
-    <it.jacoco.destFile>${java.io.tmpdir}/jacoco-it.dump</it.jacoco.destFile>
-    <sonar.jacoco.itReportPath>${it.jacoco.destFile}</sonar.jacoco.itReportPath>
-    <it.failsafe.argLine></it.failsafe.argLine>
-    <skip.surefire.tests>${skipTests}</skip.surefire.tests>
-
     <!-- License Maven Plugin -->
     <license.excludedGroups>org\.nuxeo.*</license.excludedGroups>
     <!-- Can't parse POMs because of http://jira.codehaus.org/browse/MLICENSE-77 -->
@@ -119,26 +111,26 @@
     <!-- <license.useMissingFile>true</license.useMissingFile> -->
     <!-- <license.missingFile>src/main/license/THIRD-PARTY.properties</license.missingFile> -->
 
-    <nuxeo.common.version>7.10-HF10-SNAPSHOT</nuxeo.common.version>
-    <nuxeo.runtime.version>7.10-HF10-SNAPSHOT</nuxeo.runtime.version>
-    <nuxeo.core.version>7.10-HF10-SNAPSHOT</nuxeo.core.version>
-    <nuxeo.services.version>7.10-HF10-SNAPSHOT</nuxeo.services.version>
-    <nuxeo.theme.version>7.10-HF10-SNAPSHOT</nuxeo.theme.version>
-    <nuxeo.jsf.version>7.10-HF10-SNAPSHOT</nuxeo.jsf.version>
-    <nuxeo.dm.version>7.10-HF10-SNAPSHOT</nuxeo.dm.version>
-    <nuxeo.webengine.version>7.10-HF10-SNAPSHOT</nuxeo.webengine.version>
-    <nuxeo.features.version>7.10-HF10-SNAPSHOT</nuxeo.features.version>
+    <nuxeo.common.version>7.10-HF30-SNAPSHOT</nuxeo.common.version>
+    <nuxeo.runtime.version>7.10-HF30-SNAPSHOT</nuxeo.runtime.version>
+    <nuxeo.core.version>7.10-HF30-SNAPSHOT</nuxeo.core.version>
+    <nuxeo.services.version>7.10-HF30-SNAPSHOT</nuxeo.services.version>
+    <nuxeo.theme.version>7.10-HF30-SNAPSHOT</nuxeo.theme.version>
+    <nuxeo.jsf.version>7.10-HF30-SNAPSHOT</nuxeo.jsf.version>
+    <nuxeo.dm.version>7.10-HF30-SNAPSHOT</nuxeo.dm.version>
+    <nuxeo.webengine.version>7.10-HF30-SNAPSHOT</nuxeo.webengine.version>
+    <nuxeo.features.version>7.10-HF30-SNAPSHOT</nuxeo.features.version>
 
-    <nuxeo.connect.client.version>1.4.24</nuxeo.connect.client.version>
+    <nuxeo.connect.client.version>1.4.24.1</nuxeo.connect.client.version>
     <!-- nuxeo-distribution-tools is still used as a dependency -->
     <nuxeo.distribution.tools.version>1.15</nuxeo.distribution.tools.version>
     <!-- ant-assembly-maven-plugin is only used as a plugin -->
-    <ant.assembly.version>2.0.4</ant.assembly.version>
-    <nuxeo.ftest.version>1.7.22</nuxeo.ftest.version>
+    <ant.assembly.version>2.0.6</ant.assembly.version>
+    <nuxeo.ftest.version>1.7.26-SNAPSHOT</nuxeo.ftest.version>
 
     <jsf.version>2.2.6</jsf.version>
     <nxjsf.version>2.2.6-NX01</nxjsf.version>
-    <richfaces.version>4.5.0.Alpha3</richfaces.version>
+    <richfaces.version>4.5.0.Alpha3-NX1</richfaces.version>
     <seam.version>2.3.1.Final</seam.version>
     <nxseam.version>2.3.1.Final.NX02</nxseam.version>
 
@@ -171,7 +163,7 @@
     <google.oauth.client.version>1.20.0</google.oauth.client.version>
     <google.api.client.version>1.19.1</google.api.client.version>
     <google.api.drive.version>v2-rev161-1.19.1</google.api.drive.version>
-    <dropbox.api.version>1.7.7</dropbox.api.version>
+    <dropbox.api.version>2.1.2</dropbox.api.version>
     <box.api.version>1.1.0</box.api.version>
     <selenium.version>2.45.0</selenium.version>
     <cxf.version>3.1.3</cxf.version>
@@ -193,13 +185,33 @@
     <!-- deprecated property since removal of maven-nuxeo-plugin execution -->
     <eclipseVersion>${project.version}</eclipseVersion>
     <!-- Convenient property; prefer use of the right property (runtime/core/...) -->
-    <nuxeo.platform.version>7.10-HF10-SNAPSHOT</nuxeo.platform.version>
+    <nuxeo.platform.version>7.10-HF30-SNAPSHOT</nuxeo.platform.version>
     <org.ops4j.pax.version>4.4.0</org.ops4j.pax.version>
     <org.slf4j.version>1.7.7</org.slf4j.version>
     <ch.qos.logback.version>1.0.11</ch.qos.logback.version>
     <gatling.version>2.1.7</gatling.version>
     <scala.version>2.11.7</scala.version>
     <scala-maven-plugin.version>3.2.2</scala-maven-plugin.version>
+
+    <!-- Tests properties -->
+    <!-- for use integration/vcstests.xml and org.nuxeo:nuxeo-ftest -->
+    <!-- (related profiles: customdb, default, pgsql, oracle10g, oracle11g, oracle12c, mysql, mongodb) -->
+    <nuxeo.test.core>vcs</nuxeo.test.core>
+    <nuxeo.db.host.default>localhost</nuxeo.db.host.default>
+
+    <!-- for use in maven-surefire-plugin to skip only the unit tests (maven-surefire-plugin) -->
+    <!-- and not skip the integration tests (maven-failsafe-plugin, ant-assembly-maven-plugin) -->
+    <!-- related properties: skipTests (skip all tests), skipITs (skip integration tests) -->
+    <skip.surefire.tests>${skipTests}</skip.surefire.tests>
+
+    <!-- for use in maven-surefire-plugin, maven-failsafe-plugin, jacoco-maven-plugin -->
+    <it.failsafe.argLine></it.failsafe.argLine>
+
+    <!-- Sonar & JaCoCo (related profile: sonar)-->
+    <sonar.host.url>https://sonar.nuxeo.org/</sonar.host.url>
+    <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
+    <it.jacoco.destFile>${java.io.tmpdir}/jacoco-it.dump</it.jacoco.destFile>
+    <sonar.jacoco.itReportPath>${it.jacoco.destFile}</sonar.jacoco.itReportPath>
   </properties>
 
   <dependencyManagement>
@@ -475,6 +487,13 @@
         <artifactId>nuxeo-core-test</artifactId>
         <version>${nuxeo.core.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.nuxeo.ecm.core</groupId>
+        <artifactId>nuxeo-core-test</artifactId>
+        <type>test-jar</type>
+        <scope>test</scope>
+        <version>${nuxeo.core.version}</version>
       </dependency>
       <dependency>
         <groupId>org.nuxeo.ecm.core</groupId>
@@ -835,6 +854,7 @@
         <artifactId>nuxeo-web-resources-wro</artifactId>
         <version>${nuxeo.services.version}</version>
       </dependency>
+
       <dependency>
         <groupId>org.nuxeo.ecm.platform</groupId>
         <artifactId>nuxeo-web-resources-rest</artifactId>
@@ -2324,7 +2344,7 @@
       <dependency>
         <groupId>net.sourceforge.jexcelapi</groupId>
         <artifactId>jxl</artifactId>
-        <version>2.6.12</version>
+        <version>2.6.12-NX1</version>
       </dependency>
       <dependency>
         <groupId>org.jboss.seam</groupId>
@@ -2854,14 +2874,14 @@
         <version>2.7.7</version>
       </dependency>
       <dependency>
-        <groupId>postgresql</groupId>
+        <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
-        <version>9.2-1002.jdbc4</version>
+        <version>42.1.1</version>
       </dependency>
       <dependency>
         <groupId>mysql</groupId>
         <artifactId>mysql-connector-java</artifactId>
-        <version>5.1.18</version>
+        <version>5.1.39</version>
       </dependency>
       <dependency>
         <groupId>net.sourceforge.jtds</groupId>
@@ -4468,6 +4488,12 @@
         <artifactId>cors-filter</artifactId>
         <version>2.4</version>
       </dependency>
+      <dependency>
+        <groupId>io.github.lukehutch</groupId>
+        <artifactId>fast-classpath-scanner</artifactId>
+        <version>2.0.4</version>
+      </dependency>
+
       <!-- dmk adaptor -->
       <dependency>
         <groupId>com.sun.jdmk</groupId>
@@ -4586,7 +4612,7 @@
       <dependency>
         <groupId>com.github.segmentio</groupId>
         <artifactId>analytics</artifactId>
-        <version>0.4.2</version>
+        <version>1.0.7</version>
       </dependency>
 
       <dependency>
@@ -4717,6 +4743,11 @@
             <nuxeo.test.vcs.user>${nuxeo.test.vcs.user}</nuxeo.test.vcs.user>
             <nuxeo.test.vcs.password>${nuxeo.test.vcs.password}</nuxeo.test.vcs.password>
             <nuxeo.test.vcs.singleds>${nuxeo.test.vcs.singleds}</nuxeo.test.vcs.singleds>
+            <!-- Used by org.nuxeo.ecm.core.test.StorageConfiguration -->
+            <!-- (and org.nuxeo.ecm.core.storage.mongodb.TestGridFSBinaryManager) -->
+            <nuxeo.test.core>${nuxeo.test.core}</nuxeo.test.core>
+            <nuxeo.test.mongodb.server>${nuxeo.test.mongodb.server}</nuxeo.test.mongodb.server>
+            <nuxeo.test.mongodb.dbname>${nuxeo.test.mongodb.dbname}</nuxeo.test.mongodb.dbname>
           </systemPropertyVariables>
           <includes>
             <include>**/Test*.java</include>
@@ -5549,12 +5580,6 @@
       </build>
     </profile>
     <profile>
-      <id>skipUnitTests</id>
-      <properties>
-        <skipTests>true</skipTests>
-      </properties>
-    </profile>
-    <profile>
       <id>release</id>
       <activation>
         <property>
@@ -5644,7 +5669,7 @@
                   <requireReleaseDeps>
                     <!-- Exclusions are tolerated for nightly "date-based" releases only -->
                     <excludes>
-                      <!-- <exclude>org.nuxeo:nuxeo-ftest:*:zip</exclude> -->
+                      <exclude>org.nuxeo:nuxeo-ftest:*:zip</exclude>
                       <!-- <exclude>org.nuxeo.connect:nuxeo-connect-client</exclude> -->
                       <!-- <exclude>org.jboss.seam:*</exclude> -->
                     </excludes>
@@ -5917,7 +5942,7 @@
         <repository>
           <id>releases</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/releases
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/releases
           </url>
           <releases>
             <enabled>true</enabled>
@@ -5929,7 +5954,7 @@
         <repository>
           <id>snapshots</id>
           <url>
-            http://mavenpriv.in.nuxeo.com/nexus/content/repositories/snapshots
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/snapshots
           </url>
           <releases>
             <enabled>false</enabled>
@@ -5972,11 +5997,15 @@
       <distributionManagement>
         <repository>
           <id>releases</id>
-          <url>http://mavenpriv.in.nuxeo.com/nexus/content/repositories/releases</url>
+          <url>
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/releases
+          </url>
         </repository>
         <snapshotRepository>
           <id>snapshots</id>
-          <url>http://mavenpriv.in.nuxeo.com/nexus/content/repositories/snapshots</url>
+          <url>
+            https://mavenpriv.nuxeo.com/nexus/content/repositories/snapshots
+          </url>
           <uniqueVersion>true</uniqueVersion>
         </snapshotRepository>
       </distributionManagement>
@@ -6001,23 +6030,6 @@
           </plugin>
         </plugins>
       </reporting>
-    </profile>
-
-    <profile>
-      <id>skiptests</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <configuration>
-              <excludes>
-                <exclude>**/*.java</exclude>
-              </excludes>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
     </profile>
 
     <profile>
@@ -6096,9 +6108,17 @@
     </profile>
     <profile>
       <id>pgsql</id>
+      <properties>
+        <nuxeo.test.vcs.db>PostgreSQL</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>5432</nuxeo.db.port.default>
+      </properties>
     </profile>
     <profile>
       <id>mssql</id>
+      <properties>
+        <nuxeo.test.vcs.db>SQLServer</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>1433</nuxeo.db.port.default>
+      </properties>
     </profile>
     <profile>
       <id>oracle10g</id>
@@ -6108,6 +6128,10 @@
           <artifactId>ojdbc14</artifactId>
         </dependency>
       </dependencies>
+      <properties>
+        <nuxeo.test.vcs.db>Oracle</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>1521</nuxeo.db.port.default>
+      </properties>
     </profile>
     <profile>
       <id>oracle11g</id>
@@ -6117,6 +6141,10 @@
           <artifactId>ojdbc6</artifactId>
         </dependency>
       </dependencies>
+      <properties>
+        <nuxeo.test.vcs.db>Oracle</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>1521</nuxeo.db.port.default>
+      </properties>
     </profile>
     <profile>
       <id>oracle12c</id>
@@ -6126,9 +6154,31 @@
           <artifactId>ojdbc7</artifactId>
         </dependency>
       </dependencies>
+      <properties>
+        <nuxeo.test.vcs.db>Oracle</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>1521</nuxeo.db.port.default>
+      </properties>
     </profile>
     <profile>
       <id>mysql</id>
+      <properties>
+        <nuxeo.test.vcs.db>MySQL</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>3306</nuxeo.db.port.default>
+      </properties>
+    </profile>
+    <profile>
+      <id>mariadb</id>
+      <properties>
+        <nuxeo.test.vcs.db>MySQL</nuxeo.test.vcs.db>
+        <nuxeo.db.port.default>3306</nuxeo.db.port.default>
+      </properties>
+    </profile>
+    <profile>
+      <id>mongodb</id>
+       <properties>
+        <nuxeo.test.core>mongodb</nuxeo.test.core>
+        <nuxeo.mongodb.server.default>localhost:27017</nuxeo.mongodb.server.default>
+      </properties>
     </profile>
 
     <!-- Used to include addons and/or nuxeo-distribution in a single run -->
@@ -6155,9 +6205,6 @@
           </plugin>
         </plugins>
       </build>
-    </profile>
-    <profile>
-      <id>mongodb</id>
     </profile>
   </profiles>
 

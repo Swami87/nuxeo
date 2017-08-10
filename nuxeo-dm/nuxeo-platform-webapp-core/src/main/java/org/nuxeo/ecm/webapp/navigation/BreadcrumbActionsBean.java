@@ -48,6 +48,7 @@ import org.nuxeo.ecm.platform.ui.web.pathelements.TextPathElement;
 import org.nuxeo.ecm.platform.ui.web.pathelements.VersionDocumentPathElement;
 import org.nuxeo.ecm.webapp.helpers.EventNames;
 import org.nuxeo.ecm.webapp.helpers.ResourcesAccessor;
+import org.nuxeo.ecm.webapp.helpers.StartupHelper;
 import org.nuxeo.runtime.api.Framework;
 
 /**
@@ -85,6 +86,8 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
 
     protected List<DocumentModel> userDomains = null;
 
+    protected boolean isPathShrinked = false;
+
     /** View id description prefix for message label (followed by "="). */
     protected static final String BREADCRUMB_PREFIX = "breadcrumb";
 
@@ -102,12 +105,20 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
         return 80;
     }
 
-    protected String getPathEllipsis() {
+    public String getPathEllipsis() {
         return "…";
     }
 
+    public boolean isGoToParentButtonShown() {
+        return this.isPathShrinked
+                && !FacesContext.getCurrentInstance()
+                                .getViewRoot()
+                                .getViewId()
+                                .equals("/" + StartupHelper.SERVERS_VIEW + ".xhtml");
+    }
+
     protected String getViewDomainsOutcome() {
-        return "view_domains";
+        return StartupHelper.DOMAINS_VIEW;
     }
 
     @Override
@@ -122,7 +133,7 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
         nbDocInList = documentsFormingPath.size();
 
         if (nbDocInList == 0) {
-            return "view_servers";
+            return StartupHelper.SERVERS_VIEW;
         }
 
         String outcome;
@@ -134,7 +145,7 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
             if (pathElement instanceof TextPathElement) {
                 DocumentModel currentDocument = navigationContext.getCurrentDocument();
                 if (currentDocument == null) {
-                    return "view_servers";
+                    return StartupHelper.SERVERS_VIEW;
                 } else {
                     return navigationContext.navigateToDocument(currentDocument);
                 }
@@ -207,6 +218,7 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
     protected List<PathElement> shrinkPathIfNeeded(List<PathElement> paths) {
 
         if (paths == null || paths.size() <= getMinPathSegmentsLen()) {
+            this.isPathShrinked = false;
             return paths;
         }
 
@@ -217,6 +229,7 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
         String completePath = sb.toString();
 
         if (completePath.length() <= getMaxPathCharLen()) {
+            this.isPathShrinked = false;
             return paths;
         }
 
@@ -237,7 +250,7 @@ public class BreadcrumbActionsBean implements BreadcrumbActions, Serializable {
             // this means the current document has a title longer than MAX_PATH_CHAR_LEN !
             shrinkedPath.add(0, paths.get(paths.size() - 1));
         }
-        shrinkedPath.add(0, new TextPathElement(getPathEllipsis()));
+        this.isPathShrinked = true;
         return shrinkedPath;
     }
 

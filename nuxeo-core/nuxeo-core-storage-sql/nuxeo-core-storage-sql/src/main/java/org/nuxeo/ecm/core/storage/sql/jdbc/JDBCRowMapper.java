@@ -407,6 +407,7 @@ public class JDBCRowMapper extends JDBCConnection implements RowMapper {
              * Construct the maps from the result set.
              */
             while (rs.next()) {
+                // TODO using criteriaMap is wrong if it contains a Collection
                 Row row = new Row(tableName, criteriaMap);
                 i = 1;
                 for (Column column : select.whatColumns) {
@@ -681,6 +682,7 @@ public class JDBCRowMapper extends JDBCConnection implements RowMapper {
                     closeStatement(ps);
                 }
             } catch (SQLException e) {
+                checkConcurrentUpdate(e);
                 throw new NuxeoException("Could not update: " + update.sql, e);
             }
         }
@@ -986,6 +988,35 @@ public class JDBCRowMapper extends JDBCConnection implements RowMapper {
             criteriaMap.put(selType.criterionKey, criterion);
         }
         return getSelectRows(selType.tableName, select, criteriaMap, null, limitToOne);
+    }
+
+    @Override
+    public Set<Serializable> readSelectionsIds(SelectionType selType, List<Serializable> values) {
+        SQLInfoSelection selInfo = sqlInfo.getSelection(selType);
+        Map<String, Serializable> criteriaMap = new HashMap<String, Serializable>();
+        Set<Serializable> ids = new HashSet<>();
+        int size = values.size();
+        int chunkSize = sqlInfo.getMaximumArgsForIn();
+        if (size > chunkSize) {
+            for (int start = 0; start < size; start += chunkSize) {
+                int end = start + chunkSize;
+                if (end > size) {
+                    end = size;
+                }
+                // needs to be Serializable -> copy
+                List<Serializable> chunkTodo = new ArrayList<Serializable>(values.subList(start, end));
+                criteriaMap.put(selType.selKey, (Serializable) chunkTodo);
+                SQLInfoSelect select = selInfo.getSelectSelectionIds(chunkTodo.size());
+                List<Row> rows = getSelectRows(selType.tableName, select, criteriaMap, null, false);
+                rows.forEach(row -> ids.add(row.id));
+            }
+        } else {
+            criteriaMap.put(selType.selKey, (Serializable) values);
+            SQLInfoSelect select = selInfo.getSelectSelectionIds(values.size());
+            List<Row> rows = getSelectRows(selType.tableName, select, criteriaMap, null, false);
+            rows.forEach(row -> ids.add(row.id));
+        }
+        return ids;
     }
 
     @Override
@@ -1307,19 +1338,16 @@ public class JDBCRowMapper extends JDBCConnection implements RowMapper {
     }
 
     @Override
-    public List<NodeInfo> remove(NodeInfo rootInfo) {
-        Serializable rootId = rootInfo.id;
-        List<NodeInfo> info = getDescendantsInfo(rootId);
-        info.add(rootInfo);
+    public void remove(Serializable rootId, List<NodeInfo> nodeInfos) {
         if (sqlInfo.softDeleteEnabled) {
-            deleteRowsSoft(info);
+            deleteRowsSoft(nodeInfos);
         } else {
             deleteRowsDirect(model.HIER_TABLE_NAME, Collections.singleton(rootId));
         }
-        return info;
     }
 
-    protected List<NodeInfo> getDescendantsInfo(Serializable rootId) {
+    @Override
+    public List<NodeInfo> getDescendantsInfo(Serializable rootId) {
         if (!dialect.supportsFastDescendants()) {
             return getDescendantsInfoIterative(rootId);
         }
@@ -1396,7 +1424,24 @@ public class JDBCRowMapper extends JDBCConnection implements RowMapper {
         List<Serializable> todo = new ArrayList<>(Collections.singleton(rootId));
         List<NodeInfo> descendants = new ArrayList<NodeInfo>();
         while (!todo.isEmpty()) {
-            List<NodeInfo> infos = getChildrenNodeInfos(todo);
+            List<NodeInfo> infos;
+            int size = todo.size();
+            int chunkSize = sqlInfo.getMaximumArgsForIn();
+            if (size > chunkSize) {
+                infos = new ArrayList<>();
+                for (int start = 0; start < size; start += chunkSize) {
+                    int end = start + chunkSize;
+                    if (end > size) {
+                        end = size;
+                    }
+                    // needs to be Serializable -> copy
+                    List<Serializable> chunkTodo = new ArrayList<Serializable>(todo.subList(start, end));
+                    List<NodeInfo> chunkInfos = getChildrenNodeInfos(chunkTodo);
+                    infos.addAll(chunkInfos);
+                }
+            } else {
+                infos = getChildrenNodeInfos(todo);
+            }
             todo = new ArrayList<>();
             for (NodeInfo info : infos) {
                 Serializable id = info.id;

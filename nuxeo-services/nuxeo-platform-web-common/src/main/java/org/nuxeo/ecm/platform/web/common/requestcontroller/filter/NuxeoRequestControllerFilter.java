@@ -33,6 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
+import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -116,6 +117,9 @@ public class NuxeoRequestControllerFilter implements Filter {
             log.debug(doFormatLogMessage(httpRequest, "Entering NuxeoRequestController filter"));
         }
 
+        ServletContext servletContext = httpRequest.getServletContext();
+        ServletHelper.setServletContext(servletContext);
+
         doInitIfNeeded();
 
         RequestFilterConfig config = rcm.getConfigForRequest(httpRequest);
@@ -198,6 +202,9 @@ public class NuxeoRequestControllerFilter implements Filter {
             if (sessionSynched) {
                 simpleReleaseSyncOnSession(httpRequest);
             }
+
+            ServletHelper.removeServletContext();
+
             if (log.isDebugEnabled()) {
                 log.debug(doFormatLogMessage(httpRequest, "Exiting NuxeoRequestController filter"));
             }
@@ -301,9 +308,9 @@ public class NuxeoRequestControllerFilter implements Filter {
      */
     public static void addCacheHeader(HttpServletResponse httpResponse, Boolean isPrivate, String cacheTime) {
         if (isPrivate) {
-            httpResponse.addHeader("Cache-Control", "private, max-age=" + cacheTime);
+            httpResponse.setHeader("Cache-Control", "private, max-age=" + cacheTime);
         } else {
-            httpResponse.addHeader("Cache-Control", "public, max-age=" + cacheTime);
+            httpResponse.setHeader("Cache-Control", "public, max-age=" + cacheTime);
         }
         // Generating expires using current date and adding cache time.
         // we are using the format Expires: Thu, 01 Dec 1994 16:00:00 GMT

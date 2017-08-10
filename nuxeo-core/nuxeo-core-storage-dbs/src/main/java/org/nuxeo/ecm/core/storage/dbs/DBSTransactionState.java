@@ -210,10 +210,8 @@ public class DBSTransactionState {
 
     // XXX TODO for update or for read?
     public DBSDocumentState getChildState(String parentId, String name) {
-        Set<String> seen = new HashSet<String>();
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
-            seen.add(docState.getId());
             if (!parentId.equals(docState.getParentId())) {
                 continue;
             }
@@ -223,15 +221,23 @@ public class DBSTransactionState {
             return docState;
         }
         // fetch from repository
-        State state = repository.readChildState(parentId, name, seen);
+        State state = repository.readChildState(parentId, name, Collections.emptySet());
+        if (state == null) {
+            return null;
+        }
+        String id = (String) state.get(KEY_ID);
+        if (transientStates.containsKey(id)) {
+            // found transient, even though we already checked
+            // that means that in-memory it's not a child, but in-database it's a child (was moved)
+            // -> ignore the database state
+            return null;
+        }
         return newTransientState(state);
     }
 
     public boolean hasChild(String parentId, String name) {
-        Set<String> seen = new HashSet<String>();
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
-            seen.add(docState.getId());
             if (!parentId.equals(docState.getParentId())) {
                 continue;
             }
@@ -241,7 +247,7 @@ public class DBSTransactionState {
             return true;
         }
         // check repository
-        return repository.hasChild(parentId, name, seen);
+        return repository.hasChild(parentId, name, Collections.emptySet());
     }
 
     public List<DBSDocumentState> getChildrenStates(String parentId) {
@@ -249,15 +255,22 @@ public class DBSTransactionState {
         Set<String> seen = new HashSet<String>();
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
-            seen.add(docState.getId());
             if (!parentId.equals(docState.getParentId())) {
                 continue;
             }
             docStates.add(docState);
+            seen.add(docState.getId());
         }
         // fetch from repository
         List<State> states = repository.queryKeyValue(KEY_PARENT_ID, parentId, seen);
         for (State state : states) {
+            String id = (String) state.get(KEY_ID);
+            if (transientStates.containsKey(id)) {
+                // found transient, even though we passed an exclusion list for known children
+                // that means that in-memory it's not a child, but in-database it's a child (was moved)
+                // -> ignore the database state
+                continue;
+            }
             docStates.add(newTransientState(state));
         }
         return docStates;
@@ -269,32 +282,37 @@ public class DBSTransactionState {
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
             String id = docState.getId();
-            seen.add(id);
             if (!parentId.equals(docState.getParentId())) {
                 continue;
             }
+            seen.add(id);
             children.add(id);
         }
         // fetch from repository
         List<State> states = repository.queryKeyValue(KEY_PARENT_ID, parentId, seen);
         for (State state : states) {
-            children.add((String) state.get(KEY_ID));
+            String id = (String) state.get(KEY_ID);
+            if (transientStates.containsKey(id)) {
+                // found transient, even though we passed an exclusion list for known children
+                // that means that in-memory it's not a child, but in-database it's a child (was moved)
+                // -> ignore the database state
+                continue;
+            }
+            children.add(id);
         }
         return new ArrayList<String>(children);
     }
 
     public boolean hasChildren(String parentId) {
-        Set<String> seen = new HashSet<String>();
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
-            seen.add(docState.getId());
             if (!parentId.equals(docState.getParentId())) {
                 continue;
             }
             return true;
         }
         // check repository
-        return repository.queryKeyValuePresence(KEY_PARENT_ID, parentId, seen);
+        return repository.queryKeyValuePresence(KEY_PARENT_ID, parentId, Collections.emptySet());
     }
 
     public DBSDocumentState createChild(String id, String parentId, String name, Long pos, String typeName) {
@@ -462,11 +480,11 @@ public class DBSTransactionState {
         Set<String> seen = new HashSet<String>();
         // check transient state
         for (DBSDocumentState docState : transientStates.values()) {
-            seen.add(docState.getId());
             if (!value.equals(docState.get(key))) {
                 continue;
             }
             docStates.add(docState);
+            seen.add(docState.getId());
         }
         // fetch from repository
         List<State> states = repository.queryKeyValue(key, value, seen);
@@ -628,7 +646,8 @@ public class DBSTransactionState {
                     updateProxy(target, (String) proxyId);
                 } catch (ConcurrentUpdateException e) {
                     e.addInfo("On doc " + target.getId());
-                    throw e;
+                    log.error(e, e);
+                    // do not throw, this avoids crashing the session
                 }
             }
         }

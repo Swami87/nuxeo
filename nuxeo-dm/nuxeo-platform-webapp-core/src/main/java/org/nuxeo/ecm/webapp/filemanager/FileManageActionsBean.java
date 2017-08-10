@@ -295,7 +295,7 @@ public class FileManageActionsBean implements FileManageActions {
 
             DocumentModel createdDoc;
             try {
-                createdDoc = getFileManagerService().createFolder(documentManager, fullName, path);
+                createdDoc = getFileManagerService().createFolder(documentManager, fullName, path, true);
             } catch (NuxeoException | IOException t) {
                 Throwable unwrappedError = ExceptionHelper.unwrapException(t);
                 if (ExceptionHelper.isSecurityError(unwrappedError)) {
@@ -534,7 +534,11 @@ public class FileManageActionsBean implements FileManageActions {
         UploadedFile uploadedFile = uploadEvent.getUploadedFile();
         try (InputStream in = uploadedFile.getInputStream()) {
             FileBlob blob = new FileBlob(in, uploadedFile.getContentType(), null, tmpDir);
-            blob.setFilename(uploadedFile.getName());
+
+            // NXP-21171: With Firefox 50 and its new File system API, a bug occurs with the filename containing
+            // a slash. As it is not supposed to happen, sanitize the filename.
+            blob.setFilename(FileUtils.getCleanFileName(uploadedFile.getName()));
+
             return blob;
         }
     }

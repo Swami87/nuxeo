@@ -32,6 +32,7 @@ import javax.faces.view.facelets.TagConfig;
 import javax.faces.view.facelets.ValidatorHandler;
 
 import org.apache.commons.lang.StringUtils;
+import org.nuxeo.ecm.core.api.validation.DocumentValidationService;
 import org.nuxeo.ecm.platform.forms.layout.api.BuiltinWidgetModes;
 import org.nuxeo.ecm.platform.forms.layout.api.Widget;
 import org.nuxeo.ecm.platform.forms.layout.api.exceptions.WidgetException;
@@ -42,6 +43,7 @@ import org.nuxeo.ecm.platform.forms.layout.facelets.dev.WidgetTypeDevTagHandler;
 import org.nuxeo.ecm.platform.ui.web.tag.handler.LeafFaceletHandler;
 import org.nuxeo.ecm.platform.ui.web.tag.handler.TagConfigFactory;
 import org.nuxeo.ecm.platform.ui.web.validator.DocumentConstraintValidator;
+import org.nuxeo.runtime.api.Framework;
 
 import com.sun.faces.facelets.tag.ui.InsertHandler;
 
@@ -82,7 +84,7 @@ public abstract class AbstractWidgetTypeHandler implements WidgetTypeHandler {
         }
         FaceletHandlerHelper helper = new FaceletHandlerHelper(ctx, tagConfig);
         TagAttribute widgetAttr = helper.createAttribute("widget",
-                String.format("#{%s}", RenderVariables.widgetVariables.widget.name()));
+                "#{" + RenderVariables.widgetVariables.widget.name() + "}");
         TagAttributes devWidgetAttributes;
         if (StringUtils.isBlank(template)) {
             devWidgetAttributes = FaceletHandlerHelper.getTagAttributes(widgetAttr);
@@ -108,8 +110,7 @@ public abstract class AbstractWidgetTypeHandler implements WidgetTypeHandler {
     public String getRequiredProperty(String name) throws WidgetException {
         String value = getProperty(name);
         if (value == null) {
-            throw new WidgetException(String.format(
-                    "Required property %s is missing " + "on widget type configuration", name));
+            throw new WidgetException("Required property '" + name + "' is missing on widget type configuration");
         }
         return value;
     }
@@ -178,7 +179,9 @@ public abstract class AbstractWidgetTypeHandler implements WidgetTypeHandler {
                 handlers.add(slot);
             }
         }
-        if (addDocumentConstraintValidator) {
+        DocumentValidationService validationService = Framework.getService(DocumentValidationService.class);
+        if (addDocumentConstraintValidator
+                && validationService.isActivated(DocumentConstraintValidator.CTX_JSFVALIDATOR, null)) {
             FaceletHandler v = getDocumentConstraintValidatorHandler(ctx, tagConfig, widget, subHandlers, helper);
             if (v != null) {
                 handlers.add(v);

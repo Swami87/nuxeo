@@ -78,6 +78,7 @@ import org.nuxeo.ecm.core.api.validation.DocumentValidationService;
 import org.nuxeo.ecm.core.event.Event;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
+import org.nuxeo.ecm.core.filter.CharacterFilteringService;
 import org.nuxeo.ecm.core.lifecycle.LifeCycleService;
 import org.nuxeo.ecm.core.model.Document;
 import org.nuxeo.ecm.core.model.PathComparator;
@@ -129,6 +130,9 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     public static final String LIMIT_RESULTS_PROPERTY = "org.nuxeo.ecm.core.limit.results";
 
     public static final String TRASH_KEEP_CHECKED_IN_PROPERTY = "org.nuxeo.trash.keepCheckedIn";
+
+    // @since 9.1 disable ecm:isLatestVersion and ecm:isLatestMajorVersion updates for performance purpose
+    public static final String DISABLED_ISLATESTVERSION_PROPERTY = "org.nuxeo.core.isLatestVersion.disabled";
 
     public static final String BINARY_TEXT_SYS_PROP = "fulltextBinary";
 
@@ -681,6 +685,11 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
     @Override
     public DocumentModel createDocument(DocumentModel docModel) {
+
+        // start by removing disallowed characters
+        CharacterFilteringService charFilteringService = Framework.getService(CharacterFilteringService.class);
+        charFilteringService.filter(docModel);
+
         if (docModel.getSessionId() == null) {
             // docModel was created using constructor instead of CoreSession.createDocumentModel
             docModel.attach(getSessionId());
@@ -734,9 +743,10 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             // during remote publishing we want to skip versioning
             // to avoid overwriting the version number
             getVersioningService().doPostCreate(doc, options);
-            docModel = readModel(doc, docModel);
         }
 
+        // post-create event
+        docModel = readModel(doc, docModel);
         notifyEvent(DocumentEventTypes.DOCUMENT_CREATED, docModel, options, null, null, true, false);
         docModel = writeModel(doc, docModel);
 
@@ -1107,6 +1117,14 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     @Override
     public DocumentModelList query(String query, String queryType, Filter filter, long limit, long offset,
             boolean countTotal) {
+        long countUpTo = computeCountUpTo(countTotal);
+        return query(query, queryType, filter, limit, offset, countUpTo);
+    }
+
+    /**
+     * @return the appropriate countUpTo value depending on input {@code countTotal} and configuration.
+     */
+    protected long computeCountUpTo(boolean countTotal) {
         long countUpTo;
         if (!countTotal) {
             countUpTo = 0;
@@ -1117,7 +1135,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
                 countUpTo = -1;
             }
         }
-        return query(query, queryType, filter, limit, offset, countUpTo);
+        return countUpTo;
     }
 
     protected long getMaxResults() {
@@ -1158,16 +1176,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             boolean postFilterPolicies = !securityService.arePoliciesExpressibleInQuery(repoName);
             boolean postFilterFilter = filter != null && !(filter instanceof FacetFilter);
             boolean postFilter = postFilterPolicies || postFilterFilter;
-            String[] principals;
-            if (isAdministrator()) {
-                principals = null; // means: no security check needed
-            } else {
-                principals = SecurityService.getPrincipalsToCheck(principal);
-            }
+            String[] principals = getPrincipalsToCheck();
             String[] permissions = securityService.getPermissionsToCheck(permission);
+            Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
             QueryFilter queryFilter = new QueryFilter(principal, principals, permissions,
-                    filter instanceof FacetFilter ? (FacetFilter) filter : null,
-                    securityService.getPoliciesQueryTransformers(repoName), postFilter ? 0 : limit,
+                    filter instanceof FacetFilter ? (FacetFilter) filter : null, transformers, postFilter ? 0 : limit,
                     postFilter ? 0 : offset);
 
             // get document list with total size
@@ -1236,21 +1250,11 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         try {
             SecurityService securityService = getSecurityService();
             Principal principal = getPrincipal();
-            String[] principals;
-            if (isAdministrator()) {
-                principals = null; // means: no security check needed
-            } else {
-                principals = SecurityService.getPrincipalsToCheck(principal);
-            }
+            String[] principals = getPrincipalsToCheck();
             String permission = BROWSE;
             String[] permissions = securityService.getPermissionsToCheck(permission);
-            Collection<Transformer> transformers;
-            if (NXQL.NXQL.equals(queryType)) {
-                String repoName = getRepositoryName();
-                transformers = securityService.getPoliciesQueryTransformers(repoName);
-            } else {
-                transformers = Collections.emptyList();
-            }
+            Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
             QueryFilter queryFilter = new QueryFilter(principal, principals, permissions, null, transformers, 0, 0);
             IterableQueryResult result = getSession().queryAndFetch(query, queryType, queryFilter, distinctDocuments,
                     params);
@@ -1262,6 +1266,52 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     }
 
     @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset) {
+        return queryProjection(query, limit, offset, false);
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, long limit, long offset,
+            boolean countTotal) {
+        long countUpTo = computeCountUpTo(countTotal);
+        return queryProjection(query, NXQL.NXQL, false, limit, offset, countUpTo);
+    }
+
+    @Override
+    public PartialList<Map<String, Serializable>> queryProjection(String query, String queryType,
+            boolean distinctDocuments, long limit, long offset, long countUpTo, Object... params) {
+        Principal principal = getPrincipal();
+        String[] principals = getPrincipalsToCheck();
+        String[] permissions = getPermissionsToCheck(BROWSE);
+        Collection<Transformer> transformers = getPoliciesQueryTransformers(queryType);
+
+        QueryFilter queryFilter = new QueryFilter(principal, principals, permissions, null, transformers, limit,
+                offset);
+        return getSession().queryProjection(query, queryType, queryFilter, distinctDocuments, countUpTo, params);
+    }
+
+    protected String[] getPrincipalsToCheck() {
+        Principal principal = getPrincipal();
+        String[] principals;
+        if (isAdministrator()) {
+            principals = null; // means: no security check needed
+        } else {
+            principals = SecurityService.getPrincipalsToCheck(principal);
+        }
+        return principals;
+    }
+
+    protected Collection<Transformer> getPoliciesQueryTransformers(String queryType) {
+        Collection<Transformer> transformers;
+        if (NXQL.NXQL.equals(queryType)) {
+            String repoName = getRepositoryName();
+            transformers = securityService.getPoliciesQueryTransformers(repoName);
+        } else {
+            transformers = Collections.emptyList();
+        }
+        return transformers;
+    }
+
     public void removeChildren(DocumentRef docRef) {
         // TODO: check req permissions with td
         Document doc = resolveReference(docRef);
@@ -1295,7 +1345,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
      * Checks if a document can be removed, and returns a failure reason if not.
      */
     protected String canRemoveDocument(Document doc) {
-        // TODO must also check for proxies on live docs
+        // TODO must also check for proxies on live docs (NXP-22312)
         if (doc.isVersion()) {
             // TODO a hasProxies method would be more efficient
             Collection<Document> proxies = getSession().getProxies(doc, null);
@@ -1405,16 +1455,19 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         // TODO OPTIM: it's not guaranteed that getPath is cheap and
         // we call it a lot. Should use an object for pairs (document, path)
         // to call it just once per doc.
-        Arrays.sort(docs, pathComparator);
+        Arrays.sort(docs, pathComparator); // nulls first
         String[] paths = new String[docs.length];
         for (int i = 0; i < docs.length; i++) {
             paths[i] = docs[i].getPath();
         }
-        String latestRemoved = null;
+        String lastRemovedWithSlash = "\u0000";
         for (int i = 0; i < docs.length; i++) {
-            if (i == 0 || !paths[i].startsWith(latestRemoved + "/")) {
+            String path = paths[i];
+            if (i == 0 || path == null || !path.startsWith(lastRemovedWithSlash)) {
                 removeDocument(docs[i]);
-                latestRemoved = paths[i];
+                if (path != null) {
+                    lastRemovedWithSlash = path + "/";
+                }
             }
         }
     }
@@ -1439,6 +1492,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
                             + "in the repository with " + "'CoreSession.createDocument(docModel)'",
                     docModel.getTitle()));
         }
+
         Document doc = resolveReference(docModel.getRef());
         checkPermission(doc, WRITE_PROPERTIES);
 
@@ -1446,12 +1500,17 @@ public abstract class AbstractSession implements CoreSession, Serializable {
 
         boolean dirty = docModel.isDirty();
 
-        // document validation
-        if (dirty && getValidationService().isActivated(DocumentValidationService.CTX_SAVEDOC, options)) {
-            DocumentValidationReport report = getValidationService().validate(docModel, true);
-            if (report.hasError()) {
-                throw new DocumentValidationException(report);
+        if (dirty) {
+            // document validation
+            if (getValidationService().isActivated(DocumentValidationService.CTX_SAVEDOC, options)) {
+                DocumentValidationReport report = getValidationService().validate(docModel, true);
+                if (report.hasError()) {
+                    throw new DocumentValidationException(report);
+                }
             }
+            // remove disallowed characters
+            CharacterFilteringService charFilteringService = Framework.getService(CharacterFilteringService.class);
+            charFilteringService.filter(docModel);
         }
 
         options.put(CoreEventConstants.PREVIOUS_DOCUMENT_MODEL, readModel(doc));
@@ -1531,6 +1590,7 @@ public abstract class AbstractSession implements CoreSession, Serializable {
             DocumentRef checkedInVersionRef = new IdRef(checkedInDoc.getUUID());
             notifyCheckedInVersion(docModel, checkedInVersionRef, options, checkinComment);
         }
+
         notifyEvent(DocumentEventTypes.DOCUMENT_UPDATED, docModel, options, null, null, true, false);
         updateDocumentCount.inc();
         return docModel;
@@ -2033,8 +2093,8 @@ public abstract class AbstractSession implements CoreSession, Serializable {
         if (!doc.isVersion() && !doc.isProxy() && !doc.isCheckedOut()) {
             boolean deleteOrUndelete = LifeCycleConstants.DELETE_TRANSITION.equals(transition)
                     || LifeCycleConstants.UNDELETE_TRANSITION.equals(transition);
-            if (!deleteOrUndelete || Framework.getService(ConfigurationService.class).isBooleanPropertyFalse(
-                    TRASH_KEEP_CHECKED_IN_PROPERTY)) {
+            if (!deleteOrUndelete || Framework.getService(ConfigurationService.class)
+                                              .isBooleanPropertyFalse(TRASH_KEEP_CHECKED_IN_PROPERTY)) {
                 checkOut(docRef);
                 doc = resolveReference(docRef);
             }
@@ -2470,7 +2530,12 @@ public abstract class AbstractSession implements CoreSession, Serializable {
     public Map<String, String> getBinaryFulltext(DocumentRef ref) {
         Document doc = resolveReference(ref);
         checkPermission(doc, READ);
-        return getSession().getBinaryFulltext(doc.getUUID());
+        // Use an id whether than system properties to avoid to store fulltext properties in cache
+        String id = doc.getUUID();
+        if (doc.isProxy()) {
+            id = doc.getTargetDocument().getUUID();
+        }
+        return getSession().getBinaryFulltext(id);
     }
 
 }

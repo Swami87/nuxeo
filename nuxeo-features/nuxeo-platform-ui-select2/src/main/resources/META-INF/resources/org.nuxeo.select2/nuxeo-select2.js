@@ -140,6 +140,7 @@
       // custom operation, pass at least the query term
       temp.searchTerm = query.term;
     }
+    temp.searchTerm = temp.searchTerm.split(',').join('\\,');
     // append custom operation parameters if needed
     if (params.additionalOperationParameters && params.additionalOperationParameters.length > 0){
       additionalParamsFunction = eval(params.additionalOperationParameters);
@@ -418,7 +419,7 @@
             if (select2_params.multiple) {
               var newObj = JSON.parse(initHolder.val());
               newObj.push(e.added);
-              var newValue = JSON.stringify(newObj);
+              newValue = JSON.stringify(newObj);
             } else {
               newValue = JSON.stringify(e.added);
             }

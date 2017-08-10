@@ -120,8 +120,7 @@ public class RedisClusterInvalidator implements ClusterInvalidator {
 
     protected void subscribeToInvalidationChannel() {
         log.info("Subscribing to channel: " + getChannelName());
-        redisExecutor.execute(jedis -> {
-            jedis.subscribe(new JedisPubSub() {
+        redisExecutor.subscribe(new JedisPubSub() {
                 @Override
                 public void onSubscribe(String channel, int subscribedChannels) {
                     super.onSubscribe(channel, subscribedChannels);
@@ -147,8 +146,6 @@ public class RedisClusterInvalidator implements ClusterInvalidator {
                     }
                 }
             }, getChannelName());
-            return null;
-        });
     }
 
     protected String getChannelName() {
@@ -162,11 +159,10 @@ public class RedisClusterInvalidator implements ClusterInvalidator {
                 Integer.valueOf(TIMEOUT_REGISTER_SECOND).toString());
         log.debug("Registering node: " + nodeId);
 
-        redisExecutor.execute(jedis -> {
-            jedis.evalsha(registerSha, keys, args);
+        redisExecutor.evalsha(registerSha, keys, args);
+        if (log.isInfoEnabled()) {
             log.info("Node registered: " + nodeId);
-            return null;
-        });
+        }
     }
 
     protected String getNodeKey() {
@@ -213,13 +209,8 @@ public class RedisClusterInvalidator implements ClusterInvalidator {
             throw new NuxeoException(e);
         }
 
-        redisExecutor.execute(jedis -> {
-            jedis.evalsha(sendSha, keys, args);
-            if (log.isTraceEnabled()) {
-                log.trace("invals sent");
-            }
-            return null;
-        });
+        redisExecutor.evalsha(sendSha, keys, args);
+        log.trace("invals sent");
     }
 
     protected String getCurrentDateTime() {

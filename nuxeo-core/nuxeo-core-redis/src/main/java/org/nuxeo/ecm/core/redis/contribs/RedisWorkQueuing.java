@@ -424,6 +424,10 @@ public class RedisWorkQueuing implements WorkQueuing {
         return keyBytes(KEY_SCHEDULED_PREFIX, queueId);
     }
 
+    protected String scheduledKeyString(String queueId) {
+        return redisNamespace + KEY_SCHEDULED_PREFIX + queueId;
+    }
+
     protected byte[] completedKey(String queueId) {
         return keyBytes(KEY_COMPLETED_PREFIX, queueId);
     }
@@ -506,18 +510,10 @@ public class RedisWorkQueuing implements WorkQueuing {
         final byte[] workData = serializeWork(work);
         final List<byte[]> keys = Arrays.asList(dataKey(), stateKey(), scheduledKey(queueId),queuedKey(queueId));
         final List<byte[]> args = Arrays.asList(workId, workData, STATE_SCHEDULED);
-        redisExecutor.execute(new RedisCallable<Void>() {
-
-            @Override
-            public Void call(Jedis jedis) {
-                jedis.evalsha(schedulingWorkSha.getBytes(), keys, args);
-                if (log.isDebugEnabled()) {
-                    log.debug("Add scheduled " + work);
-                }
-                return null;
-            }
-
-        });
+        redisExecutor.evalsha(schedulingWorkSha.getBytes(), keys, args);
+        if (log.isDebugEnabled()) {
+            log.debug("Add scheduled " + work);
+        }
     }
 
     /**
@@ -624,17 +620,10 @@ public class RedisWorkQueuing implements WorkQueuing {
         final byte[] workId = bytes(work.getId());
         final List<byte[]> keys = Arrays.asList(stateKey(), scheduledKey(queueId), runningKey(queueId));
         final List<byte[]> args = Arrays.asList(workId, STATE_RUNNING);
-        redisExecutor.execute(new RedisCallable<Void>() {
-
-            @Override
-            public Void call(Jedis jedis) {
-                jedis.evalsha(runningWorkSha.getBytes(), keys, args);
-                if (log.isDebugEnabled()) {
-                    log.debug("Mark work as running " + work);
-                }
-                return null;
-            }
-        });
+        redisExecutor.evalsha(runningWorkSha.getBytes(), keys, args);
+        if (log.isDebugEnabled()) {
+            log.debug("Mark work as running " + work);
+        }
     }
 
     /**
@@ -646,17 +635,10 @@ public class RedisWorkQueuing implements WorkQueuing {
         final byte[] state = bytes(((char) STATE_COMPLETED_B) + String.valueOf(work.getCompletionTime()));
         final List<byte[]> keys = Arrays.asList(dataKey(), stateKey(), runningKey(queueId), completedKey(queueId));
         final List<byte[]> args = Arrays.asList(workId, workData, state);
-        redisExecutor.execute(new RedisCallable<Void>() {
-
-            @Override
-            public Void call(Jedis jedis) {
-                jedis.evalsha(completedWorkSha.getBytes(), keys, args);
-                if (log.isDebugEnabled()) {
-                    log.debug("Mark work as completed " + work);
-                }
-                return null;
-            }
-        });
+        redisExecutor.evalsha(completedWorkSha.getBytes(), keys, args);
+        if (log.isDebugEnabled()) {
+            log.debug("Mark work as completed " + work);
+        }
     }
 
     /**
@@ -906,6 +888,7 @@ public class RedisWorkQueuing implements WorkQueuing {
                 String completedKey = completedKeyString(queueId);
                 String stateKey = stateKeyString();
                 String dataKey = dataKeyString();
+                String scheduledKey = scheduledKeyString(queueId);
                 SScanner sscanner = new SScanner();
                 ScanParams scanParams = new ScanParams().count(BATCH_SIZE);
                 String cursor = "0";
@@ -915,7 +898,7 @@ public class RedisWorkQueuing implements WorkQueuing {
                     List<String> workIds = scanResult.getResult();
                     if (!workIds.isEmpty()) {
                         // delete these works if before the completion time
-                        List<String> keys = Arrays.asList(completedKey, stateKey, dataKey);
+                        List<String> keys = Arrays.asList(completedKey, stateKey, dataKey, scheduledKey);
                         List<String> args = new ArrayList<String>(1 + workIds.size());
                         args.add(String.valueOf(completionTime));
                         args.addAll(workIds);

@@ -45,7 +45,9 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -69,6 +71,7 @@ import org.nuxeo.common.codec.Crypto;
 import org.nuxeo.common.codec.CryptoProperties;
 import org.nuxeo.common.utils.TextTemplate;
 import org.nuxeo.launcher.commons.DatabaseDriverException;
+import org.nuxeo.launcher.config.JVMVersion.UpTo;
 import org.nuxeo.log4j.Log4JHelper;
 
 import freemarker.core.ParseException;
@@ -242,6 +245,15 @@ public class ConfigurationGenerator {
      */
     @Deprecated
     public static final String SEAM_HOT_RELOAD_GLOBAL_CONFIG_FILE = "seam-debug.properties";
+
+    /** @since 8.4 */
+    public static final String JVMCHECK_PROP = "jvmcheck";
+
+    /** @since 8.4 */
+    public static final String JVMCHECK_FAIL = "fail";
+
+    /** @since 8.4 */
+    public static final String JVMCHECK_NOFAIL = "nofail";
 
     private final File nuxeoHome;
 
@@ -474,6 +486,10 @@ public class ConfigurationGenerator {
             userConfig = new CryptoProperties();
         } else if (userConfig == null || userConfig.size() == 0 || forceReload) {
             try {
+                if (forceReload) {
+                    // force 'templates' reload
+                    templates = null;
+                }
                 setBasicConfiguration();
                 configurable = true;
             } catch (ConfigurationException e) {
@@ -1252,21 +1268,111 @@ public class ConfigurationGenerator {
      * @since 5.6
      */
     public void checkJavaVersion() throws ConfigurationException {
-        String[] requiredVersion = COMPLIANT_JAVA_VERSIONS[0].split("_");
         String version = System.getProperty("java.version");
-        String[] versionSplit = version.split("_");
-        boolean isCompliant = requiredVersion[0].equals(versionSplit[0])
-                && requiredVersion[1].compareTo(versionSplit[1]) <= 0;
-        boolean isGreater = requiredVersion[0].compareTo(versionSplit[0]) < 0;
-        if (!isCompliant) {
-            String message = String.format("Nuxeo requires Java %s+ (detected %s).", COMPLIANT_JAVA_VERSIONS[0],
-                    version);
-            if (isGreater || "nofail".equalsIgnoreCase(System.getProperty("jvmcheck", "fail"))) {
-                log.warn(message);
-            } else {
-                throw new ConfigurationException(message + " See 'jvmcheck' option to bypass version check.");
+        checkJavaVersion(version, COMPLIANT_JAVA_VERSIONS);
+    }
+
+    /**
+     * Check the java version compared to compliant ones.
+     *
+     * @param version the java version
+     * @param compliantVersions the compliant java versions
+     * @since 9.1
+     */
+    protected static void checkJavaVersion(String version, String[] compliantVersions) throws ConfigurationException {
+        // compliantVersions represents the java versions on which Nuxeo runs perfectly, so:
+        // - if we run Nuxeo with a major java version present in compliantVersions and compatible with then this
+        // method exits without error and without logging a warn message about loose compliance
+        // - if we run Nuxeo with a major java version not present in compliantVersions but greater than once then
+        // this method exits without error and logs a warn message about loose compliance
+        // - if we run Nuxeo with a non valid java version then method exits with error
+        // - if we run Nuxeo with a non valid java version and with jvmcheck=nofail property then method exits without
+        // error and logs a warn message about loose compliance
+
+        // try to retrieve the closest compliant java version
+        String lastCompliantVersion = null;
+        for (String compliantVersion : compliantVersions) {
+            if (checkJavaVersion(version, compliantVersion, false, false)) {
+                // current compliant version is valid, go to next one
+                lastCompliantVersion = compliantVersion;
+            } else if (lastCompliantVersion != null) {
+                // current compliant version is not valid, but we found a valid one earlier, 1st case
+                return;
+            } else if (checkJavaVersion(version, compliantVersion, true, true)) {
+                // current compliant version is not valid, try to check java version with jvmcheck=nofail, 4th case
+                // here we will log about loose compliance for the lower compliant java version
+                return;
             }
         }
+        // we might have lastCompliantVersion, unless nothing is valid against the current java version
+        if (lastCompliantVersion != null) {
+            // 2nd case: log about loose compliance if current major java version is greater than the greatest
+            // compliant java version
+            checkJavaVersion(version, lastCompliantVersion, false, true);
+            return;
+        }
+
+        // 3th case
+        String message = String.format("Nuxeo requires Java %s (detected %s).", ArrayUtils.toString(compliantVersions),
+                version);
+        throw new ConfigurationException(message + " See '" + JVMCHECK_PROP + "' option to bypass version check.");
+    }
+
+    /**
+     * Checks the java version compared to the required one.
+     * <p>
+     * Loose compliance is assumed if the major version is greater than the required major version or a jvmcheck=nofail
+     * flag is set.
+     *
+     * @param version the java version
+     * @param requiredVersion the required java version
+     * @param allowNoFailFlag if {@code true} then check jvmcheck=nofail flag to always have loose compliance
+     * @param warnIfLooseCompliance if {@code true} then log a WARN if the is loose compliance
+     * @return true if the java version is compliant (maybe loosely) with the required version
+     * @since 8.4
+     */
+    protected static boolean checkJavaVersion(String version, String requiredVersion, boolean allowNoFailFlag,
+            boolean warnIfLooseCompliance) {
+        allowNoFailFlag = allowNoFailFlag
+                && JVMCHECK_NOFAIL.equalsIgnoreCase(System.getProperty(JVMCHECK_PROP, JVMCHECK_FAIL));
+        try {
+            JVMVersion required = JVMVersion.parse(requiredVersion);
+            JVMVersion actual = JVMVersion.parse(version);
+            boolean compliant = actual.compareTo(required) >= 0;
+            if (compliant && actual.compareTo(required, UpTo.MAJOR) == 0) {
+                return true;
+            }
+            if (!compliant && !allowNoFailFlag) {
+                return false;
+            }
+            // greater major version or noFail is present in system property, considered loosely compliant but may warn
+            if (warnIfLooseCompliance) {
+                log.warn(String.format("Nuxeo requires Java %s+ (detected %s).", requiredVersion, version));
+            }
+            return true;
+        } catch (java.text.ParseException cause) {
+            if (allowNoFailFlag) {
+                log.warn("Cannot check java version", cause);
+                return true;
+            }
+            throw new IllegalArgumentException("Cannot check java version", cause);
+        }
+    }
+
+    /**
+     * Checks the java version compared to the required one.
+     * <p>
+     * If major version is same as required major version and minor is greater or equal, it is compliant.
+     * <p>
+     * If major version is greater than required major version, it is compliant.
+     *
+     * @param version the java version
+     * @param requiredVersion the required java version
+     * @return true if the java version is compliant with the required version
+     * @since 8.4
+     */
+    public static boolean checkJavaVersion(String version, String requiredVersion) {
+        return checkJavaVersion(version, requiredVersion, false, false);
     }
 
     /**
@@ -1288,10 +1394,35 @@ public class ConfigurationGenerator {
         checkPortAvailable(bindAddress, Integer.parseInt(userConfig.getProperty(PARAM_HTTP_PORT)));
     }
 
+    /**
+     * Checks the userConfig bind address is not 0.0.0.0 and replaces it with 127.0.0.1 if needed
+     * 
+     * @return the userConfig bind address if not 0.0.0.0 else 127.0.0.1
+     * @throws ConfigurationException
+     * @since 5.7
+     */
     public InetAddress getBindAddress() throws ConfigurationException {
+        return getBindAddress(userConfig.getProperty(PARAM_BIND_ADDRESS));
+    }
+
+    /**
+     * Checks hostName bind address is not 0.0.0.0 and replaces it with 127.0.0.1 if needed
+     * 
+     * @param hostName the hostname of Nuxeo server (works also with the IP)
+     * @return the bind address matching hostName parameter if not 0.0.0.0 else 127.0.0.1
+     * @throws ConfigurationException
+     * @since 9.2
+     */
+    public static InetAddress getBindAddress(String hostName) throws ConfigurationException {
         InetAddress bindAddress;
         try {
-            bindAddress = InetAddress.getByName(userConfig.getProperty(PARAM_BIND_ADDRESS));
+            bindAddress = InetAddress.getByName(hostName);
+            if (bindAddress.isAnyLocalAddress()) {
+                boolean preferIPv6 = "false".equals(System.getProperty("java.net.preferIPv4Stack"))
+                        && "true".equals(System.getProperty("java.net.preferIPv6Addresses"));
+                bindAddress = preferIPv6 ? InetAddress.getByName("::1") : InetAddress.getByName("127.0.0.1");
+                log.debug("Bind address is \"ANY\", using local address instead: " + bindAddress);
+            }
             log.debug("Configured bind address: " + bindAddress);
         } catch (UnknownHostException e) {
             throw new ConfigurationException(e);

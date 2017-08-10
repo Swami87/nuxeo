@@ -80,7 +80,7 @@ public abstract class BaseSession implements Session {
         String username = currentUser.getName();
         List<String> userGroups = currentUser.getAllGroups();
         
-        if (username.equalsIgnoreCase(LoginComponent.SYSTEM_USERNAME)) {
+        if (username.equalsIgnoreCase(LoginComponent.SYSTEM_USERNAME) || currentUser.isAdministrator()) {
             return true;
         }
 
@@ -179,8 +179,8 @@ public abstract class BaseSession implements Session {
      *
      * @since 5.3.1
      */
-    public static DocumentModel createEntryModel(String sessionId, String schema, String id,
-            Map<String, Object> values, boolean readOnly) throws PropertyException {
+    public static DocumentModel createEntryModel(String sessionId, String schema, String id, Map<String, Object> values,
+            boolean readOnly) throws PropertyException {
         DocumentModel entry = createEntryModel(sessionId, schema, id, values);
         if (readOnly) {
             setReadOnlyEntry(entry);

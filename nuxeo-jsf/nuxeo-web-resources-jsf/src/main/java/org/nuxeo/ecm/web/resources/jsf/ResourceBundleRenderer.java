@@ -51,12 +51,11 @@ public class ResourceBundleRenderer extends AbstractResourceRenderer {
         String type = (String) attributes.get("type");
         WebResourceManager wrm = Framework.getService(WebResourceManager.class);
         if (StringUtils.isBlank(type)) {
-            log.error(String.format("Cannot encode bundle with empty type at %s", component.getClientId()));
+            log.error("Cannot encode bundle with empty type at %s" + component.getClientId());
             return;
         }
         if (!ResourceType.css.equals(type) && !ResourceType.js.equals(type) && !ResourceType.html.equals(type)) {
-            log.error(String.format("Unsupported type '%s' to encode bundle '%s' at %s", type, name,
-                    component.getClientId()));
+            log.error("Unsupported type '" + type + "' to encode page '" + name + "' at " + component.getClientId());
             return;
         }
         List<Resource> rs = wrm.getResources(new ResourceContextImpl(), name, type);
@@ -77,6 +76,7 @@ public class ResourceBundleRenderer extends AbstractResourceRenderer {
     protected void encodeEnd(FacesContext context, UIComponent component, ResourceType type, String base)
             throws IOException {
         String url = resolveNuxeoResourceUrl(context, component, base);
+        url = resolveUrlWithTimestamp(component, url);
         ResponseWriter writer = context.getResponseWriter();
         if (ResourceType.css.equals(type)) {
             writer.startElement("link", component);

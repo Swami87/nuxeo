@@ -14,6 +14,7 @@
 package org.nuxeo.runtime;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import org.apache.commons.logging.LogFactory;
 
 import org.nuxeo.common.codec.CryptoProperties;
 import org.nuxeo.common.logging.JavaUtilLoggingHelper;
+import org.nuxeo.common.logging.Log4JHelper;
 import org.nuxeo.common.utils.TextTemplate;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.api.ServicePassivator;
@@ -58,6 +60,12 @@ public abstract class AbstractRuntimeService implements RuntimeService {
     public static final String REDIRECT_JUL = "org.nuxeo.runtime.redirectJUL";
 
     public static final String REDIRECT_JUL_THRESHOLD = "org.nuxeo.runtime.redirectJUL.threshold";
+
+    public static final String LOG4J_WATCH_DISABLED = "org.nuxeo.runtime.log4jwatch.disabled";
+
+    public static final String LOG4J_WATCH_DELAY = "org.nuxeo.runtime.log4jwatch.delay";
+
+    public static final long LOG4J_WATCH_DELAY_DEFAULT = 10;
 
     private static final Log log = LogFactory.getLog(RuntimeService.class);
 
@@ -117,13 +125,35 @@ public abstract class AbstractRuntimeService implements RuntimeService {
         if (isStarted) {
             return;
         }
+
+        manager = createComponentManager();
+        try {
+            loadConfig();
+        } catch (IOException e) {
+            throw new RuntimeServiceException(e);
+        }
+
         if (Boolean.parseBoolean(getProperty(REDIRECT_JUL, "false"))) {
             Level threshold = Level.parse(getProperty(REDIRECT_JUL_THRESHOLD, "INFO").toUpperCase());
             JavaUtilLoggingHelper.redirectToApacheCommons(threshold);
         }
+        if (!Boolean.parseBoolean(getProperty(LOG4J_WATCH_DISABLED, "false"))) {
+            long delay;
+            try {
+                delay = Long.parseLong(getProperty(LOG4J_WATCH_DELAY, Long.toString(LOG4J_WATCH_DELAY_DEFAULT)));
+            } catch (NumberFormatException e) {
+                delay = LOG4J_WATCH_DELAY_DEFAULT;
+            }
+            if (Log4JHelper.configureAndWatch(delay * 1000)) {
+                log.info("Configured log4j.xml change detection with a delay of " + delay + "s");
+            } else {
+                log.info("Failed to configure log4j.xml change detection");
+            }
+        } else {
+            log.info("Disabled log4j.xml change detection");
+        }
         log.info("Starting Nuxeo Runtime service " + getName() + "; version: " + getVersion());
-        // NXRuntime.setInstance(this);
-        manager = createComponentManager();
+
         Framework.sendEvent(new RuntimeServiceEvent(RuntimeServiceEvent.RUNTIME_ABOUT_TO_START, this));
         ServicePassivator.passivate()
                 .withQuietDelay(Duration.ofSeconds(0))
@@ -182,6 +212,9 @@ public abstract class AbstractRuntimeService implements RuntimeService {
     @Override
     public boolean isShuttingDown() {
         return isShuttingDown;
+    }
+
+    protected void loadConfig() throws IOException {
     }
 
     protected void doStart() {

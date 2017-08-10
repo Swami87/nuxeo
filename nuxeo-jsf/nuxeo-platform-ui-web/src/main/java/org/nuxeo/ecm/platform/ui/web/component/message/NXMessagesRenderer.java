@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2013 Nuxeo SA (http://nuxeo.com/) and others.
+ * (C) Copyright 2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,22 +135,34 @@ public class NXMessagesRenderer extends MessagesRenderer implements ComponentSys
 
             writer.startElement("script", messages);
             writer.writeAttribute("type", "text/javascript", null);
-
-            String scriptContent = "jQuery(document).ready(function() {\n" + "  jQuery.ambiance({\n" + "    "
-                    + "message: \"%s\",\n" + "    title: \"%s\",\n" + "    type: \"%s\",\n" + "    className: \"%s\",\n"
-                    + "    timeout: \"%d\"" + "  })\n" + "});\n";
-            String formattedScriptContent;
+            String message = "";
             if (showDetail) {
-                formattedScriptContent = String.format(scriptContent, StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(detail)),
-                        StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(summary)), errorType, severityStyleClass, timeout);
-            } else {
-                formattedScriptContent = String.format(scriptContent, "",
-                        StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(summary)),
-                        errorType, severityStyleClass, timeout);
+                message = detail;
             }
-            writer.writeText(formattedScriptContent, null);
+            String scriptContent = new StringBuilder().append("jQuery(document).ready(function() {\n")
+                                                      .append("  jQuery.ambiance({\n")
+                                                      .append("    message: \"")
+                                                      .append(StringEscapeUtils.escapeJavaScript(
+                                                              StringEscapeUtils.escapeHtml(message)))
+                                                      .append("\",\n")
+                                                      .append("    title: \"")
+                                                      .append(StringEscapeUtils.escapeJavaScript(
+                                                              StringEscapeUtils.escapeHtml(summary)))
+                                                      .append("\",\n")
+                                                      .append("    type: \"")
+                                                      .append(errorType)
+                                                      .append("\",\n")
+                                                      .append("    className: \"")
+                                                      .append(severityStyleClass)
+                                                      .append("\",\n")
+                                                      .append("    timeout: \"")
+                                                      .append(timeout)
+                                                      .append("\"")
+                                                      .append("  })\n")
+                                                      .append("});\n")
+                                                      .toString();
+            writer.writeText(scriptContent, null);
             writer.endElement("script");
-
         }
     }
 

@@ -17,24 +17,32 @@
 package org.nuxeo.ecm.platform.web.common.exceptionhandling;
 
 import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.DISABLE_REDIRECT_REQUEST_KEY;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.LOGINCONTEXT_KEY;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.USERIDENT_KEY;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.security.Principal;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
 import javax.faces.context.FacesContext;
+import javax.security.auth.Subject;
+import javax.security.auth.login.LoginContext;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.utils.i18n.I18NUtils;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.WrappedException;
+import org.nuxeo.ecm.platform.ui.web.auth.CachableUserIdentificationInfo;
 import org.nuxeo.ecm.platform.web.common.exceptionhandling.descriptor.ErrorHandler;
 
 
@@ -115,6 +123,9 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
 
             parameters.getListener().beforeForwardToErrorPage(unwrappedException, request, response);
             if (!response.isCommitted()) {
+                // The JSP error page needs the response Writer but somebody may already have retrieved
+                // the OutputStream and usage of these two can't be mixed. So we reset the response.
+                response.reset();
                 response.setStatus(status);
                 String errorPage = handler.getPage();
                 errorPage = (errorPage == null) ? parameters.getDefaultErrorPage() : errorPage;
@@ -164,6 +175,19 @@ public class DefaultNuxeoExceptionHandler implements NuxeoExceptionHandler {
 
     protected Object getUserMessage(String messageKey, Locale locale) {
         return I18NUtils.getMessageString(parameters.getBundleName(), messageKey, null, locale);
+    }
+
+    protected Principal getPrincipal(HttpServletRequest request) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            LoginContext loginContext = (LoginContext) request.getAttribute(LOGINCONTEXT_KEY);
+            principal = Optional.ofNullable(loginContext)
+                                .map(LoginContext::getSubject)
+                                .map(Subject::getPrincipals)
+                                .flatMap(principals -> principals.stream().findFirst())
+                                .orElse(null);
+        }
+        return principal;
     }
 
     /**

@@ -128,8 +128,8 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
         try {
             MimetypeRegistry mimetypeRegistry = Framework.getLocalService(MimetypeRegistry.class);
             if (file.getName() != null) {
-                return mimetypeRegistry.getMimetypeFromFilenameAndBlobWithDefault(file.getName(), Blobs.createBlob(file),
-                        "image/jpeg");
+                return mimetypeRegistry.getMimetypeFromFilenameAndBlobWithDefault(file.getName(),
+                        Blobs.createBlob(file), "image/jpeg");
             } else {
                 return mimetypeRegistry.getMimetypeFromFile(file);
             }
@@ -247,8 +247,8 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
     }
 
     @Override
-    public List<PictureView> computeViewsFor(Blob blob, List<PictureConversion> pictureConversions,
-            ImageInfo imageInfo, boolean convert) throws IOException {
+    public List<PictureView> computeViewsFor(Blob blob, List<PictureConversion> pictureConversions, ImageInfo imageInfo,
+            boolean convert) throws IOException {
         String mimeType = blob.getMimeType();
         if (mimeType == null) {
             blob.setMimeType(getImageMimeType(blob));
@@ -394,8 +394,18 @@ public class ImagingComponent extends DefaultComponent implements ImagingService
 
         Blob viewBlob = callPictureConversionChain(doc, blob, pictureConversion, imageInfo, size, conversionFormat);
 
+        // If the extension of the generated binary is empty, it's fetched from the mimetype
+        String extension = FilenameUtils.getExtension(viewBlob.getFilename());
+        if (StringUtils.isEmpty(extension)) {
+            MimetypeRegistry mimetypeRegistry = Framework.getService(MimetypeRegistry.class);
+            List<String> extensions = mimetypeRegistry.getExtensionsFromMimetypeName(viewBlob.getMimeType());
+            if (extensions != null && !extensions.isEmpty()) {
+                extension = extensions.get(0);
+            }
+        }
+
         String viewFilename = String.format("%s_%s.%s", title, FilenameUtils.getBaseName(blob.getFilename()),
-                FilenameUtils.getExtension(viewBlob.getFilename()));
+                extension);
         viewBlob.setFilename(viewFilename);
         pictureViewMap.put(PictureView.FIELD_FILENAME, viewFilename);
         pictureViewMap.put(PictureView.FIELD_CONTENT, (Serializable) viewBlob);

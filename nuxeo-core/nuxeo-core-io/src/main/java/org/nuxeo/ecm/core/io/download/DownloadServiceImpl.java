@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2015 Nuxeo SA (http://nuxeo.com/) and contributors.
+ * (C) Copyright 2015-2016 Nuxeo SA (http://nuxeo.com/) and others.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the GNU Lesser General Public License
@@ -13,6 +13,7 @@
  *
  * Contributors:
  *     Florent Guillaume
+ *     Estelle Giuly <egiuly@nuxeo.com>
  */
 package org.nuxeo.ecm.core.io.download;
 
@@ -22,6 +23,7 @@ import java.io.OutputStream;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -42,12 +45,17 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.nuxeo.common.utils.URIUtils;
 import org.nuxeo.ecm.core.api.Blob;
+import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.DocumentRef;
+import org.nuxeo.ecm.core.api.DocumentSecurityException;
+import org.nuxeo.ecm.core.api.IdRef;
 import org.nuxeo.ecm.core.api.NuxeoException;
 import org.nuxeo.ecm.core.api.NuxeoPrincipal;
 import org.nuxeo.ecm.core.api.SystemPrincipal;
@@ -62,10 +70,13 @@ import org.nuxeo.ecm.core.event.EventContext;
 import org.nuxeo.ecm.core.event.EventService;
 import org.nuxeo.ecm.core.event.impl.DocumentEventContext;
 import org.nuxeo.ecm.core.event.impl.EventContextImpl;
+import org.nuxeo.ecm.core.transientstore.api.TransientStore;
+import org.nuxeo.ecm.core.transientstore.api.TransientStoreService;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.model.ComponentInstance;
 import org.nuxeo.runtime.model.DefaultComponent;
 import org.nuxeo.runtime.model.SimpleContributionRegistry;
+import org.nuxeo.runtime.transaction.TransactionHelper;
 
 /**
  * This service allows the download of blobs to a HTTP response.
@@ -87,6 +98,8 @@ public class DownloadServiceImpl extends DefaultComponent implements DownloadSer
     private static final String XP = "permissions";
 
     private static final String RUN_FUNCTION = "run";
+
+    protected static enum Action {DOWNLOAD, DOWNLOAD_FROM_DOC, INFO};
 
     private DownloadPermissionRegistry registry = new DownloadPermissionRegistry();
 
@@ -145,6 +158,25 @@ public class DownloadServiceImpl extends DefaultComponent implements DownloadSer
         registry.removeContribution(descriptor);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * Multipart download are not yet supported. You can only provide
+     * a blob singleton at this time.
+     */
+    @Override
+    public String storeBlobs(List<Blob> blobs) {
+        if (blobs.size() > 1) {
+            throw new IllegalArgumentException("multipart download not yet implemented");
+        }
+        TransientStore ts = Framework.getService(TransientStoreService.class).getStore("download");
+        String storeKey = UUID.randomUUID().toString();
+        ts.putBlobs(storeKey, blobs);
+        return storeKey;
+    }
+
+
+
     @Override
     public String getDownloadUrl(DocumentModel doc, String xpath, String filename) {
         return getDownloadUrl(doc.getRepositoryName(), doc.getId(), xpath, filename);
@@ -154,25 +186,204 @@ public class DownloadServiceImpl extends DefaultComponent implements DownloadSer
     public String getDownloadUrl(String repositoryName, String docId, String xpath, String filename) {
         StringBuilder sb = new StringBuilder();
         sb.append(NXFILE);
-        sb.append("/");
-        sb.append(repositoryName);
-        sb.append("/");
-        sb.append(docId);
+        sb.append("/").append(repositoryName);
+        sb.append("/").append(docId);
         if (xpath != null) {
-            sb.append("/");
-            sb.append(xpath);
+            sb.append("/").append(xpath);
             if (filename != null) {
-                sb.append("/");
-                sb.append(URIUtils.quoteURIPathComponent(filename, true));
+                sb.append("/").append(URIUtils.quoteURIPathComponent(filename, true));
             }
         }
         return sb.toString();
     }
 
     @Override
+    public String getDownloadUrl(String storeKey) {
+        return NXBIGBLOB + "/" + storeKey;
+    }
+
+    /**
+     * Gets the download path and action of the URL to use to download blobs. For instance, from the path
+     * "nxfile/default/3727ef6b-cf8c-4f27-ab2c-79de0171a2c8/files:files/0/file/image.png", the pair
+     * ("default/3727ef6b-cf8c-4f27-ab2c-79de0171a2c8/files:files/0/file/image.png", Action.DOWNLOAD_FROM_DOC) is returned.
+     *
+     * @param path the path of the URL to use to download blobs
+     * @return the pair download path and action
+     * @since 9.1
+     */
+    protected Pair<String, Action> getDownloadPathAndAction(String path) {
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        int slash = path.indexOf('/');
+        if (slash < 0) {
+            return null;
+        }
+        String type = path.substring(0, slash);
+        String downloadPath = path.substring(slash + 1);
+        switch (type) {
+        case NXDOWNLOADINFO:
+            // used by nxdropout.js
+            return Pair.of(downloadPath, Action.INFO);
+        case NXFILE:
+        case NXBIGFILE:
+            return Pair.of(downloadPath, Action.DOWNLOAD_FROM_DOC);
+        case NXBIGZIPFILE:
+        case NXBIGBLOB:
+            return Pair.of(downloadPath, Action.DOWNLOAD);
+        default:
+            return null;
+        }
+    }
+
+    /**
+     * Gets a document from a repository name and a docId.
+     *
+     * @param repository the repository name
+     * @param docId the document id
+     * @return the DocumentModel
+     * @since 9.1
+     */
+    protected DocumentModel getDownloadDocument(String repository, String docId) {
+        try (CoreSession session = CoreInstance.openCoreSession(repository)) {
+            DocumentRef docRef = new IdRef(docId);
+            if (!session.exists(docRef)) {
+                return null;
+            }
+            return session.getDocument(docRef);
+        }
+    }
+
+    @Override
+    public Blob resolveBlobFromDownloadUrl(String url) {
+        String nuxeoUrl = Framework.getProperty("nuxeo.url");
+        if (!url.startsWith(nuxeoUrl)) {
+            return null;
+        }
+        String path = url.substring(nuxeoUrl.length() + 1);
+        Pair<String, Action> pair = getDownloadPathAndAction(path);
+        if (pair == null) {
+            return null;
+        }
+        String downloadPath = pair.getLeft();
+        try {
+            DownloadBlobInfo downloadBlobInfo = new DownloadBlobInfo(downloadPath);
+            DocumentModel doc = getDownloadDocument(downloadBlobInfo.repository, downloadBlobInfo.docId);
+            if (doc == null) {
+                return null;
+            }
+            return resolveBlob(doc, downloadBlobInfo.xpath);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void handleDownload(HttpServletRequest req, HttpServletResponse resp, String baseUrl, String path)
+            throws IOException {
+        Pair<String, Action> pair = getDownloadPathAndAction(path);
+        if (pair == null) {
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid URL syntax");
+            return;
+        }
+        String downloadPath = pair.getLeft();
+        Action action = pair.getRight();
+        switch (action) {
+        case INFO:
+            handleDownload(req, resp, downloadPath, baseUrl, true);
+            break;
+        case DOWNLOAD_FROM_DOC:
+            handleDownload(req, resp, downloadPath, baseUrl, false);
+            break;
+        case DOWNLOAD:
+            downloadBlob(req, resp, downloadPath, "download");
+            break;
+        default:
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid URL syntax");
+        }
+    }
+
+    protected void handleDownload(HttpServletRequest req, HttpServletResponse resp, String downloadPath, String baseUrl,
+            boolean info) throws IOException {
+        boolean tx = false;
+        DownloadBlobInfo downloadBlobInfo;
+        try {
+            downloadBlobInfo = new DownloadBlobInfo(downloadPath);
+        } catch (IllegalArgumentException e) {
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid URL syntax");
+            return;
+        }
+        try {
+            if (!TransactionHelper.isTransactionActive()) {
+                // Manually start and stop a transaction around repository access to be able to release transactional
+                // resources without waiting for the download that can take a long time (longer than the transaction
+                // timeout) especially if the client or the connection is slow.
+                tx = TransactionHelper.startTransaction();
+            }
+            String xpath = downloadBlobInfo.xpath;
+            String filename = downloadBlobInfo.filename;
+            DocumentModel doc = getDownloadDocument(downloadBlobInfo.repository, downloadBlobInfo.docId);
+            if (doc == null) {
+                // Send a security exception to force authentication, if the current user is anonymous
+                Principal principal = req.getUserPrincipal();
+                if (principal instanceof NuxeoPrincipal) {
+                    NuxeoPrincipal nuxeoPrincipal = (NuxeoPrincipal) principal;
+                    if (nuxeoPrincipal.isAnonymous()) {
+                        throw new DocumentSecurityException("Authentication is needed for downloading the blob");
+                    }
+                }
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "No document found");
+                return;
+            }
+            if (info) {
+                Blob blob = resolveBlob(doc, xpath);
+                if (blob == null) {
+                    resp.sendError(HttpServletResponse.SC_NOT_FOUND, "No blob found");
+                    return;
+                }
+                String downloadUrl = baseUrl + getDownloadUrl(doc, xpath, filename);
+                String result = blob.getMimeType() + ':' + URLEncoder.encode(blob.getFilename(), "UTF-8") + ':'
+                        + downloadUrl;
+                resp.setContentType("text/plain");
+                resp.getWriter().write(result);
+                resp.getWriter().flush();
+            } else {
+                downloadBlob(req, resp, doc, xpath, null, filename, "download");
+            }
+        } catch (NuxeoException e) {
+            if (tx) {
+                TransactionHelper.setTransactionRollbackOnly();
+            }
+            throw new IOException(e);
+        } finally {
+            if (tx) {
+                TransactionHelper.commitOrRollbackTransaction();
+            }
+        }
+    }
+
+    @Override
+    public void downloadBlob(HttpServletRequest request, HttpServletResponse response, String key, String reason) throws IOException {
+        TransientStore ts = Framework.getService(TransientStoreService.class).getStore("download");
+        try {
+            List<Blob> blobs = ts.getBlobs(key);
+            if (blobs == null) {
+                throw new IllegalArgumentException("no such blobs referenced with " + key);
+            }
+            if (blobs.size() > 1) {
+                throw new IllegalArgumentException("multipart download not yet implemented");
+            }
+            Blob blob = blobs.get(0);
+            downloadBlob(request, response, null, null, blob, blob.getFilename(), reason);
+        } finally {
+            ts.remove(key);
+        }
+    }
+
+    @Override
     public void downloadBlob(HttpServletRequest request, HttpServletResponse response, DocumentModel doc, String xpath,
             Blob blob, String filename, String reason) throws IOException {
-        downloadBlob(request, response, doc, xpath, blob, filename, reason, null);
+        downloadBlob(request, response, doc, xpath, blob, filename, reason, Collections.emptyMap());
     }
 
     @Override

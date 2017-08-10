@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -75,13 +76,13 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
 
     protected Map<String, PublicationTreeConfigDescriptor> pendingDescriptors = new HashMap<String, PublicationTreeConfigDescriptor>();
 
-    protected Map<String, PublicationTree> liveTrees = new HashMap<String, PublicationTree>();
+    protected Map<String, PublicationTree> liveTrees = new ConcurrentHashMap<String, PublicationTree>();
 
     protected RootSectionFinderFactory rootSectionFinderFactory = null;
 
     // Store association between treeSid and CoreSession that was opened locally
     // for them : this unable proper cleanup of allocated sessions
-    protected Map<String, String> remoteLiveTrees = new HashMap<String, String>();
+    protected Map<String, String> remoteLiveTrees = new ConcurrentHashMap<String, String>();
 
     public static final String TREE_EP = "tree";
 
@@ -99,7 +100,9 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
 
     @Override
     public void applicationStarted(ComponentContext context) {
-        if (TransactionHelper.startTransaction()) {
+        boolean txWasStartedOutsideComponent = TransactionHelper.isTransactionActiveOrMarkedRollback();
+
+        if (txWasStartedOutsideComponent || TransactionHelper.startTransaction()) {
             boolean completedAbruptly = true;
             try {
                 doApplicationStarted();
@@ -108,7 +111,9 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
                 if (completedAbruptly) {
                     TransactionHelper.setTransactionRollbackOnly();
                 }
-                TransactionHelper.commitOrRollbackTransaction();
+                if (!txWasStartedOutsideComponent) {
+                    TransactionHelper.commitOrRollbackTransaction();
+                }
             }
         } else {
             doApplicationStarted();
@@ -399,8 +404,7 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
     }
 
     @Override
-    public PublishedDocument publish(DocumentModel doc, PublicationNode targetNode, Map<String, String> params)
-            {
+    public PublishedDocument publish(DocumentModel doc, PublicationNode targetNode, Map<String, String> params) {
 
         PublicationTree tree = liveTrees.get(targetNode.getSessionId());
         if (tree != null) {
@@ -490,8 +494,7 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
     }
 
     @Override
-    public List<PublishedDocument> getExistingPublishedDocument(String sid, DocumentLocation docLoc)
-            {
+    public List<PublishedDocument> getExistingPublishedDocument(String sid, DocumentLocation docLoc) {
         PublicationTree tree = liveTrees.get(sid);
         if (tree != null) {
             return tree.getExistingPublishedDocument(docLoc);
@@ -522,8 +525,7 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
     }
 
     @Override
-    public void validatorPublishDocument(String sid, PublishedDocument publishedDocument, String comment)
-            {
+    public void validatorPublishDocument(String sid, PublishedDocument publishedDocument, String comment) {
         PublicationTree tree = liveTrees.get(sid);
         if (tree != null) {
             tree.validatorPublishDocument(publishedDocument, comment);
@@ -533,8 +535,7 @@ public class PublisherServiceImpl extends DefaultComponent implements PublisherS
     }
 
     @Override
-    public void validatorRejectPublication(String sid, PublishedDocument publishedDocument, String comment)
-            {
+    public void validatorRejectPublication(String sid, PublishedDocument publishedDocument, String comment) {
         PublicationTree tree = liveTrees.get(sid);
         if (tree != null) {
             tree.validatorRejectPublication(publishedDocument, comment);

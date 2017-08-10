@@ -40,6 +40,7 @@ import java.util.Set;
 import javax.inject.Inject;
 
 import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.lang3.mutable.MutableObject;
 import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -53,6 +54,7 @@ import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreInstance;
 import org.nuxeo.ecm.core.api.CoreSession;
 import org.nuxeo.ecm.core.api.DataModel;
+import org.nuxeo.ecm.core.api.DocumentExistsException;
 import org.nuxeo.ecm.core.api.DocumentModel;
 import org.nuxeo.ecm.core.api.DocumentModelIterator;
 import org.nuxeo.ecm.core.api.DocumentModelList;
@@ -1383,6 +1385,60 @@ public class TestSQLRepositoryAPI {
         session.removeDocument(version);
     }
 
+    @Test
+    public void testRemoveLiveProxyTarget() throws Exception {
+        DocumentModel root = session.getRootDocument();
+        DocumentModel folder = session.createDocumentModel("/", "folder", "Folder");
+        folder = session.createDocument(folder);
+        DocumentModel subfolder = session.createDocumentModel("/folder", "subfolder", "Folder");
+        subfolder= session.createDocument(subfolder);
+        DocumentModel doc = session.createDocumentModel("/folder/subfolder", "doc", "File");
+        doc = session.createDocument(doc);
+        session.save();
+
+        // create live proxy
+        DocumentModel proxy = session.createProxy(doc.getRef(), root.getRef());
+        session.save();
+
+        // cannot remove doc due to existing proxy
+        // assertFalse(session.canRemoveDocument(doc.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(doc.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // cannot remove containing folder either
+        // assertFalse(session.canRemoveDocument(subfolder.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(subfolder.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // cannot remove ancestor either
+        // assertFalse(session.canRemoveDocument(folder.getRef())); // TODO NXP-22312
+        try {
+            session.removeDocument(folder.getRef());
+            fail();
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // create the proxy in the folder instead
+        session.removeDocument(proxy.getRef());
+        proxy = session.createProxy(doc.getRef(), folder.getRef());
+
+        // then we can remove the folder that contains both the proxy and the target
+        assertTrue(session.canRemoveDocument(folder.getRef()));
+        session.removeDocument(folder.getRef());
+    }
+
     public void TODOtestQuery() {
         DocumentModel root = session.getRootDocument();
 
@@ -2570,6 +2626,81 @@ public class TestSQLRepositoryAPI {
         // move with null dest (rename)
         DocumentModel newFile3 = session.move(file.getRef(), null, "file3");
         assertEquals("file3", newFile3.getName());
+    }
+
+    @Test
+    public void testMoveConcurrentWithGetChild() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        try {
+            session.getChild(new PathRef("/folder"), "doc");
+            fail("should not find child moved under /folder in another transaction");
+        } catch (DocumentNotFoundException e) {
+            assertEquals("doc", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testMoveConcurrentWithGetChildren() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        // should not find child moved under /folder in another transaction
+        DocumentModelList children = session.getChildren(new PathRef("/folder"));
+        assertEquals(0, children.size());
+    }
+
+    @Test
+    public void testMoveConcurrentWithGetChildrenRefs() throws Exception {
+        assumeTrue("VCS read-committed semantics cannot enforce this", isDBS());
+        prepareDocsForMoveConcurrentWithGetChildren();
+        // should not find child moved under /folder in another transaction
+        List<DocumentRef> children = session.getChildrenRefs(new PathRef("/folder"), null);
+        assertEquals(0, children.size());
+    }
+
+    protected void prepareDocsForMoveConcurrentWithGetChildren() throws Exception {
+        // create folder
+        DocumentModel folder = session.createDocumentModel("/", "folder", "Folder");
+        folder = session.createDocument(folder);
+        // create doc outside of folder
+        DocumentModel doc = session.createDocumentModel("/", "doc", "File");
+        doc = session.createDocument(doc);
+        session.save();
+        nextTransaction();
+        // load doc as DBS transient
+        session.getDocument(doc.getRef());
+
+        // in other thread, move doc into folder
+        MutableObject<RuntimeException> me = new MutableObject<>();
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                TransactionHelper.startTransaction();
+                boolean completedAbruptly = true;
+                try {
+                    try (CoreSession session2 = CoreInstance.openCoreSession(coreFeature.getRepositoryName())) {
+                        session2.move(new PathRef("/doc"), new PathRef("/folder"), null);
+                        session2.save();
+                        completedAbruptly = false;
+                    } catch (RuntimeException e) {
+                        me.setValue(e);
+                    }
+                } finally {
+                    try {
+                        if (completedAbruptly) {
+                            TransactionHelper.setTransactionRollbackOnly();
+                        }
+                    } finally {
+                        TransactionHelper.commitOrRollbackTransaction();
+                    }
+                }
+            }
+        });
+        thread.start();
+        thread.join();
+        if (me.getValue() != null) {
+            throw new RuntimeException(me.getValue());
+        }
     }
 
     // TODO NXP-2514: fix this test

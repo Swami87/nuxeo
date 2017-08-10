@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -65,6 +66,7 @@ import org.junit.Test;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.ConcurrentUpdateException;
+import org.nuxeo.ecm.core.api.DocumentExistsException;
 import org.nuxeo.ecm.core.api.IterableQueryResult;
 import org.nuxeo.ecm.core.api.Lock;
 import org.nuxeo.ecm.core.api.NuxeoException;
@@ -354,6 +356,40 @@ public class TestSQLBackend extends SQLBackendTestCase {
         }
     }
 
+    // more than 1000 children without path optimizations (for Oracle, NXP-20211)
+    @Test
+    public void testRecursiveRemovalBigWithoutPathOptimizations() throws Exception {
+        repository.close();
+        // open a repository without path optimization
+        pathOptimizationsEnabled = false;
+        repository = newRepository(-1);
+
+        testRecursiveRemovalBig();
+    }
+
+    // more than 1000 children
+    @Test
+    public void testRecursiveRemovalBig() throws Exception {
+        Session session = repository.getConnection();
+        Node root = session.getRootNode();
+        Node base = session.addChildNode(root, "base", null, "TestDoc", false);
+        int n = 1100; // > 1000, the max for Oracle
+        List<Serializable> ids = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            String name = "doc" + i;
+            Node child = session.addChildNode(base, name, null, "TestDoc", false);
+            ids.add(child.getId());
+        }
+        session.save();
+        // delete base
+        session.removeNode(base);
+        session.save();
+        // check all children were really deleted recursively
+        for (Serializable id : ids) {
+            assertNull(id.toString(), session.getNodeById(id));
+        }
+    }
+
     @Test
     public void testBasics() throws Exception {
         Session session = repository.getConnection();
@@ -414,6 +450,55 @@ public class TestSQLBackend extends SQLBackendTestCase {
         // delete the node
         // session.removeNode(nodea);
         // session.save();
+    }
+
+    /**
+     * Test persistence of date in another time zone than the default one.
+     *
+     * @since 9.3
+     */
+    @Test
+    public void testDateWithTimeZone() throws Exception {
+        Session session = repository.getConnection();
+        Node root = session.getRootNode();
+        Node node = session.addChildNode(root, "foo", null, "TestDoc", false);
+
+        GregorianCalendar cal = new GregorianCalendar(2008, Calendar.DECEMBER, 14, 12, 34, 56);
+
+        // cal has a the default time zone, let's change it to UTC (keeping the same instant)
+        cal.setTimeZone(TimeZone.getTimeZone("UTC"));
+        node.setSimpleProperty("tst:created", cal);
+        session.save();
+
+        // reopen a session to read from database and not caches
+        session.close();
+        session = repository.getConnection();
+        node = session.getChildNode(session.getRootNode(), "foo", false);
+
+        // read date should be the same instant
+        GregorianCalendar readCal = (GregorianCalendar) node.getSimpleProperty("tst:created").getValue();
+        assertEqualsCalendars(cal, readCal);
+
+        // in case the default time zone is already UTC let's test with another one
+        cal.setTimeZone(TimeZone.getTimeZone("EST"));
+        node.setSimpleProperty("tst:created", cal);
+        session.save();
+
+        // reopen a session to read from database and not caches
+        session.close();
+        session = repository.getConnection();
+        node = session.getChildNode(session.getRootNode(), "foo", false);
+
+        // read date should be the same instant
+        readCal = (GregorianCalendar) node.getSimpleProperty("tst:created").getValue();
+        assertEqualsCalendars(cal, readCal);
+    }
+
+    /** Gives a clear error message with full dates on assertion failure. */
+    public static void assertEqualsCalendars(GregorianCalendar a, GregorianCalendar b) {
+        if (a.getTimeInMillis() != b.getTimeInMillis()) {
+            assertEquals(a.toZonedDateTime().toString(), b.toZonedDateTime().toString());
+        }
     }
 
     @Test
@@ -2297,7 +2382,7 @@ public class TestSQLBackend extends SQLBackendTestCase {
         // create proxy2 in folder2
         session.addProxy(ver.getId(), node.getId(), folder2, "proxy2", null);
         // create proxy3 in folder3
-        session.addProxy(ver.getId(), node.getId(), folder3, "proxy3", null);
+        Node proxy3 = session.addProxy(ver.getId(), node.getId(), folder3, "proxy3", null);
 
         List<Node> list;
         list = session.getProxies(ver, null); // by target
@@ -2314,8 +2399,18 @@ public class TestSQLBackend extends SQLBackendTestCase {
         list = session.getProxies(node, null); // by series
         assertEquals(1, list.size());
 
-        // remove target, should remove proxies as well
-        session.removeNode(ver);
+        // remove target is forbidden while proxy still exists
+        try {
+            session.removeNode(ver);
+        } catch (DocumentExistsException e) {
+            String msg = e.getMessage();
+            assertTrue(msg, msg.contains("is the target of proxy"));
+        }
+
+        // remove last proxy
+        session.removeNode(proxy3);
+
+        // check selections are correct
         list = session.getProxies(ver, null); // by target
         assertEquals(0, list.size());
     }

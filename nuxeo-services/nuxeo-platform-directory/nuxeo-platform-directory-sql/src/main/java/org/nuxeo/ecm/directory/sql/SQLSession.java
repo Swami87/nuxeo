@@ -223,9 +223,15 @@ public class SQLSession extends BaseSession implements EntrySource {
             if (column.isIdentity()) {
                 idColumn = column;
             }
-            String prefixField = schemaFieldMap.get(column.getKey()).getName().getPrefixedName();
-            if (fieldMap.get(prefixField) == null) {
-                i.remove();
+            String prefixedName = schemaFieldMap.get(column.getKey()).getName().getPrefixedName();
+
+            if (!fieldMap.containsKey(prefixedName)) {
+                Field prefixedField = schemaFieldMap.get(prefixedName);
+                if (prefixedField != null && prefixedField.getDefaultValue() != null) {
+                    fieldMap.put(prefixedName, prefixedField.getDefaultValue());
+                } else {
+                    i.remove();
+                }
             }
         }
         Insert insert = new Insert(table);

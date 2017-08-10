@@ -27,12 +27,12 @@
       </properties>
     </action>
 
-    <action id="refreshContentView" order="20" type="template" label="label.refresh"
+    <action id="refreshContentView" order="20" type="link" label="label.refresh"
       icon="/icons/refresh.png">
       <category>CONTENT_VIEW_ACTIONS</category>
       <properties>
-        <property name="template">
-          /incl/action/content_view_refresh.xhtml
+        <property name="link">
+          #{contentView.refreshAndRewindPageProvider()}
         </property>
         <property name="addForm">true</property>
         <property name="useAjaxForm">true</property>
@@ -98,6 +98,7 @@
         </property>
         <property name="addForm">true</property>
         <property name="ajaxSupport">true</property>
+        <property name="modal">true</property>
       </properties>
       <filter-id>contentViewShowEditColumns</filter-id>
     </action>
@@ -111,6 +112,7 @@
         </property>
         <property name="addForm">true</property>
         <property name="ajaxSupport">true</property>
+        <property name="modal">true</property>
       </properties>
       <filter-id>contentViewShowEditRows</filter-id>
     </action>

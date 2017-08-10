@@ -18,6 +18,7 @@
 package org.nuxeo.ecm.platform.shibboleth.service;
 
 import static org.apache.commons.lang.StringUtils.isNotEmpty;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.REDIRECT_URL;
 
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
@@ -28,12 +29,16 @@ import javax.servlet.http.HttpServletRequest;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import org.nuxeo.common.utils.URIUtils;
-import org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants;
 import org.nuxeo.ecm.platform.web.common.vh.VirtualHostHelper;
 import org.nuxeo.runtime.model.ComponentInstance;
 import org.nuxeo.runtime.model.DefaultComponent;
 
 public class ShibbolethAuthenticationServiceImpl extends DefaultComponent implements ShibbolethAuthenticationService {
+
+    /**
+     * @since 8.4
+     */
+    private static final String REDIRECT_URL = "redirect_url";
 
     public static final String CONFIG_EP = "config";
 
@@ -72,30 +77,16 @@ public class ShibbolethAuthenticationServiceImpl extends DefaultComponent implem
         return URIUtils.addParametersToURIQuery(config.getLogoutURL(), urlParameters);
     }
 
-    protected static String getRedirectUrl(HttpServletRequest request) {
-        String redirectURL = VirtualHostHelper.getBaseURL(request);
-        if (request.getAttribute(NXAuthConstants.REQUESTED_URL) != null) {
-            redirectURL += request.getAttribute(NXAuthConstants.REQUESTED_URL);
-        } else if (request.getParameter(NXAuthConstants.REQUESTED_URL) != null) {
-            redirectURL += request.getParameter(NXAuthConstants.REQUESTED_URL);
-        } else {
-            redirectURL = request.getRequestURL().toString();
-            String queryString = request.getQueryString();
-            if (queryString != null) {
-                redirectURL += '?' + queryString;
-            }
-        }
-        return redirectURL;
-    }
-
     @Override
     public String getLoginURL(HttpServletRequest request) {
-        return getLoginURL(getRedirectUrl(request));
+        String redirectUrl = VirtualHostHelper.getRedirectUrl(request);
+        request.getSession().setAttribute(REDIRECT_URL, redirectUrl);
+        return getLoginURL(redirectUrl);
     }
 
     @Override
     public String getLogoutURL(HttpServletRequest request) {
-        return getLogoutURL(getRedirectUrl(request));
+        return getLogoutURL((String) request.getSession().getAttribute(REDIRECT_URL));
     }
 
     @Override

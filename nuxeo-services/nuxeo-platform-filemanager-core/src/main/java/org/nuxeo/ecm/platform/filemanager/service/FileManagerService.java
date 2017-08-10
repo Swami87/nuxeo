@@ -145,67 +145,96 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return blob;
     }
 
-    public DocumentModel createFolder(CoreSession documentManager, String fullname, String path)
+    @Override
+    public DocumentModel createFolder(CoreSession documentManager, String fullname, String path, boolean overwrite)
             throws IOException {
 
         if (folderImporters.isEmpty()) {
-            return defaultCreateFolder(documentManager, fullname, path);
+            return defaultCreateFolder(documentManager, fullname, path, overwrite);
         } else {
             // use the last registered folder importer
             FolderImporter folderImporter = folderImporters.get(folderImporters.size() - 1);
-            return folderImporter.create(documentManager, fullname, path, true, getTypeService());
+            return folderImporter.create(documentManager, fullname, path, overwrite, getTypeService());
         }
     }
 
-    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path)
-            {
-        return defaultCreateFolder(documentManager, fullname, path, DEFAULT_FOLDER_TYPE_NAME, true);
+    /**
+     * @deprecated since 9.1, use {@link #defaultCreateFolder(CoreSession, String, String, boolean)} instead
+     */
+    @Deprecated
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path) {
+        return defaultCreateFolder(documentManager, fullname, path, true);
     }
 
+    /**
+     * @since 9.1
+     */
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
+            boolean overwrite) {
+        return defaultCreateFolder(documentManager, fullname, path, DEFAULT_FOLDER_TYPE_NAME, true, overwrite);
+    }
+
+    /**
+     * @deprecated since 9.1, use {@link #defaultCreateFolder(CoreSession, String, String, String, boolean, boolean)}
+     *             instead
+     */
+    @Deprecated
     public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
             String containerTypeName, boolean checkAllowedSubTypes) {
+        return defaultCreateFolder(documentManager, fullname, path, containerTypeName, checkAllowedSubTypes, true);
+    }
+
+    /**
+     * @since 9.1
+     */
+    public DocumentModel defaultCreateFolder(CoreSession documentManager, String fullname, String path,
+            String containerTypeName, boolean checkAllowedSubTypes, boolean overwrite) {
 
         // Fetching filename
         String title = FileManagerUtils.fetchFileName(fullname);
 
-        // Looking if an existing Folder with the same filename exists.
-        DocumentModel docModel = FileManagerUtils.getExistingDocByTitle(documentManager, path, title);
-
-        if (docModel == null) {
-            // check permissions
-            PathRef containerRef = new PathRef(path);
-            if (!documentManager.hasPermission(containerRef, SecurityConstants.READ_PROPERTIES)
-                    || !documentManager.hasPermission(containerRef, SecurityConstants.ADD_CHILDREN)) {
-                throw new DocumentSecurityException("Not enough rights to create folder");
+        if (overwrite) {
+            // Looking if an existing Folder with the same filename exists.
+            DocumentModel docModel = FileManagerUtils.getExistingDocByTitle(documentManager, path, title);
+            if (docModel != null) {
+                return docModel;
             }
-
-            // check allowed sub types
-            DocumentModel container = documentManager.getDocument(containerRef);
-            if (checkAllowedSubTypes
-                    && !getTypeService().isAllowedSubType(containerTypeName, container.getType(), container)) {
-                // cannot create document file here
-                // TODO: we should better raise a dedicated exception to be
-                // catched by the FileManageActionsBean instead of returning
-                // null
-                return null;
-            }
-
-            PathSegmentService pss = Framework.getService(PathSegmentService.class);
-            docModel = documentManager.createDocumentModel(containerTypeName);
-            docModel.setProperty("dublincore", "title", title);
-
-            // writing changes
-            docModel.setPathInfo(path, pss.generatePathSegment(docModel));
-            docModel = documentManager.createDocument(docModel);
-            documentManager.save();
-
-            log.debug("Created container: " + docModel.getName() + " with type " + containerTypeName);
         }
+
+        // check permissions
+        PathRef containerRef = new PathRef(path);
+        if (!documentManager.hasPermission(containerRef, SecurityConstants.READ_PROPERTIES)
+                || !documentManager.hasPermission(containerRef, SecurityConstants.ADD_CHILDREN)) {
+            throw new DocumentSecurityException("Not enough rights to create folder");
+        }
+
+        // check allowed sub types
+        DocumentModel container = documentManager.getDocument(containerRef);
+        if (checkAllowedSubTypes
+                && !getTypeService().isAllowedSubType(containerTypeName, container.getType(), container)) {
+            // cannot create document file here
+            // TODO: we should better raise a dedicated exception to be
+            // catched by the FileManageActionsBean instead of returning
+            // null
+            return null;
+        }
+
+        PathSegmentService pss = Framework.getService(PathSegmentService.class);
+        DocumentModel docModel = documentManager.createDocumentModel(containerTypeName);
+        docModel.setProperty("dublincore", "title", title);
+
+        // writing changes
+        docModel.setPathInfo(path, pss.generatePathSegment(docModel));
+        docModel = documentManager.createDocument(docModel);
+        documentManager.save();
+
+        log.debug("Created container: " + docModel.getName() + " with type " + containerTypeName);
         return docModel;
     }
 
-    public DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path,
-            boolean overwrite, String fullName) throws IOException {
+    @Override
+    public DocumentModel createDocumentFromBlob(CoreSession documentManager, Blob input, String path, boolean overwrite,
+            String fullName) throws IOException {
 
         // check mime type to be able to select the best importer plugin
         input = checkMimeType(input, fullName);
@@ -224,8 +253,8 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return null;
     }
 
-    public DocumentModel updateDocumentFromBlob(CoreSession documentManager, Blob input, String path, String fullName)
-            {
+    @Override
+    public DocumentModel updateDocumentFromBlob(CoreSession documentManager, Blob input, String path, String fullName) {
         String filename = FileManagerUtils.fetchFileName(fullName);
         DocumentModel doc = FileManagerUtils.getExistingDocByFileName(documentManager, path, filename);
         if (doc != null) {
@@ -482,6 +511,7 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         log.info("unregistered creationContaineterList provider: " + name);
     }
 
+    @Override
     public List<DocumentLocation> findExistingDocumentWithFile(CoreSession documentManager, String path, String digest,
             Principal principal) {
         String nxql = String.format(QUERY, digest);
@@ -493,18 +523,22 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return docLocationList;
     }
 
+    @Override
     public boolean isUnicityEnabled() {
         return unicityEnabled;
     }
 
+    @Override
     public boolean isDigestComputingEnabled() {
         return computeDigest;
     }
 
+    @Override
     public List<String> getFields() {
         return fieldsXPath;
     }
 
+    @Override
     public DocumentModelList getCreationContainers(Principal principal, String docType) {
         DocumentModelList containers = new DocumentModelListImpl();
         RepositoryManager repositoryManager = Framework.getLocalService(RepositoryManager.class);
@@ -516,6 +550,7 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return containers;
     }
 
+    @Override
     public DocumentModelList getCreationContainers(CoreSession documentManager, String docType) {
         for (CreationContainerListProvider provider : creationContainerListProviders) {
             if (provider.accept(docType)) {
@@ -525,6 +560,7 @@ public class FileManagerService extends DefaultComponent implements FileManager 
         return new DocumentModelListImpl();
     }
 
+    @Override
     public String getDigestAlgorithm() {
         return digestAlgorithm;
     }

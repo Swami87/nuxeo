@@ -36,6 +36,8 @@ import com.gargoylesoftware.htmlunit.html.HtmlPage;
  */
 public class ITErrorTest extends AbstractTest {
 
+    private static final String TEST_USERNAME = "jdoe_ITErrorTest";
+
     @Test
     public void testErrorPathNotFound() throws Exception {
         WebClient client = new WebClient();
@@ -80,7 +82,7 @@ public class ITErrorTest extends AbstractTest {
         usersTab = usersTab.searchUser(TEST_USERNAME);
         if (!usersTab.isUserFound(TEST_USERNAME)) {
             UsersGroupsBasePage page = usersTab.getUserCreatePage().createUser(TEST_USERNAME, TEST_USERNAME, null, null,
-                    TEST_USERNAME, TEST_PASSWORD, null); // no group
+                    TEST_USERNAME + "@test.com", TEST_PASSWORD, null); // no group
             usersTab = page.getUsersTab(true);
         }
         logout();

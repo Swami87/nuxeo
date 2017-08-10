@@ -20,16 +20,23 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
-
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.nuxeo.ecm.core.api.CoreSession;
+import org.nuxeo.ecm.core.api.DocumentModel;
+import org.nuxeo.ecm.core.api.DocumentModelList;
+import org.nuxeo.ecm.core.api.DocumentRef;
+import org.nuxeo.ecm.core.api.IdRef;
+import org.nuxeo.ecm.core.api.PathRef;
+import org.nuxeo.ecm.core.query.sql.NXQL;
 import org.nuxeo.ecm.core.schema.types.Schema;
 import org.nuxeo.ecm.platform.usermanager.UserConfig;
 import org.nuxeo.runtime.api.Framework;
 import org.nuxeo.runtime.services.config.ConfigurationService;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 
 /**
  * Group fields and methods used at initialization and runtime for select2 feature.
@@ -62,11 +69,11 @@ public class Select2Common {
 
     public static final String OBSOLETE_FIELD_ID = "obsolete";
 
-    public static final List<String> SELECT2_USER_WIDGET_TYPE_LIST = new ArrayList<String>(Arrays.asList(
-            "singleUserSuggestion", "multipleUsersSuggestion"));
+    public static final List<String> SELECT2_USER_WIDGET_TYPE_LIST = new ArrayList<String>(
+            Arrays.asList("singleUserSuggestion", "multipleUsersSuggestion"));
 
-    public static final List<String> SELECT2_DOC_WIDGET_TYPE_LIST = new ArrayList<String>(Arrays.asList(
-            "singleDocumentSuggestion", "multipleDocumentsSuggestion"));
+    public static final List<String> SELECT2_DOC_WIDGET_TYPE_LIST = new ArrayList<String>(
+            Arrays.asList("singleDocumentSuggestion", "multipleDocumentsSuggestion"));
 
     public static final String USER_TYPE = "USER_TYPE";
 
@@ -86,11 +93,11 @@ public class Select2Common {
 
     public static final String WARN_MESSAGE_LABEL = "warn_message";
 
-    public static final List<String> SELECT2_DIR_WIDGET_TYPE_LIST = new ArrayList<String>(Arrays.asList(
-            "suggestOneDirectory", "suggestManyDirectory"));
+    public static final List<String> SELECT2_DIR_WIDGET_TYPE_LIST = new ArrayList<String>(
+            Arrays.asList("suggestOneDirectory", "suggestManyDirectory"));
 
-    public static final List<String> SELECT2_DEFAULT_DOCUMENT_SCHEMAS = new ArrayList<String>(Arrays.asList(
-            "dublincore", "common"));
+    public static final List<String> SELECT2_DEFAULT_DOCUMENT_SCHEMAS = new ArrayList<String>(
+            Arrays.asList("dublincore", "common"));
 
     public static final String DIR_DEFAULT_SUGGESTION_FORMATTER = "dirEntryDefaultFormatter";
 
@@ -154,7 +161,8 @@ public class Select2Common {
      * @return the final field name where we pick up the value
      * @since 5.7.3
      */
-    public static String getLabelFieldName(final Schema schema, boolean dbl10n, String labelFieldName, final String lang) {
+    public static String getLabelFieldName(final Schema schema, boolean dbl10n, String labelFieldName,
+            final String lang) {
         if (labelFieldName == null || labelFieldName.isEmpty()) {
             // No labelFieldName provided, we assume it is 'label'
             labelFieldName = DIRECTORY_DEFAULT_LABEL_COL_NAME;
@@ -352,6 +360,35 @@ public class Select2Common {
             }
             return result.toString();
         }
+    }
+
+    /**
+     * Finds a document by the given property and value. If the property is null or empty the value is considered as a
+     * {@link DocumentRef}.
+     *
+     * @since 9.2
+     */
+    public static DocumentModel resolveReference(String property, String value, CoreSession session) {
+        if (property != null && !property.isEmpty()) {
+            String query = "select * from Document where " + property + "=" + NXQL.escapeString(value);
+            DocumentModelList docs = session.query(query);
+            if (docs.size() > 0) {
+                return docs.get(0);
+            }
+            log.warn("Unable to resolve doc using property " + property + " and value " + value);
+            return null;
+        }
+        DocumentRef ref = null;
+        if (value.startsWith("/")) {
+            ref = new PathRef(value);
+        } else {
+            ref = new IdRef(value);
+        }
+        if (session.exists(ref)) {
+            return session.getDocument(ref);
+        }
+        log.warn("Unable to resolve reference on " + ref);
+        return null;
     }
 
 }

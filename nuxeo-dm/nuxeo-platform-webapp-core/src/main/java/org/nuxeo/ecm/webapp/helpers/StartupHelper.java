@@ -25,7 +25,6 @@ import java.io.Serializable;
 import java.security.Principal;
 
 import javax.faces.context.FacesContext;
-import javax.servlet.http.HttpServletRequest;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -57,9 +56,9 @@ import org.nuxeo.ecm.webapp.dashboard.DashboardNavigationHelper;
 @Install(precedence = Install.FRAMEWORK)
 public class StartupHelper implements Serializable {
 
-    protected static final String SERVERS_VIEW = "view_servers";
+    public static final String SERVERS_VIEW = "view_servers";
 
-    protected static final String DOMAINS_VIEW = "view_domains";
+    public static final String DOMAINS_VIEW = "view_domains";
 
     protected static final String DOMAIN_TYPE = "Domain";
 
@@ -162,8 +161,6 @@ public class StartupHelper implements Serializable {
         try {
             // delegate server initialized to the default helper
             String result = initServerAndFindStartupPage();
-
-            HttpServletRequest request = (HttpServletRequest) FacesContext.getCurrentInstance().getExternalContext().getRequest();
 
             // more than one repo
             if (SERVERS_VIEW.equals(result)) {

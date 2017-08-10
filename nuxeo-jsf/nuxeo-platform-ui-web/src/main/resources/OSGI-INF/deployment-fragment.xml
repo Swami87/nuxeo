@@ -33,6 +33,12 @@
     </filter-mapping>
     <filter-mapping>
       <filter-name>NuxeoAuthenticationFilter</filter-name>
+      <url-pattern>*.xhtml</url-pattern>
+      <dispatcher>REQUEST</dispatcher>
+      <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
+    <filter-mapping>
+      <filter-name>NuxeoAuthenticationFilter</filter-name>
       <url-pattern>/nxdoc/*</url-pattern>
       <dispatcher>REQUEST</dispatcher>
       <dispatcher>FORWARD</dispatcher>
@@ -151,6 +157,11 @@
     <servlet-mapping>
       <servlet-name>Faces Servlet</servlet-name>
       <url-pattern>*.jsf</url-pattern>
+    </servlet-mapping>
+
+    <servlet-mapping>
+      <servlet-name>Faces Servlet</servlet-name>
+      <url-pattern>*.xhtml</url-pattern>
     </servlet-mapping>
 
     <servlet>
@@ -363,6 +374,10 @@
     <phase-listener>
       org.nuxeo.ecm.platform.ui.web.rest.RestfulPhaseListener
     </phase-listener>
+
+    <phase-listener>
+      org.nuxeo.ecm.platform.ui.web.rest.JSFDebugPhaseListener
+    </phase-listener>
   </extension>
 
   <extension target="faces-config#COMPONENT">
@@ -537,6 +552,15 @@
       </component-type>
       <component-class>
         org.nuxeo.ecm.platform.ui.web.component.holder.UIValueHolder
+      </component-class>
+    </component>
+
+    <component>
+      <component-type>
+        javax.faces.HtmlInputText
+      </component-type>
+      <component-class>
+        org.nuxeo.ecm.platform.ui.web.component.html.NXHtmlInputText
       </component-class>
     </component>
 
@@ -765,6 +789,14 @@
       <renderer-type>javax.faces.Message</renderer-type>
       <renderer-class>
         org.nuxeo.ecm.platform.ui.web.component.message.EscapableMessageRenderer
+      </renderer-class>
+    </renderer>
+
+    <renderer>
+      <component-family>javax.faces.Input</component-family>
+      <renderer-type>javax.faces.Text</renderer-type>
+      <renderer-class>
+        org.nuxeo.ecm.platform.ui.web.renderer.NXTextRenderer
       </renderer-class>
     </renderer>
 

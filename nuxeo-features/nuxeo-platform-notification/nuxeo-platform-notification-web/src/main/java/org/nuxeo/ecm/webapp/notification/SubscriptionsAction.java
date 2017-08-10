@@ -224,4 +224,11 @@ public class SubscriptionsAction extends InputController implements Serializable
         this.inheritedNotifications = inheritedNotifications;
     }
 
+    /**
+     * @since 9.2
+     */
+    public boolean canFollow() {
+        return !navigationContext.getCurrentDocument().isProxy();
+    }
+
 }

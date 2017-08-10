@@ -33,6 +33,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.nuxeo.common.utils.FileUtils;
 import org.nuxeo.ecm.automation.core.util.DocumentHelper;
+import org.nuxeo.ecm.core.api.AbstractSession;
 import org.nuxeo.ecm.core.api.Blob;
 import org.nuxeo.ecm.core.api.Blobs;
 import org.nuxeo.ecm.core.api.CoreSession;
@@ -376,7 +377,7 @@ public class TestAutomaticIndexing {
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
-        assertNumberOfCommandProcessed(4);
+        assertNumberOfCommandProcessed(5);
 
         startTransaction();
         SearchResponse searchResponse = esa.getClient().prepareSearch(IDX_NAME).setTypes(TYPE_NAME).setSearchType(
@@ -694,8 +695,8 @@ public class TestAutomaticIndexing {
 
         TransactionHelper.commitOrRollbackTransaction();
         waitForCompletion();
-        // 3 docs (2 files + 1 folder checkout) + 2 versions of folder
-        assertNumberOfCommandProcessed(5);
+        // 3 docs (2 files + 1 folder checkout) + 2 versions of folder + 2 versions (because of isLastVersions)
+        assertNumberOfCommandProcessed(7);
         startTransaction();
         DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
         Assert.assertEquals(5, ret.totalSize());
@@ -709,6 +710,114 @@ public class TestAutomaticIndexing {
 
         ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
         Assert.assertEquals(4, ret.totalSize());
+    }
+
+    @Test
+    public void shouldIndexLatestVersions() throws Exception {
+        createADocumentWith3Versions();
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(4, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestVersion = 1"));
+        Assert.assertEquals(1, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 1"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("v3", ret.get(0).getTitle());
+    }
+
+    @Test
+    public void shouldNotIndexLatestVersions() throws Exception {
+        System.setProperty(AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY, "true");
+        try {
+            createADocumentWith3Versions();
+        } finally {
+            System.clearProperty(AbstractSession.DISABLED_ISLATESTVERSION_PROPERTY);
+        }
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(4, ret.totalSize());
+
+        // but isLatestVersion and isLatestMajorVersion are not updated
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestVersion = 1"));
+        Assert.assertEquals(3, ret.totalSize());
+
+        ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document WHERE ecm:isLatestMajorVersion = 1"));
+        Assert.assertEquals(3, ret.totalSize());
+
+    }
+
+    protected void createADocumentWith3Versions() throws Exception {
+        startTransaction();
+        DocumentModel file1 = new DocumentModelImpl("/", "testfile1", "File");
+        file1 = session.createDocument(file1);
+        file1.setPropertyValue("dc:title", "v1");
+        file1 = session.saveDocument(file1);
+        DocumentRef v1 = file1.checkIn(VersioningOption.MAJOR, "init v1");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        file1.setPropertyValue("dc:title", "v2");
+        file1 = session.saveDocument(file1);
+        DocumentRef v2 = file1.checkIn(VersioningOption.MAJOR, "update v2");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        file1.setPropertyValue("dc:title", "v3");
+        file1 = session.saveDocument(file1);
+        DocumentRef v3 = file1.checkIn(VersioningOption.MAJOR, "update v3");
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+    }
+
+    @Test
+    public void shouldIndexUpdatedProxy() throws Exception {
+        startTransaction();
+        DocumentModel folder1 = new DocumentModelImpl("/", "testfolder1", "Folder");
+        folder1 = session.createDocument(folder1);
+        folder1 = session.saveDocument(folder1);
+
+        DocumentModel file1 = new DocumentModelImpl("/", "testfile1", "File");
+        file1 = session.createDocument(file1);
+        file1.setPropertyValue("dc:title", "Title before proxy update");
+        file1 = session.saveDocument(file1);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        // Create proxy
+        DocumentModel proxy = session.createProxy(file1.getRef(), folder1.getRef());
+        proxy = session.saveDocument(proxy);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        // Now update it
+        proxy.setPropertyValue("dc:title", "Title after proxy update");
+        proxy = session.saveDocument(proxy);
+        TransactionHelper.commitOrRollbackTransaction();
+        waitForCompletion();
+        startTransaction();
+
+        DocumentModelList ret = ess.query(new NxQueryBuilder(session).nxql("SELECT * FROM Document"));
+        Assert.assertEquals(3, ret.totalSize());
+
+        // Check that proxy was updated in ES
+        ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:isProxy = 1 and dc:title='Title after proxy update'"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("Title after proxy update", ret.get(0).getTitle());
+
+        // Check that live document was updated in ES
+        ret = ess.query(new NxQueryBuilder(session).nxql(
+                "SELECT * FROM Document WHERE ecm:isProxy = 0 and dc:title='Title after proxy update'"));
+        Assert.assertEquals(1, ret.totalSize());
+        Assert.assertEquals("Title after proxy update", ret.get(0).getTitle());
+
     }
 
     @Test
@@ -742,4 +851,5 @@ public class TestAutomaticIndexing {
         startTransaction();
 
     }
+
 }

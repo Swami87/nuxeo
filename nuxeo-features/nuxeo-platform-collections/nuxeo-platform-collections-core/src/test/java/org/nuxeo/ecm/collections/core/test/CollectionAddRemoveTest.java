@@ -136,8 +136,8 @@ public class CollectionAddRemoveTest extends CollectionTestCase {
                 "Collection");
         testCollection1 = session.createDocument(testCollection1);
 
-        DocumentModel testCollection2 = session.createDocumentModel(testWorkspace.getPathAsString(),
-                TEST_FILE_NAME + 2, "Collection");
+        DocumentModel testCollection2 = session.createDocumentModel(testWorkspace.getPathAsString(), TEST_FILE_NAME + 2,
+                "Collection");
         testCollection2 = session.createDocument(testCollection2);
 
         try {
@@ -188,17 +188,15 @@ public class CollectionAddRemoveTest extends CollectionTestCase {
         DocumentModel testFile = session.createDocumentModel(testWorkspace.getPathAsString(), TEST_FILE_NAME, "File");
         testFile = session.createDocument(testFile);
         collectionManager.addToNewCollection(COLLECTION_NAME, COLLECTION_DESCRIPTION, testFile, session);
-        testFile = session.getDocument(testFile.getRef());
         DocumentModel copiedTestFile = session.copy(testFile.getRef(), testFile.getParentRef(),
                 TEST_FILE_NAME + "_BIS");
 
+        copiedTestFile = session.getDocument(copiedTestFile.getRef());
         assertFalse(collectionManager.isCollected(copiedTestFile));
 
         // Let's add to another collection and see it still does not belong to the original one.
         collectionManager.addToNewCollection(COLLECTION_NAME + "_BIS", COLLECTION_DESCRIPTION + "_BIS", copiedTestFile,
                 session);
-
-        copiedTestFile = session.getDocument(copiedTestFile.getRef());
 
         final String collectionPath = COLLECTION_FOLDER_PATH + "/" + COLLECTION_NAME;
         DocumentRef collectionPathRef = new PathRef(collectionPath);
@@ -211,7 +209,8 @@ public class CollectionAddRemoveTest extends CollectionTestCase {
         final DocumentModel collectionBis = session.getDocument(collectionPathRefBis);
 
         assertFalse(copiedTestFile.getAdapter(CollectionMember.class).getCollectionIds().contains(collection.getId()));
-        assertTrue(copiedTestFile.getAdapter(CollectionMember.class).getCollectionIds().contains(collectionBis.getId()));
+        assertTrue(
+                copiedTestFile.getAdapter(CollectionMember.class).getCollectionIds().contains(collectionBis.getId()));
     }
 
 }

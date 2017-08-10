@@ -39,6 +39,7 @@ import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.START_PAGE_SAVE
 import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.SWITCH_USER_KEY;
 import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.SWITCH_USER_PAGE;
 import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.USERIDENT_KEY;
+import static org.nuxeo.ecm.platform.ui.web.auth.NXAuthConstants.REDIRECT_URL;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -160,17 +161,17 @@ public class NuxeoAuthenticationFilter implements Filter {
     // @since 5.7
     protected final MetricRegistry registry = SharedMetricRegistries.getOrCreate(MetricsService.class.getName());
 
-    protected final Timer requestTimer = registry.timer(MetricRegistry.name("nuxeo", "web", "authentication",
-            "requests", "count"));
+    protected final Timer requestTimer = registry.timer(
+            MetricRegistry.name("nuxeo", "web", "authentication", "requests", "count"));
 
-    protected final Counter concurrentCount = registry.counter(MetricRegistry.name("nuxeo", "web", "authentication",
-            "requests", "concurrent", "count"));
+    protected final Counter concurrentCount = registry.counter(
+            MetricRegistry.name("nuxeo", "web", "authentication", "requests", "concurrent", "count"));
 
-    protected final Counter concurrentMaxCount = registry.counter(MetricRegistry.name("nuxeo", "web", "authentication",
-            "requests", "concurrent", "max"));
+    protected final Counter concurrentMaxCount = registry.counter(
+            MetricRegistry.name("nuxeo", "web", "authentication", "requests", "concurrent", "max"));
 
-    protected final Counter loginCount = registry.counter(MetricRegistry.name("nuxeo", "web", "authentication",
-            "logged-users"));
+    protected final Counter loginCount = registry.counter(
+            MetricRegistry.name("nuxeo", "web", "authentication", "logged-users"));
 
     @Override
     public void destroy() {
@@ -265,7 +266,8 @@ public class NuxeoAuthenticationFilter implements Filter {
         }
     }
 
-    protected Principal doAuthenticate(CachableUserIdentificationInfo cachableUserIdent, HttpServletRequest httpRequest) {
+    protected Principal doAuthenticate(CachableUserIdentificationInfo cachableUserIdent,
+            HttpServletRequest httpRequest) {
 
         LoginContext loginContext;
         try {
@@ -381,8 +383,8 @@ public class NuxeoAuthenticationFilter implements Filter {
     }
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException,
-            ServletException {
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
         final Timer.Context contextTimer = requestTimer.time();
         concurrentCount.inc();
         if (concurrentCount.getCount() > concurrentMaxCount.getCount()) {
@@ -522,6 +524,11 @@ public class NuxeoAuthenticationFilter implements Filter {
                             return;
                         }
                     } else {
+                        String redirectUrl = VirtualHostHelper.getRedirectUrl(httpRequest);
+                        HttpSession session = httpRequest.getSession(false);
+                        if (session != null) {
+                            session.setAttribute(REDIRECT_URL, redirectUrl);
+                        }
                         // restore saved Starting page
                         targetPageURL = getSavedRequestedURL(httpRequest, httpResponse);
                     }
@@ -581,7 +588,9 @@ public class NuxeoAuthenticationFilter implements Filter {
                         // httpResponse.setStatus(200);
                         return;
                     } else {
-                        httpResponse.sendRedirect(baseURL + targetPageURL);
+                        // In case of a download redirection, the base url is already contained in the target
+                        String url = targetPageURL.startsWith(baseURL) ? targetPageURL : baseURL + targetPageURL;
+                        httpResponse.sendRedirect(url);
                         return;
                     }
 
@@ -625,7 +634,8 @@ public class NuxeoAuthenticationFilter implements Filter {
 
         HttpSession session = httpRequest.getSession(false);
         if (session != null) {
-            CachableUserIdentificationInfo cachableUserInfo = (CachableUserIdentificationInfo) session.getAttribute(USERIDENT_KEY);
+            CachableUserIdentificationInfo cachableUserInfo = (CachableUserIdentificationInfo) session.getAttribute(
+                    USERIDENT_KEY);
             if (cachableUserInfo != null) {
                 return cachableUserInfo;
             }
@@ -647,8 +657,8 @@ public class NuxeoAuthenticationFilter implements Filter {
                 if (service != null) {
                     return;
                 }
-                service = (PluggableAuthenticationService) Framework.getRuntime().getComponent(
-                        PluggableAuthenticationService.NAME);
+                service = (PluggableAuthenticationService) Framework.getRuntime()
+                                                                    .getComponent(PluggableAuthenticationService.NAME);
                 // init preFilters
                 service.initPreFilters();
                 if (service == null) {
@@ -817,9 +827,6 @@ public class NuxeoAuthenticationFilter implements Filter {
             CachableUserIdentificationInfo cachedUserInfo) throws ServletException {
         logLogout(cachedUserInfo.getUserInfo());
 
-        // invalidate Session !
-        service.invalidateSession(request);
-
         request.setAttribute(DISABLE_REDIRECT_REQUEST_KEY, Boolean.TRUE);
         Map<String, String> parameters = new HashMap<String, String>();
         String securityError = request.getParameter(SECURITY_ERROR);
@@ -850,8 +857,8 @@ public class NuxeoAuthenticationFilter implements Filter {
 
         boolean redirected = false;
         if (logoutPlugin != null) {
-            redirected = Boolean.TRUE.equals(logoutPlugin.handleLogout((HttpServletRequest) request,
-                    (HttpServletResponse) response));
+            redirected = Boolean.TRUE.equals(
+                    logoutPlugin.handleLogout((HttpServletRequest) request, (HttpServletResponse) response));
         }
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         if (!redirected && !XMLHTTP_REQUEST_TYPE.equalsIgnoreCase(httpRequest.getHeader("X-Requested-With"))) {
@@ -871,6 +878,12 @@ public class NuxeoAuthenticationFilter implements Filter {
         } catch (LoginException e) {
             log.error("Unable to logout " + e.getMessage());
         }
+
+        // invalidate Session !
+        // NXP-16997 : the session has to be invalidated at the end for the shibboleth plugin
+        // because it needs the login url for redirection (and this url is stored in the session)
+        service.invalidateSession(request);
+
         return redirected;
     }
 
@@ -1036,8 +1049,7 @@ public class NuxeoAuthenticationFilter implements Filter {
             if (session != null) {
                 CachableUserIdentificationInfo savedUserInfo = retrieveIdentityFromCache(httpRequest);
                 if (savedUserInfo != null) {
-                    log.debug("Found User identity in cache :" + savedUserInfo.getUserInfo().getUserName() + '/'
-                            + savedUserInfo.getUserInfo().getPassword());
+                    log.debug("Found User identity in cache :" + savedUserInfo.getUserInfo().getUserName());
                     userIdent = new UserIdentificationInfo(savedUserInfo.getUserInfo());
                     savedUserInfo.setPrincipal(null);
                 }
@@ -1071,8 +1083,9 @@ public class NuxeoAuthenticationFilter implements Filter {
     public static LoginContext loginAs(String username) throws LoginException {
         UserIdentificationInfo userIdent = new UserIdentificationInfo(username, "");
         userIdent.setLoginPluginName(TrustingLoginPlugin.NAME);
-        PluggableAuthenticationService authService = (PluggableAuthenticationService) Framework.getRuntime().getComponent(
-                PluggableAuthenticationService.NAME);
+        PluggableAuthenticationService authService = (PluggableAuthenticationService) Framework.getRuntime()
+                                                                                               .getComponent(
+                                                                                                       PluggableAuthenticationService.NAME);
         CallbackHandler callbackHandler;
         if (authService != null) {
             callbackHandler = authService.getCallbackHandler(userIdent);
